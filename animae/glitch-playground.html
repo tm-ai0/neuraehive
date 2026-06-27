@@ -675,6 +675,16 @@
       </section>
 
       <aside class="panel" id="panel">
+        <div class="src-label">source</div>
+        <div class="src-row" id="srcRow">
+          <button data-src="field" class="on">field</button>
+          <button data-src="shards">shards</button>
+          <button data-src="mesh">mesh</button>
+          <button data-src="tunnel">tunnel</button>
+        </div>
+
+        <div id="groups-top"></div>
+
         <div class="motion">
           <div class="motion-top">
             <button class="play" id="playBtn">▶ play</button>
@@ -722,14 +732,6 @@
             <button data-r="720">720</button>
             <button data-r="960">960</button>
           </div>
-        </div>
-
-        <div class="src-label">source</div>
-        <div class="src-row" id="srcRow">
-          <button data-src="field" class="on">field</button>
-          <button data-src="shards">shards</button>
-          <button data-src="mesh">mesh</button>
-          <button data-src="tunnel">tunnel</button>
         </div>
 
         <div id="groups"></div>
@@ -1805,6 +1807,7 @@
       }
       function buildGroups() {
         const host = document.getElementById('groups')
+        const hostTop = document.getElementById('groups-top')
         GROUPS.forEach((g) => {
           const wrap = document.createElement('div')
           wrap.className = 'group' + (state.toggles[g.key] ? '' : ' off')
@@ -1853,7 +1856,7 @@
           })
           wrap.appendChild(head)
           wrap.appendChild(ctrls)
-          host.appendChild(wrap)
+          ;(g.key === 'vignette' ? hostTop : host).appendChild(wrap)
         })
       }
       function syncUI() {

@@ -38,6 +38,20 @@ FR · direct, concis, **zéro flatterie** · contre-arguments bienvenus · **une
 ## Privé
 Le fil **idios / Prince Myshkine** (l'intraduisible, la rencontre de deux esprits différents dans la bienveillance) reste **strictement entre Thomas et l'assistant** — jamais dans un livrable, un carnet, le site, le marketing.
 
+## État actuel
+_Mis à jour le 2026-06-28_
+
+**Derniers changements :**
+- `animae-recherche.md` créé — brief fondateur Cowork (philo anima/pneuma, glitch Menkman, refs visuelles) · boussole de DA permanente.
+- Panel droit réorganisé dans `glitch-playground.html` : SOURCE (FIELD/SHARDS/MESH/TUNNEL) monté tout en haut → vignette juste dessous → motion/global speed → reste des effets.
+- Commande custom `/recap` créée (`.claude/commands/recap.md`) : met à jour ce fichier et commit automatiquement.
+
+**Stack actée :** three.js r128, un seul HTML autonome. WebGPU/Vite = chez Thomas plus tard, jamais dans l'aperçu.
+
+**Étape Roadmap :** #1 (renommage + DA piste C) — **pas encore commencée**. Panel trié = prérequis UX fait.
+
+**Prochaine action :** démarrer étape #1 — renommer l'UI "corruption_lab" → Animæ et appliquer la DA piste C (couleurs/typo spectre, cf. `design.md`).
+
 ## À NE PAS faire (rappel)
 reconstruire · sur-produire · deviner la DA · refaire Synaptic Mirror · sprinter sans validation · sur-promettre.
 
