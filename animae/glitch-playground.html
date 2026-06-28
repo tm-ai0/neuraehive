@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" />
   <style>
     :root {
       --bg: #060708; --ink: #e8e6e3;
@@ -65,7 +66,40 @@
     .src-dropdown button.on { border-color:rgba(255,255,255,.28);color:#f2efec;background:rgba(255,255,255,.05); }
     .sdsep { height:1px;background:var(--line);margin:3px 0; }
     /* hud */
-    .hud { position:absolute;left:20px;bottom:16px;font-size:10px;letter-spacing:1.5px;color:var(--ink-faint);display:flex;gap:8px;align-items:center; }
+    .hud { position:absolute;left:20px;bottom:52px;font-size:10px;letter-spacing:1.5px;color:var(--ink-faint);display:flex;gap:8px;align-items:center; }
+    /* source bar (supersedes srcChip/srcDropdown) */
+    #srcChip, #srcDropdown { display:none!important; }
+    #srcBar { position:absolute;bottom:0;left:50%;transform:translateX(-50%);display:flex;align-items:stretch;height:52px;background:rgba(8,8,11,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:10px 10px 0 0;overflow:hidden;white-space:nowrap; }
+    .sb-bloc { display:flex;flex-direction:column;justify-content:center;padding:0 12px;gap:5px; }
+    .sb-live { background:rgba(255,255,255,.04); }
+    .sb-gen  { background:rgba(255,255,255,.02); }
+    .sb-label { font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:3px;line-height:1; }
+    .sb-live .sb-label { color:#c34ea0; }
+    .sb-gen  .sb-label { color:#6a7080; }
+    .sb-btns { display:flex;align-items:center;gap:2px; }
+    .sb-divider { width:1px;background:rgba(255,255,255,.15);flex:none;align-self:stretch; }
+    #srcBar .sb { display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:4px;border:none;background:transparent;color:rgba(232,230,227,.65);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:1px;cursor:pointer;transition:background .15s,color .15s; }
+    #srcBar .sb .ti { font-size:14px;line-height:1; }
+    #srcBar .sb:hover { background:rgba(255,255,255,.06);color:#e8e6e3; }
+    .sb-live .sb.on { background:#c34ea0;color:#000; }
+    .sb-gen  .sb.on { background:#e8b86c;color:#000; }
+    .sb-live .sb.on:hover { background:#d45db0; }
+    .sb-gen  .sb.on:hover { background:#f0c47a; }
+    #blendSel { display:flex;align-items:center; }
+    #blendSel.hidden { display:none; }
+    #blendSel .bm { padding:4px 9px;border:none;background:transparent;color:rgba(232,230,227,.3);font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:1px;cursor:pointer;border-radius:4px;transition:color .15s; }
+    #blendSel .bm:hover { color:var(--ink-dim); }
+    #blendSel .bm.on { color:var(--cyan); }
+    /* source hint */
+    #srcHint { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;text-align:center;transition:opacity .6s; }
+    #srcHint.hidden { opacity:0; }
+    .hint-text { font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:2px;color:rgba(195,78,160,.5);margin:0 0 18px; }
+    .hint-dots { display:flex;gap:14px;justify-content:center; }
+    .dot { width:8px;height:8px;border-radius:50%; }
+    .dot-1 { background:#c34ea0;animation:dotpulse 2.4s ease-in-out infinite; }
+    .dot-2 { background:#e8b86c;animation:dotpulse 2.4s ease-in-out .8s infinite; }
+    .dot-3 { background:#7d68e6;animation:dotpulse 2.4s ease-in-out 1.6s infinite; }
+    @keyframes dotpulse { 0%,100%{opacity:.15;transform:scale(.8)} 50%{opacity:1;transform:scale(1.2)} }
     /* mode layers */
     .mode-layer { position:absolute;inset:0;pointer-events:none; }
     .mode-layer.hidden { display:none; }
@@ -82,6 +116,8 @@
     .macros { position:absolute;left:50%;bottom:60px;transform:translateX(-50%);display:flex;gap:16px; }
     .macro { width:210px;height:260px;border-radius:6px;padding:24px 18px 20px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;background:rgba(18,20,24,.4);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid var(--line);cursor:pointer;user-select:none;transition:border-color .2s; }
     .macro:hover { border-color:rgba(255,255,255,.16); }
+    .macro.active  { border-color:#c34ea0!important;box-shadow:0 0 20px rgba(195,78,160,.3); }
+    .macro.inactive { opacity:.4;transition:opacity .2s; }
     .macro-icon { flex:1;display:flex;align-items:center;justify-content:center; }
     .macro-bottom { display:flex;flex-direction:column;align-items:center;gap:10px;width:100%; }
     .mname { font-family:'Instrument Sans',sans-serif;font-size:19px;font-weight:500;letter-spacing:.5px; }
@@ -99,7 +135,7 @@
     .rack-chaos:hover { border-color:var(--cyan); }
     .rsec { padding:12px 0;border-bottom:1px solid var(--line); }
     .rsec:last-child { border-bottom:none; }
-    .rhead { font-size:9px;letter-spacing:3px;color:rgba(232,230,227,.4);text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px; }
+    .rhead { font-size:9px;letter-spacing:1.5px;color:#c8c5c0;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px; }
     .src-row { display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px; }
     .src-row button { font-family:'IBM Plex Mono',monospace;font-size:10px;padding:7px 4px;border:1px solid rgba(255,255,255,.1);background:transparent;color:rgba(232,230,227,.55);border-radius:3px;cursor:pointer;text-transform:uppercase;letter-spacing:.8px;transition:.12s; }
     .src-row button:hover { color:var(--ink);border-color:rgba(255,255,255,.22); }
@@ -116,13 +152,13 @@
     .rec.on { background:var(--red);color:#060708;box-shadow:0 0 14px rgba(232,184,108,.4); }
     .mrow { display:flex;align-items:center;gap:9px;margin:7px 0; }
     .mrow.toggle { cursor:pointer;user-select:none; }
-    .mrow .lbl { font-size:9px;color:rgba(232,230,227,.45);letter-spacing:1.5px;text-transform:uppercase;min-width:96px; }
-    .mrow .v { font-size:11px;color:rgba(232,230,227,.6);width:34px;text-align:right;font-variant-numeric:tabular-nums; }
+    .mrow .lbl { font-size:9px;color:#c8c5c0;letter-spacing:1px;text-transform:uppercase;min-width:96px; }
+    .mrow .v { font-size:11px;color:#e8b86c;width:34px;text-align:right;font-variant-numeric:tabular-nums; }
     .mrow .box { width:13px;height:13px;border:1px solid var(--line);border-radius:3px;background:rgba(12,14,19,.6);flex:none;position:relative; }
     .mrow.on .box { background:var(--cyan);border-color:var(--cyan); }
     .mrow.on .box::after { content:'';position:absolute;inset:3px;background:#060708;border-radius:1px; }
     .mrow input[type='range'] { flex:1; }
-    .mlabel { font-size:9px;color:rgba(232,230,227,.4);text-transform:uppercase;letter-spacing:3px;margin:10px 0 4px; }
+    .mlabel { font-size:9px;color:#c8c5c0;text-transform:uppercase;letter-spacing:1.5px;margin:10px 0 4px; }
     .res-row { display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:6px 0 2px; }
     .res-row button { font-family:'IBM Plex Mono',monospace;font-size:10px;padding:6px 2px;border:1px solid rgba(255,255,255,.1);background:transparent;color:rgba(232,230,227,.55);border-radius:3px;cursor:pointer;letter-spacing:1px;transition:.12s; }
     .res-row button:hover { border-color:rgba(255,255,255,.22);color:var(--ink); }
@@ -149,7 +185,7 @@
     .ctl { margin:9px 0; }
     .ctl .top { display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px; }
     .ctl .lbl { font-size:9px;color:rgba(232,230,227,.45);letter-spacing:2px;text-transform:uppercase; }
-    .ctl .val { font-size:11px;color:rgba(232,230,227,.6);font-variant-numeric:tabular-nums; }
+    .ctl .val { font-size:11px;color:#e8b86c;font-variant-numeric:tabular-nums; }
     .check { display:flex;align-items:center;gap:8px;margin:9px 0;cursor:pointer;user-select:none; }
     .check .box { width:14px;height:14px;border:1px solid var(--line);border-radius:3px;background:rgba(12,14,19,.6);flex:none;position:relative; }
     .check.on .box { background:var(--cyan);border-color:var(--cyan); }
@@ -190,7 +226,7 @@
         <span class="src-chip-chev">&#9662;</span>
       </div>
       <div class="src-dropdown hidden" id="srcDropdown">
-        <button class="on" data-sdsrc="field">FIELD</button>
+        <button data-sdsrc="field">FIELD</button>
         <button data-sdsrc="shards">SHARDS</button>
         <button data-sdsrc="mesh">MESH</button>
         <button data-sdsrc="tunnel">TUNNEL</button>
@@ -246,10 +282,10 @@
             <div class="rsec">
               <div class="rhead"><span>SOURCE</span></div>
               <div class="src-row" id="srcRow">
-                <button data-src="field" class="on">FIELD</button>
+                <button data-src="field">FIELD</button>
                 <button data-src="shards">SHARDS</button>
                 <button data-src="mesh">MESH</button>
-                <button data-src="tunnel">TUNNEL</button>
+                <button data-src="tunnel" class="on">TUNNEL</button>
               </div>
               <div class="src-extras">
                 <label for="fileIn">IMG</label>
@@ -292,6 +328,47 @@
           </div>
         </aside>
       </div>
+      <div id="srcHint">
+        <p class="hint-text">drop · tap cam · or let it breathe</p>
+        <div class="hint-dots">
+          <span class="dot dot-1"></span>
+          <span class="dot dot-2"></span>
+          <span class="dot dot-3"></span>
+        </div>
+      </div>
+      <div id="srcBar">
+        <div class="sb-bloc sb-live">
+          <span class="sb-label">LIVE</span>
+          <div class="sb-btns">
+            <button class="sb" data-sb="upload"><i class="ti ti-photo"></i>IMAGE</button>
+            <button class="sb" data-sb="video"><i class="ti ti-video"></i>VIDEO</button>
+            <button class="sb" data-sb="cam"><i class="ti ti-camera"></i>CAM</button>
+          </div>
+        </div>
+        <div class="sb-divider"></div>
+        <div class="sb-bloc sb-gen">
+          <span class="sb-label">GEN</span>
+          <div class="sb-btns">
+            <button class="sb" data-sb="field"><i class="ti ti-grain"></i>FIELD</button>
+            <button class="sb" data-sb="shards"><i class="ti ti-polygon"></i>SHARDS</button>
+            <button class="sb" data-sb="mesh"><i class="ti ti-vector-triangle"></i>MESH</button>
+            <button class="sb" data-sb="tunnel"><i class="ti ti-tunnel"></i>TUNNEL</button>
+          </div>
+        </div>
+        <div id="blendSel" class="hidden">
+          <div class="sb-divider"></div>
+          <div class="sb-bloc" style="background:transparent">
+            <span class="sb-label" style="color:#4a5060">BLEND</span>
+            <div class="sb-btns">
+              <button class="bm on" data-bm="source-over">Normal</button>
+              <button class="bm" data-bm="lighter">Add</button>
+              <button class="bm" data-bm="multiply">Multiply</button>
+              <button class="bm" data-bm="screen">Screen</button>
+              <button class="bm" data-bm="luminosity">Luma</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="hud"><span id="mode">static</span><span style="color:rgba(232,230,227,.2)">&#183;</span><span id="status">&#8212;</span></div>
     </div>
   </div>
@@ -323,7 +400,7 @@
               min: 2,
               max: 32,
               step: 1,
-              val: 8,
+              val: 24,
             },
             {
               id: 'noise',
@@ -331,7 +408,7 @@
               min: 0,
               max: 1,
               step: 0.01,
-              val: 0.35,
+              val: 0.08,
             },
             {
               id: 'lift',
@@ -339,7 +416,7 @@
               min: 0,
               max: 1,
               step: 0.01,
-              val: 0.12,
+              val: 0.04,
             },
           ],
         },
@@ -383,7 +460,7 @@
               min: 0,
               max: 0.5,
               step: 0.005,
-              val: 0.06,
+              val: 0.02,
             },
             {
               id: 'bandAmount',
@@ -391,7 +468,7 @@
               min: 0,
               max: 400,
               step: 1,
-              val: 150,
+              val: 40,
             },
             {
               id: 'bandHeight',
@@ -508,7 +585,8 @@
 
       const state = {
         seed: 1337,
-        sourceMode: 'field',
+        sourceMode: 'tunnel',
+        blendMode: 'source-over',
         uploadedImage: null,
         params: {},
         toggles: {},
@@ -519,7 +597,7 @@
       VIDEO.playsInline = true
       VIDEO.setAttribute('playsinline', '')
       GROUPS.forEach((g) => {
-        state.toggles[g.key] = true
+        state.toggles[g.key] = g.key === 'blacks' ? false : true
         g.ctrls.forEach((c) => {
           state.params[c.id] = c.val
         })
@@ -632,7 +710,9 @@
             dw = W
             dh = W / ar
           }
+          x.globalCompositeOperation = state.blendMode || 'source-over'
           x.drawImage(VIDEO, (W - dw) / 2, (H - dh) / 2, dw, dh)
+          x.globalCompositeOperation = 'source-over'
         } else if (state.sourceMode === 'upload' && state.uploadedImage) {
           const img = state.uploadedImage,
             ar = img.width / img.height,
@@ -645,7 +725,9 @@
             dw = W
             dh = W / ar
           }
+          x.globalCompositeOperation = state.blendMode || 'source-over'
           x.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh)
+          x.globalCompositeOperation = 'source-over'
         } else if (state.sourceMode === 'shards') {
           drawShards(x, W, H, rnd)
         } else if (state.sourceMode === 'mesh') {
@@ -779,39 +861,67 @@
             v[i] = 1 / d
             let b = d / half
             b = b > 1 ? 1 : b
-            bri[i] = b * (1.15 - b * 0.45) // anneau lumineux à mi-rayon
+            bri[i] = Math.pow(b, 0.5) * 1.5
           }
         tunnelLUT = { u, v, bri }
       }
       function buildTunnelTex(seed) {
-        const TW = 256,
-          TH = 256
+        const TW = 256, TH = 256
         const c = document.createElement('canvas')
-        c.width = TW
-        c.height = TH
+        c.width = TW; c.height = TH
         const x = c.getContext('2d')
         x.fillStyle = '#000'
         x.fillRect(0, 0, TW, TH)
         const rnd = rng(seed ^ 0x55aa)
         x.globalCompositeOperation = 'lighter'
-        for (let i = 0; i < 420; i++) {
-          const px = rnd() * TW,
-            py = rnd() * TH,
-            len = 4 + rnd() * 20,
-            a = rnd() * 6.283
-          const tint =
-            rnd() < 0.15
-              ? 'rgba(120,200,255,'
-              : rnd() < 0.1
-                ? 'rgba(255,90,120,'
-                : 'rgba(220,235,255,'
-          x.strokeStyle = tint + (0.05 + rnd() * 0.1) + ')'
-          x.lineWidth = 0.6 + rnd() * 1.2
+
+        // zones de lumière chaude (gradients larges)
+        const glows = [
+          { cx: rnd()*TW, cy: rnd()*TH, r: 80+rnd()*60, c0: 'rgba(195,78,160,0.4)',  c1: 'rgba(195,78,160,0)' },
+          { cx: rnd()*TW, cy: rnd()*TH, r: 60+rnd()*60, c0: 'rgba(232,184,108,0.35)', c1: 'rgba(232,184,108,0)' },
+          { cx: rnd()*TW, cy: rnd()*TH, r: 50+rnd()*50, c0: 'rgba(125,104,230,0.3)', c1: 'rgba(125,104,230,0)' },
+        ]
+        glows.forEach(function(g) {
+          const gr = x.createRadialGradient(g.cx, g.cy, 0, g.cx, g.cy, g.r)
+          gr.addColorStop(0, g.c0); gr.addColorStop(1, g.c1)
+          x.fillStyle = gr
+          x.fillRect(0, 0, TW, TH)
+        })
+
+        // lignes radiales épaisses — 3 couleurs DA
+        const PALETTE = [
+          { rgb:'195,78,160',  n: 28, lw: [2,4] },
+          { rgb:'232,184,108', n: 22, lw: [2,3.5] },
+          { rgb:'125,104,230', n: 18, lw: [1.5,3] },
+        ]
+        PALETTE.forEach(function(p) {
+          for (let i = 0; i < p.n; i++) {
+            const px = rnd()*TW, py = rnd()*TH
+            const len = 30 + rnd()*90, a = rnd()*6.283
+            const op = 0.8 + rnd()*0.2
+            x.strokeStyle = 'rgba('+p.rgb+','+op+')'
+            x.lineWidth = p.lw[0] + rnd()*(p.lw[1]-p.lw[0])
+            x.lineCap = 'round'
+            x.beginPath()
+            x.moveTo(px, py)
+            x.lineTo(px + Math.cos(a)*len, py + Math.sin(a)*len)
+            x.stroke()
+          }
+        })
+
+        // cercles concentriques cyan
+        const nCircles = 5 + Math.floor(rnd()*4)
+        for (let i = 0; i < nCircles; i++) {
+          const cx = TW*0.5 + (rnd()-0.5)*TW*0.4
+          const cy = TH*0.5 + (rnd()-0.5)*TH*0.4
+          const r = 20 + rnd()*90
+          x.strokeStyle = 'rgba(86,214,255,' + (0.5+rnd()*0.5) + ')'
+          x.lineWidth = 1.5
           x.beginPath()
-          x.moveTo(px, py)
-          x.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len)
+          x.arc(cx, cy, r, 0, 6.283)
           x.stroke()
         }
+
         x.globalCompositeOperation = 'source-over'
         tunnelTex = x.getImageData(0, 0, TW, TH)
         tunnelTexSeed = seed
@@ -1499,8 +1609,8 @@
             if (c.type === 'check') {
               state.params[c.id] = Math.random() < 0.4
             } else {
-              const lo = c.id === 'vigSize' ? 0.80 : c.min
-              const hi = c.id === 'vigSize' ? 1.0  : c.max
+              const CHAOS_RANGE = { vigSize: [0.80,1.0], posterize: [20,32], noise: [0.0,0.12], lift: [0.0,0.06] }
+              const [lo, hi] = CHAOS_RANGE[c.id] || [c.min, c.max]
               const v = lo + Math.random() * (hi - lo)
               state.params[c.id] =
                 c.step < 1 ? Math.round(v / c.step) * c.step : Math.round(v)
@@ -1580,6 +1690,7 @@
       ;(function () {
         var layers = { simple: 'layerSimple', public: 'layerPublic', vj: 'layerVJ' }
         function setMode(m) {
+          currentMode = m
           document.querySelectorAll('.seg').forEach(function(s){ s.classList.toggle('on', s.dataset.mode === m) })
           Object.keys(layers).forEach(function(k) {
             var el = document.getElementById(layers[k])
@@ -1588,6 +1699,7 @@
           })
           document.getElementById('srcChip').style.display = m === 'vj' ? 'none' : ''
           document.getElementById('srcDropdown').classList.add('hidden')
+          updateHint()
         }
         document.getElementById('modeBarNav').addEventListener('click', function(e) {
           var seg = e.target.closest('.seg')
@@ -1619,6 +1731,44 @@
         })
         var rackChaos = document.getElementById('rackChaos')
         if (rackChaos) rackChaos.addEventListener('click', function() { document.getElementById('chaos').click() })
+        /* source bar */
+        var MEDIA_SRC = ['upload', 'video', 'cam']
+        var currentMode = 'simple'
+        function updateHint() {
+          var live = MEDIA_SRC.indexOf(typeof state !== 'undefined' ? state.sourceMode : 'tunnel') !== -1
+          var hide = currentMode === 'vj' || live || state.sourceMode === 'tunnel'
+          document.getElementById('srcHint').classList.toggle('hidden', hide)
+        }
+        function refreshSrcBar(src) {
+          document.querySelectorAll('#srcBar .sb').forEach(function(b){ b.classList.toggle('on', b.dataset.sb === src) })
+          document.getElementById('blendSel').classList.toggle('hidden', MEDIA_SRC.indexOf(src) === -1)
+          updateHint()
+        }
+        document.getElementById('srcBar').addEventListener('click', function(e) {
+          var btn = e.target.closest('.sb')
+          if (!btn) return
+          var src = btn.dataset.sb
+          if (src === 'upload') { document.getElementById('fileIn').click() }
+          else if (src === 'video') { document.getElementById('vidIn').click() }
+          else if (src === 'cam') { document.getElementById('camBtn').click() }
+          else {
+            var real = document.querySelector('#srcRow [data-src="' + src + '"]')
+            if (real) real.click()
+            refreshSrcBar(src)
+          }
+        })
+        document.getElementById('fileIn').addEventListener('change', function(){ refreshSrcBar('upload') })
+        document.getElementById('vidIn').addEventListener('change', function(){ refreshSrcBar('video') })
+        document.getElementById('camBtn').addEventListener('click', function(){ refreshSrcBar('cam') })
+        document.getElementById('blendSel').addEventListener('click', function(e) {
+          var btn = e.target.closest('.bm')
+          if (!btn) return
+          state.blendMode = btn.dataset.bm
+          document.querySelectorAll('#blendSel .bm').forEach(function(b){ b.classList.toggle('on', b === btn) })
+          if (typeof scheduleRender === 'function') scheduleRender()
+        })
+        refreshSrcBar('tunnel')
+        if (!ANIM.playing) setPlaying(true)
         var MACRO_DEFS = {
           speed:  { get: function(){ return typeof ANIM!=='undefined' ? ANIM.speed/3 : 0.33 },
                     set: function(v){ if(typeof ANIM==='undefined') return; ANIM.speed=v*3; var r=document.getElementById('m_speed'),vv=document.getElementById('v_speed'); if(r)r.value=ANIM.speed; if(vv)vv.textContent=ANIM.speed.toFixed(1); if(typeof scheduleRender==='function')scheduleRender() } },
@@ -1641,6 +1791,16 @@
             if(num) num.textContent=(pct*100).toFixed(0).padStart(3,'0')
           }
           card.addEventListener('mousedown', function(e){ dragging=true; startX=e.clientX; startV=def.get() })
+          card.addEventListener('mousedown', function() {
+            var allCards = document.querySelectorAll('#layerPublic .macro[data-macro]')
+            allCards.forEach(function(c){ c.classList.toggle('active', c===card); c.classList.toggle('inactive', c!==card) })
+            if (['upload','video','cam'].indexOf(state.sourceMode) === -1) {
+              var tb = document.querySelector('#srcRow [data-src="tunnel"]')
+              if (tb) tb.click()
+              refreshSrcBar('tunnel')
+            }
+            if (!ANIM.playing) setPlaying(true)
+          })
           window.addEventListener('mousemove', function(e){ if(!dragging) return; update(startV+(e.clientX-startX)/200) })
           window.addEventListener('mouseup', function(){ dragging=false })
           card.addEventListener('touchstart', function(e){ dragging=true; startX=e.touches[0].clientX; startV=def.get() }, {passive:true})
