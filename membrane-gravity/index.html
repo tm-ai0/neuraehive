@@ -10,14 +10,158 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;cursor:none;tou
 canvas{position:fixed;top:0;left:0;width:100%;height:100%}
 #membrane{z-index:0}
 #particles{z-index:1}
+#pill{
+  position:fixed;bottom:32px;left:50%;transform:translateX(-50%);
+  z-index:10;height:44px;
+  background:rgba(0,0,0,0.35);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-radius:999px;
+  display:flex;align-items:center;gap:6px;
+  padding:8px 12px;
+  cursor:pointer;
+  transition:opacity 0.4s ease;
+  padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));
+  pointer-events:auto;
+}
+#pill.faded{opacity:0.2}
+.seg{
+  height:28px;border-radius:14px;
+  transition:width 0.4s ease,border 0.3s ease;
+  width:36px;flex-shrink:0;
+  border:1px solid transparent;
+  cursor:pointer;
+}
+.seg.active{width:52px;border:1px solid rgba(255,255,255,0.6)}
 </style>
 </head>
 <body>
 <canvas id="membrane"></canvas>
 <canvas id="particles"></canvas>
+<div id="pill"></div>
 <script>
 "use strict";
-const G=document.getElementById("membrane"),P=document.getElementById("particles"),gl=G.getContext("webgl",{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false}),ctx=P.getContext("2d");
+
+// --- Palette definitions ---
+const PALETTES={
+  ABYSS:{
+    name:"ABYSS",
+    grad:["#00e5ff","#0066ff","#39ff14"],
+    particleHues:[185,220,100],
+    wellCore:[0,0,0.92],
+    wellSat:0.15,wellLight:0.85,
+    membraneHueBase:0.52,membraneHueRange:0.12,
+    membraneSat:0.8,
+    wellGlowHueShift:0
+  },
+  AURORA:{
+    name:"AURORA",
+    grad:["#00ff87","#00e5ff","#ffffff"],
+    particleHues:[150,180,0],
+    wellCore:[290,0.9,0.6],
+    wellSat:0.85,wellLight:0.55,
+    membraneHueBase:0.4,membraneHueRange:0.15,
+    membraneSat:0.75,
+    wellGlowHueShift:0.4
+  },
+  MONO:{
+    name:"MONO",
+    grad:["#ffffff","#888888","#cccccc"],
+    particleHues:[0,0,0],
+    particleMono:true,
+    wellCore:[0,0.95,0.6],
+    wellSat:0.95,wellLight:0.55,
+    membraneHueBase:0,membraneHueRange:1,
+    membraneSat:0.05,
+    wellGlowHueShift:0
+  },
+  SYNTHWAVE:{
+    name:"SYNTHWAVE",
+    grad:["#ff00ff","#00ffff","#8b00ff"],
+    particleHues:[300,180,270],
+    wellCore:[300,0.95,0.65],
+    wellSat:0.9,wellLight:0.55,
+    membraneHueBase:0.78,membraneHueRange:0.18,
+    membraneSat:0.9,
+    wellGlowHueShift:0.15
+  }
+};
+const PALETTE_KEYS=["ABYSS","AURORA","MONO","SYNTHWAVE"];
+let currentPaletteIdx=0;
+let paletteMix=0;
+let prevPalette=null;
+let paletteTransitionStart=0;
+const PALETTE_TRANSITION_DUR=400;
+
+function getCurrentPalette(){return PALETTES[PALETTE_KEYS[currentPaletteIdx]];}
+function getPrevPalette(){return prevPalette||getCurrentPalette();}
+
+function switchPalette(idx){
+  if(idx===currentPaletteIdx)return;
+  prevPalette=getCurrentPalette();
+  paletteTransitionStart=performance.now();
+  paletteMix=0;
+  currentPaletteIdx=idx;
+  updatePillUI();
+}
+function cyclePalette(){switchPalette((currentPaletteIdx+1)%4);}
+
+function lerpVal(a,b,t){return a+(b-a)*t;}
+function lerpPaletteProp(prop,t){
+  const p=getCurrentPalette(),pp=getPrevPalette();
+  if(typeof p[prop]==="number")return lerpVal(pp[prop],p[prop],t);
+  return p[prop];
+}
+
+// --- Pill UI ---
+const pill=document.getElementById("pill");
+let pillFadeTimer=null;
+
+function buildPill(){
+  pill.innerHTML="";
+  for(let i=0;i<4;i++){
+    const seg=document.createElement("div");
+    seg.className="seg"+(i===currentPaletteIdx?" active":"");
+    const p=PALETTES[PALETTE_KEYS[i]];
+    seg.style.background=`linear-gradient(135deg,${p.grad[0]},${p.grad[1]},${p.grad[2]})`;
+    seg.dataset.idx=i;
+    seg.addEventListener("pointerdown",e=>{
+      e.stopPropagation();
+      switchPalette(parseInt(e.currentTarget.dataset.idx));
+      resetPillFade();
+    });
+    pill.appendChild(seg);
+  }
+}
+function updatePillUI(){
+  const segs=pill.querySelectorAll(".seg");
+  segs.forEach((s,i)=>{
+    s.className="seg"+(i===currentPaletteIdx?" active":"");
+  });
+}
+
+pill.addEventListener("pointerdown",e=>{
+  if(e.target===pill){cyclePalette();resetPillFade();}
+});
+
+function resetPillFade(){
+  pill.classList.remove("faded");
+  clearTimeout(pillFadeTimer);
+  pillFadeTimer=setTimeout(()=>pill.classList.add("faded"),3000);
+}
+pill.addEventListener("pointerenter",()=>{pill.classList.remove("faded");clearTimeout(pillFadeTimer);});
+pill.addEventListener("pointerleave",()=>{pillFadeTimer=setTimeout(()=>pill.classList.add("faded"),3000);});
+
+document.addEventListener("keydown",e=>{
+  if(e.key>="1"&&e.key<="4"){switchPalette(parseInt(e.key)-1);resetPillFade();}
+});
+
+buildPill();
+resetPillFade();
+
+// --- Canvas setup ---
+const G=document.getElementById("membrane"),P=document.getElementById("particles");
+const gl=G.getContext("webgl",{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false});
+const ctx=P.getContext("2d");
 
 let W,H,dpr,particleCount;
 const MAX_WELLS=8;
@@ -35,6 +179,7 @@ function resize(){
   initParticles();
 }
 
+// --- GLSL Membrane ---
 const vsrc=`attribute vec2 a;void main(){gl_Position=vec4(a,0,1);}`;
 const fsrc=`
 precision highp float;
@@ -42,6 +187,10 @@ uniform float t;
 uniform vec2 r;
 uniform vec4 w[8];
 uniform int wc;
+uniform float uHueBase;
+uniform float uHueRange;
+uniform float uMemSat;
+uniform vec3 uWellColors[8];
 
 vec3 hsl2rgb(float h,float s,float l){
   float c=(1.0-abs(2.0*l-1.0))*s;
@@ -84,9 +233,6 @@ float wave(vec2 p,float time){
 
 void main(){
   vec2 uv=gl_FragCoord.xy/r;
-  vec2 p=uv*2.0-1.0;
-  p.x*=r.x/r.y;
-
   float v=wave(uv,t);
 
   float eps=0.0015;
@@ -96,8 +242,8 @@ void main(){
   float angle=atan(dy,dx);
 
   float h=fract(v*0.8+angle*0.15+t*0.015);
-  h=h*0.25+0.3;
-  float s=0.7+slope*2.0;
+  h=h*uHueRange+uHueBase;
+  float s=uMemSat+slope*1.5;
   s=min(s,0.95);
   float l=slope*1.8+abs(v)*0.25;
   l=min(l,0.6);
@@ -105,9 +251,8 @@ void main(){
 
   float crest=smoothstep(0.3,1.5,slope);
   float crestHue=fract(h+0.15);
-  vec3 crestCol=hsl2rgb(crestHue,0.9,0.55);
+  vec3 crestCol=hsl2rgb(crestHue,min(uMemSat+0.2,0.95),0.55);
   col=mix(col,crestCol,crest*0.6);
-
   col*=1.4;
 
   for(int i=0;i<8;i++){
@@ -115,15 +260,15 @@ void main(){
     vec2 c=w[i].xy;
     float str=w[i].w;
     float d=length(uv-c);
-    float hue=fract(float(i)*137.5/360.0);
 
     float glow1=exp(-d*d*25.0)*str*0.7;
     float glow2=exp(-d*d*80.0)*str*0.5;
     float glow3=exp(-d*d*400.0)*str*0.8;
 
-    vec3 wellCore=hsl2rgb(hue,0.95,0.65);
-    vec3 wellMid=hsl2rgb(fract(hue+0.08),0.85,0.45);
-    vec3 wellOuter=hsl2rgb(fract(hue-0.05),0.7,0.25);
+    vec3 wc3=uWellColors[i];
+    vec3 wellCore=hsl2rgb(wc3.x,0.95,0.65);
+    vec3 wellMid=hsl2rgb(fract(wc3.x+0.08),wc3.y,0.45);
+    vec3 wellOuter=hsl2rgb(fract(wc3.x-0.05),wc3.y*0.8,0.25);
 
     col+=wellCore*glow3;
     col+=wellMid*glow2;
@@ -131,7 +276,7 @@ void main(){
 
     float ring=abs(d-0.06)*50.0;
     float ringGlow=exp(-ring*ring)*str*0.15;
-    col+=hsl2rgb(fract(hue+0.1),0.9,0.5)*ringGlow;
+    col+=hsl2rgb(fract(wc3.x+0.1),wc3.y,0.5)*ringGlow;
   }
 
   col=pow(col,vec3(0.85));
@@ -160,32 +305,45 @@ gl.vertexAttribPointer(aLoc,2,gl.FLOAT,false,0,0);
 const uT=gl.getUniformLocation(prog,"t");
 const uR=gl.getUniformLocation(prog,"r");
 const uW=[];const uWC=gl.getUniformLocation(prog,"wc");
+const uHueBase=gl.getUniformLocation(prog,"uHueBase");
+const uHueRange=gl.getUniformLocation(prog,"uHueRange");
+const uMemSat=gl.getUniformLocation(prog,"uMemSat");
+const uWellColors=[];
 for(let i=0;i<MAX_WELLS;i++){
   uW[i]=gl.getUniformLocation(prog,"w["+i+"]");
+  uWellColors[i]=gl.getUniformLocation(prog,"uWellColors["+i+"]");
 }
 
+// --- Wells ---
 let wells=[];
 let wellCounter=0;
 
 function addWell(nx,ny){
   if(wells.length>=MAX_WELLS) wells.shift();
+  const pal=getCurrentPalette();
+  let hue;
+  if(pal.wellGlowHueShift>0){
+    hue=(wellCounter*GOLDEN_ANGLE+pal.wellCore[0])%360;
+  }else{
+    hue=(wellCounter*GOLDEN_ANGLE)%360;
+  }
   wells.push({
     x:nx,y:ny,
     strength:0,targetStrength:1,
-    hue:(wellCounter*GOLDEN_ANGLE)%360,
+    hue:hue,
     age:performance.now()*0.001,
     id:wellCounter++
   });
 }
 
-let px,py,pvx,pvy,pc,pa,psize;
+// --- Particles ---
+let px,py,pvx,pvy,pc,pa;
 
 function initParticles(){
   const n=particleCount;
   px=new Float32Array(n);py=new Float32Array(n);
   pvx=new Float32Array(n);pvy=new Float32Array(n);
   pc=new Float32Array(n);pa=new Float32Array(n);
-  psize=new Float32Array(n);
   for(let i=0;i<n;i++){
     px[i]=Math.random()*W*dpr;
     py[i]=Math.random()*H*dpr;
@@ -193,23 +351,29 @@ function initParticles(){
     pvy[i]=(Math.random()-0.5)*0.5;
     pc[i]=Math.random()*360;
     pa[i]=0.4+Math.random()*0.6;
-    psize[i]=0.8+Math.random()*1.2;
   }
 }
 
+// --- Pointer ---
 let pointerX=-100,pointerY=-100,pointerActive=false;
 let accelX=0,accelY=0;
 
-function normalizeCoord(ex,ey){
-  return[ex/W,1.0-ey/H];
+function normalizeCoord(ex,ey){return[ex/W,1.0-ey/H];}
+
+function isPillHit(e){
+  const rect=pill.getBoundingClientRect();
+  return e.clientX>=rect.left&&e.clientX<=rect.right&&e.clientY>=rect.top&&e.clientY<=rect.bottom;
 }
 
 document.addEventListener("pointerdown",e=>{
   e.preventDefault();
   pointerActive=true;
   pointerX=e.clientX;pointerY=e.clientY;
-  const[nx,ny]=normalizeCoord(e.clientX,e.clientY);
-  addWell(nx,ny);
+  resetPillFade();
+  if(!isPillHit(e)){
+    const[nx,ny]=normalizeCoord(e.clientX,e.clientY);
+    addWell(nx,ny);
+  }
 },{passive:false});
 
 document.addEventListener("pointermove",e=>{
@@ -222,10 +386,13 @@ document.addEventListener("pointercancel",e=>{pointerActive=false;},{passive:fal
 
 document.addEventListener("touchstart",e=>{
   e.preventDefault();
+  resetPillFade();
   for(let i=0;i<e.changedTouches.length;i++){
     const touch=e.changedTouches[i];
-    const[nx,ny]=normalizeCoord(touch.clientX,touch.clientY);
-    addWell(nx,ny);
+    if(!isPillHit(touch)){
+      const[nx,ny]=normalizeCoord(touch.clientX,touch.clientY);
+      addWell(nx,ny);
+    }
   }
 },{passive:false});
 
@@ -251,6 +418,37 @@ function hslToRgb(h,s,l){
   return[f(0)*255|0,f(8)*255|0,f(4)*255|0];
 }
 
+function getParticleColor(hue,pal,proxGlow){
+  if(pal.particleMono){
+    const l=60+proxGlow*30;
+    return{h:0,s:5,l:l};
+  }
+  const hues=pal.particleHues;
+  const idx=((hue%360+360)%360/360*hues.length)|0;
+  const targetHue=hues[idx%hues.length];
+  return{h:targetHue,s:75+proxGlow*20,l:55+proxGlow*20};
+}
+
+function getWellCanvasColor(well,pal){
+  if(pal.particleMono){
+    return{coreH:well.hue,coreS:0.95,coreL:0.6,outerH:well.hue,outerS:0.7,outerL:0.3};
+  }
+  const wc=pal.wellCore;
+  const h=(well.hue+wc[0])%360;
+  return{coreH:h,coreS:pal.wellSat,coreL:pal.wellLight,outerH:h,outerS:pal.wellSat*0.7,outerL:pal.wellLight*0.5};
+}
+
+function getWellGlslHue(well,pal){
+  if(pal.particleMono){
+    return{h:well.hue/360,s:0.95};
+  }
+  const shift=pal.wellGlowHueShift;
+  return{h:fract((well.hue/360)+shift),s:pal.wellSat};
+}
+
+function fract(x){return x-Math.floor(x);}
+
+// --- Animation ---
 let lastTime=0;
 
 function frame(now){
@@ -259,25 +457,41 @@ function frame(now){
   lastTime=now;
   const time=now*0.001;
 
+  const transT=Math.min((now-paletteTransitionStart)/PALETTE_TRANSITION_DUR,1);
+  const easeT=transT<1?transT*transT*(3-2*transT):1;
+  const pal=getCurrentPalette();
+  const ppal=getPrevPalette();
+
+  const memHueBase=lerpVal(ppal.membraneHueBase,pal.membraneHueBase,easeT);
+  const memHueRange=lerpVal(ppal.membraneHueRange,pal.membraneHueRange,easeT);
+  const memSat=lerpVal(ppal.membraneSat,pal.membraneSat,easeT);
+
   for(let i=0;i<wells.length;i++){
-    const w=wells[i];
-    w.strength+=(w.targetStrength-w.strength)*dt*3;
+    wells[i].strength+=(wells[i].targetStrength-wells[i].strength)*dt*3;
   }
 
+  // --- Render membrane ---
   gl.uniform1f(uT,time);
   gl.uniform2f(uR,G.width,G.height);
   gl.uniform1i(uWC,wells.length);
+  gl.uniform1f(uHueBase,memHueBase);
+  gl.uniform1f(uHueRange,memHueRange);
+  gl.uniform1f(uMemSat,memSat);
+
   for(let i=0;i<MAX_WELLS;i++){
     if(i<wells.length){
       const w=wells[i];
       gl.uniform4f(uW[i],w.x,w.y,w.age,w.strength);
+      const wg=getWellGlslHue(w,pal);
+      gl.uniform3f(uWellColors[i],wg.h,wg.s,0);
     }else{
       gl.uniform4f(uW[i],0,0,0,0);
+      gl.uniform3f(uWellColors[i],0,0,0);
     }
   }
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 
-  // Particle trails: very slow fade for long trails
+  // --- Render particles ---
   ctx.globalCompositeOperation="source-over";
   ctx.fillStyle="rgba(0,0,0,0.025)";
   ctx.fillRect(0,0,P.width,P.height);
@@ -286,17 +500,18 @@ function frame(now){
   const n=Math.min(particleCount,px.length);
   const ww=W*dpr,hh=H*dpr;
 
-  // Draw well halos on canvas layer too for extra bloom
+  // Well halos on canvas
   for(let j=0;j<wells.length;j++){
     const w=wells[j];
     const wx=w.x*ww,wy=(1-w.y)*hh;
-    const [cr,cg,cb]=hslToRgb(w.hue,0.9,0.55);
-    const [or,og,ob]=hslToRgb(w.hue,0.7,0.3);
+    const wc=getWellCanvasColor(w,pal);
+    const [cr,cg,cb]=hslToRgb(wc.coreH,wc.coreS,wc.coreL);
+    const [or2,og,ob]=hslToRgb(wc.outerH,wc.outerS,wc.outerL);
     const radius=Math.min(ww,hh)*0.18;
     const grad=ctx.createRadialGradient(wx,wy,0,wx,wy,radius);
     grad.addColorStop(0,`rgba(${cr},${cg},${cb},${0.35*w.strength})`);
     grad.addColorStop(0.15,`rgba(${cr},${cg},${cb},${0.2*w.strength})`);
-    grad.addColorStop(0.4,`rgba(${or},${og},${ob},${0.08*w.strength})`);
+    grad.addColorStop(0.4,`rgba(${or2},${og},${ob},${0.08*w.strength})`);
     grad.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=grad;
     ctx.beginPath();
@@ -304,6 +519,7 @@ function frame(now){
     ctx.fill();
   }
 
+  // Particles
   for(let i=0;i<n;i++){
     let ax=accelX,ay=accelY;
 
@@ -356,11 +572,11 @@ function frame(now){
     const baseAlpha=0.08+proxGlow*0.25;
     const speedAlpha=Math.min(speed*0.08,0.4);
     const alpha=Math.min(pa[i]*(baseAlpha+speedAlpha),0.7);
-    const lightness=50+proxGlow*20;
-    const sat=75+proxGlow*20;
-    ctx.fillStyle=`hsla(${pc[i]|0},${sat|0}%,${lightness|0}%,${alpha.toFixed(3)})`;
-    const sz=psize[i]*dpr;
-    ctx.fillRect(px[i]-sz*0.5,py[i]-sz*0.5,sz,sz);
+
+    const col=getParticleColor(pc[i],pal,proxGlow);
+    ctx.fillStyle=`hsla(${col.h|0},${col.s|0}%,${col.l|0}%,${alpha.toFixed(3)})`;
+    const sz=dpr;
+    ctx.fillRect(px[i],py[i],sz,sz);
   }
 
   // Cursor glow
