@@ -93,6 +93,12 @@
     /* source hint */
     #srcHint { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;text-align:center;transition:opacity .6s; }
     #srcHint.hidden { opacity:0; }
+    /* XY pad */
+    #xyReticle { position:absolute;pointer-events:none;display:none;transform:translate(-50%,-50%); }
+    #xyReticle::before { content:'';position:absolute;width:1px;height:20px;background:rgba(195,78,160,.6);top:-10px;left:0; }
+    #xyReticle::after  { content:'';position:absolute;height:1px;width:20px;background:rgba(195,78,160,.6);left:-10px;top:0; }
+    .xy-dot { position:absolute;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;transition:none; }
+    #trailCanvas { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;mix-blend-mode:screen; }
     .hint-text { font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:2px;color:rgba(195,78,160,.5);margin:0 0 18px; }
     .hint-dots { display:flex;gap:14px;justify-content:center; }
     .dot { width:8px;height:8px;border-radius:50%; }
@@ -211,6 +217,7 @@
       <div class="grain"></div><div class="vig"></div><div class="scrimT"></div><div class="scrimB"></div>
     </div>
     <canvas id="cv"></canvas>
+    <canvas id="trailCanvas"></canvas>
     <input type="file" id="fileIn" accept="image/*" />
     <input type="file" id="vidIn" accept="video/*" />
     <div class="ui-over">
@@ -328,6 +335,7 @@
           </div>
         </aside>
       </div>
+      <div id="xyReticle"></div>
       <div id="srcHint">
         <p class="hint-text">drop · tap cam · or let it breathe</p>
         <div class="hint-dots">
@@ -1665,6 +1673,143 @@
       )
       window.addEventListener('touchend', warpOff)
 
+      /* XY pad */
+      ;(function () {
+        var reticle = document.getElementById('xyReticle')
+        var xyActive = false
+        var abTarget = state.params.abMag, abCurrent = state.params.abMag
+        var lerpTimer = null
+        var prevClientX = null, prevClientY = null
+        var savedBand = null, bandTimer = null
+
+        // trail canvas
+        var tCv = document.getElementById('trailCanvas')
+        var tCtx = tCv.getContext('2d')
+        var trailRafId = null, trailFadeTimer = null
+        var trailPx = null, trailPy = null, trailSpd = 0
+
+        function resizeTrail() {
+          tCv.width  = tCv.offsetWidth
+          tCv.height = tCv.offsetHeight
+        }
+        resizeTrail()
+        window.addEventListener('resize', resizeTrail)
+
+        function trailFrame() {
+          tCtx.fillStyle = 'rgba(0,0,0,0.08)'
+          tCtx.fillRect(0, 0, tCv.width, tCv.height)
+          if (trailPx !== null) {
+            var t = Math.min(1, trailSpd / 18)
+            var r = Math.round(195 + (232 - 195) * t)
+            var g = Math.round(78  + (184 - 78)  * t)
+            var b = Math.round(160 + (108 - 160) * t)
+            var col = 'rgb(' + r + ',' + g + ',' + b + ')'
+            tCtx.shadowBlur = 20
+            tCtx.shadowColor = col
+            tCtx.beginPath()
+            tCtx.arc(trailPx, trailPy, 12, 0, 6.283)
+            tCtx.fillStyle = col
+            tCtx.fill()
+            tCtx.shadowBlur = 0
+          }
+          trailRafId = requestAnimationFrame(trailFrame)
+        }
+        function startTrailLoop() {
+          clearTimeout(trailFadeTimer)
+          if (!trailRafId) trailRafId = requestAnimationFrame(trailFrame)
+        }
+        function scheduleTrailStop() {
+          clearTimeout(trailFadeTimer)
+          trailFadeTimer = setTimeout(function () {
+            if (trailRafId) { cancelAnimationFrame(trailRafId); trailRafId = null }
+            tCtx.clearRect(0, 0, tCv.width, tCv.height)
+          }, 1200)
+        }
+
+        function startLerp() {
+          if (lerpTimer) return
+          lerpTimer = setInterval(function () {
+            var delta = abTarget - abCurrent
+            if (Math.abs(delta) < 0.05) {
+              abCurrent = abTarget
+              clearInterval(lerpTimer); lerpTimer = null
+            } else {
+              abCurrent += delta * 0.18
+            }
+            state.params.abMag = abCurrent
+            var r = document.getElementById('r_abMag'), v = document.getElementById('v_abMag')
+            if (r) r.value = abCurrent
+            if (v) v.textContent = abCurrent.toFixed(1)
+            scheduleRender()
+          }, 16)
+        }
+
+        function xyUpdate(clientX, clientY) {
+          var rect = cv.getBoundingClientRect()
+          var nx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+          var ny = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+          abTarget = nx * 25
+          var velX = prevClientX !== null ? clientX - prevClientX : 0
+          var velY = prevClientY !== null ? clientY - prevClientY : 0
+          prevClientX = clientX; prevClientY = clientY
+          trailSpd = Math.sqrt(velX * velX + velY * velY)
+          trailPx = clientX - rect.left
+          trailPy = clientY - rect.top
+          startTrailLoop()
+          startLerp()
+          ANIM.speed = 3.0 - ny * 2.8
+          var rSpd = document.getElementById('m_speed'), vSpd = document.getElementById('v_speed')
+          if (rSpd) rSpd.value = ANIM.speed.toFixed(2)
+          if (vSpd) vSpd.textContent = ANIM.speed.toFixed(1)
+          reticle.style.left = (nx * 100) + '%'
+          reticle.style.top  = (ny * 100) + '%'
+        }
+
+        function xyEnter(clientX, clientY) {
+          xyActive = true
+          reticle.style.display = 'block'
+          savedBand = state.params.bandAmount
+          state.params.bandAmount = 60
+          var rB = document.getElementById('r_bandAmount'), vB = document.getElementById('v_bandAmount')
+          if (rB) rB.value = 60; if (vB) vB.textContent = '60'
+          scheduleRender()
+          clearTimeout(bandTimer)
+          bandTimer = setTimeout(function () {
+            if (savedBand !== null) {
+              state.params.bandAmount = savedBand; savedBand = null
+              var r = document.getElementById('r_bandAmount'), v = document.getElementById('v_bandAmount')
+              if (r) r.value = state.params.bandAmount
+              if (v) v.textContent = Math.round(state.params.bandAmount)
+              scheduleRender()
+            }
+          }, 100)
+          xyUpdate(clientX, clientY)
+        }
+
+        function xyLeave() {
+          xyActive = false
+          reticle.style.display = 'none'
+          prevClientX = null; prevClientY = null
+          trailPx = null
+          scheduleTrailStop()
+        }
+
+        cv.addEventListener('mouseenter', function (e) { xyEnter(e.clientX, e.clientY) })
+        cv.addEventListener('mouseleave', xyLeave)
+        cv.addEventListener('mousemove', function (e) {
+          if (!xyActive) return
+          xyUpdate(e.clientX, e.clientY)
+        })
+        cv.addEventListener('touchstart', function (e) {
+          xyEnter(e.touches[0].clientX, e.touches[0].clientY)
+        }, { passive: true })
+        cv.addEventListener('touchmove', function (e) {
+          if (!xyActive || !e.touches.length) return
+          xyUpdate(e.touches[0].clientX, e.touches[0].clientY)
+        }, { passive: true })
+        cv.addEventListener('touchend', xyLeave)
+      })()
+
       /* export */
       document.getElementById('expBMP').addEventListener('click', exportBMP)
       document.getElementById('expPNG').addEventListener('click', exportPNG)
@@ -1800,6 +1945,9 @@
               refreshSrcBar('tunnel')
             }
             if (!ANIM.playing) setPlaying(true)
+            state.seed = Math.floor(Math.random() * 99999)
+            var si = document.getElementById('seedIn'); if (si) si.value = state.seed
+            scheduleRender()
           })
           window.addEventListener('mousemove', function(e){ if(!dragging) return; update(startV+(e.clientX-startX)/200) })
           window.addEventListener('mouseup', function(){ dragging=false })
