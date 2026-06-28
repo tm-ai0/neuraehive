@@ -42,15 +42,16 @@ Le fil **idios / Prince Myshkine** (l'intraduisible, la rencontre de deux esprit
 _Mis à jour le 2026-06-28_
 
 **Derniers changements :**
-- XY pad entièrement refondu : hold+drag uniquement (plus de hover), trail fluid néon (lignes continues, blur 6px, lw=2–28), barre verticale contextuelle (3 px → 5 px, fill couleur par mode, labels expressifs Y/X).
-- Effets par mode au drag : SOUFFLE (X→echoFalloff, Y→abMag), FRACTURE (X→bandFreq, Y→bandAmount), SPECTRE (X→abAngle, Y→abMag), PROFONDEUR (X→tunnelRot, Y→tunnelSpeed).
-- Barre source : blend mode toujours visible (plus conditionnel). Clic GEN stoppe proprement la webcam + vide uploadedImage.
-- Feedback loop GEN : blend mode (Add/Screen/Overlay…) accumule les frames sur ctx via blitOffscreen + drawImage — rémanence psychédélique.
-- Blend "Multiply" remplacé par "Overlay".
+- **Fichier renommé** : `glitch-playground.html` → `animae.html` (base de travail). Ancienne archive `animae.html` → `animae-v0.html`.
+- FIELD densifié : filaments ×3, opacité 0.08–0.25, +4 gradients radiaux colorés (cyan/rose/violet/ambre, opacité 0.15).
+- Chaos/surprise : change aléatoirement la source GEN (field/shards/mesh/tunnel) — préserve la source live si active.
+- Blend mode : stack final Normal/Screen/Add/Difference (Overlay supprimé — inefficace sur fond sombre).
+- Trail fade accéléré (0.02→0.08). Feedback loop GEN via blitOffscreen + drawImage (en debug — cv.width log ajouté).
+- Signature "by Thomas Maury" + icône ko-fi intégrées dans le wordmark header.
 
-**Étape Roadmap :** #3–4 (UX modes + tunnel psyché) — **en cours**. Étapes #1–2 (renommage DA + webcam/vidéo) déjà livrées dans les sessions précédentes.
+**Étape Roadmap :** #3–4 (UX modes + interactions) — **en cours**. Feedback loop blend mode à valider visuellement.
 
-**Prochaine action :** valider le feedback loop visuellement (Add/Screen sur TUNNEL), puis continuer vers les macros ou l'audio-réactif selon priorité Thomas.
+**Prochaine action :** confirmer le feedback loop (Difference/Screen sur TUNNEL), puis audio-réactif ou prochaine macro selon priorité Thomas.
 
 ## À NE PAS faire (rappel)
 reconstruire · sur-produire · deviner la DA · refaire Synaptic Mirror · sprinter sans validation · sur-promettre.
@@ -63,8 +64,8 @@ reconstruire · sur-produire · deviner la DA · refaire Synaptic Mirror · spri
 5. (Plus tard, gros pas **annoncé**) amener **three.js** dans le fichier pour le vrai 3D, puis Vite/WebGPU chez Thomas.
 
 ## Fichiers du dossier
-- `glitch-playground.html` — **LA base** de travail.
-- `animae.html` — proto 3D shader r128 (ancien essai, archive).
+- `animae.html` — **LA base** de travail (ex `glitch-playground.html`).
+- `animae-v0.html` — proto 3D shader r128 (ancien essai, archive).
 - `glitch-playground (2).html` — variante (archive).
 - `glitch_bmp.py` — CLI splash HackBGRT (projet splash, séparé, en pause).
 - `splash.bmp`, `corruption.webm`, `apercu_defauts.png` — sorties / captures.
