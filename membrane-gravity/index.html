@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,height=device-height,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Membrane Gravity</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;cursor:none;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+canvas{position:fixed;top:0;left:0;width:100%;height:100%}
+#membrane{z-index:0}
+#particles{z-index:1}
+</style>
+</head>
+<body>
+<canvas id="membrane"></canvas>
+<canvas id="particles"></canvas>
+<script>
+"use strict";
+const G=document.getElementById("membrane"),P=document.getElementById("particles"),gl=G.getContext("webgl",{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false}),ctx=P.getContext("2d");
+
+let W,H,dpr,particleCount;
+const MAX_WELLS=8;
+const GOLDEN_ANGLE=137.5;
+
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  G.width=W*dpr;G.height=H*dpr;
+  P.width=W*dpr;P.height=H*dpr;
+  G.style.width=W+"px";G.style.height=H+"px";
+  P.style.width=W+"px";P.style.height=H+"px";
+  gl.viewport(0,0,G.width,G.height);
+  particleCount=W<500?6000:12000;
+  initParticles();
+}
+
+// --- GLSL Membrane ---
+const vsrc=`attribute vec2 a;void main(){gl_Position=vec4(a,0,1);}`;
+const fsrc=`
+precision highp float;
+uniform float t;
+uniform vec2 r;
+uniform vec4 w[8];
+uniform int wc;
+
+float wave(vec2 p,float time){
+  float v=0.0;
+  for(int i=0;i<8;i++){
+    if(i>=wc)break;
+    vec2 c=w[i].xy;
+    float age=w[i].z;
+    float str=w[i].w;
+    float d=length(p-c);
+    float radius=0.15;
+    float falloff=exp(-d*d/(radius*radius*2.0));
+    float ripple=sin(d*30.0-time*2.0+age*3.0)*exp(-d*5.0)*str;
+    float displacement=falloff*str*0.6;
+    v+=ripple+displacement;
+    v+=sin(d*15.0-time*1.5+age)*exp(-d*8.0)*str*0.3;
+  }
+  v+=sin(p.x*4.0+t*0.3)*sin(p.y*3.0+t*0.4)*0.02;
+  v+=sin(p.x*7.0-t*0.2)*sin(p.y*5.0+t*0.15)*0.015;
+  return v;
+}
+
+vec3 iridescence(float v,float angle){
+  float h=fract(v*0.5+angle*0.1+t*0.02)*0.2+0.3;
+  float s=0.4+abs(v)*0.5;
+  float l=abs(v)*0.35;
+  s=min(s,0.6);
+  float c=(1.0-abs(2.0*l-1.0))*s;
+  float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
+  float m=l-c*0.5;
+  vec3 rgb;
+  float hh=h*6.0;
+  if(hh<1.0)rgb=vec3(c,x,0);
+  else if(hh<2.0)rgb=vec3(x,c,0);
+  else if(hh<3.0)rgb=vec3(0,c,x);
+  else if(hh<4.0)rgb=vec3(0,x,c);
+  else if(hh<5.0)rgb=vec3(x,0,c);
+  else rgb=vec3(c,0,x);
+  return rgb+m;
+}
+
+void main(){
+  vec2 uv=gl_FragCoord.xy/r;
+  vec2 p=uv*2.0-1.0;
+  p.x*=r.x/r.y;
+
+  float v=wave(uv,t);
+
+  float dx=wave(uv+vec2(0.002,0),t)-wave(uv-vec2(0.002,0),t);
+  float dy=wave(uv+vec2(0,0.002),t)-wave(uv-vec2(0,0.002),t);
+  float slope=length(vec2(dx,dy));
+  float angle=atan(dy,dx);
+
+  vec3 col=iridescence(v,angle)*slope*2.5;
+
+  for(int i=0;i<8;i++){
+    if(i>=wc)break;
+    vec2 c=w[i].xy;
+    float str=w[i].w;
+    float d=length(uv-c);
+    float hue=fract(float(i)*137.5/360.0);
+    float s=0.5;float l=0.15*str;
+    float cc=(1.0-abs(2.0*l-1.0))*s;
+    float xx=cc*(1.0-abs(mod(hue*6.0,2.0)-1.0));
+    float mm=l-cc*0.5;
+    vec3 hrgb;
+    float hhh=hue*6.0;
+    if(hhh<1.0)hrgb=vec3(cc,xx,0);
+    else if(hhh<2.0)hrgb=vec3(xx,cc,0);
+    else if(hhh<3.0)hrgb=vec3(0,cc,xx);
+    else if(hhh<4.0)hrgb=vec3(0,xx,cc);
+    else if(hhh<5.0)hrgb=vec3(xx,0,cc);
+    else hrgb=vec3(cc,0,xx);
+    hrgb+=mm;
+    float glow=exp(-d*d*80.0)*str*0.4;
+    col+=hrgb*glow;
+  }
+
+  col=pow(col,vec3(0.9));
+  gl_FragColor=vec4(col,1);
+}
+`;
+
+function createShader(src,type){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  return s;
+}
+const prog=gl.createProgram();
+gl.attachShader(prog,createShader(vsrc,gl.VERTEX_SHADER));
+gl.attachShader(prog,createShader(fsrc,gl.FRAGMENT_SHADER));
+gl.linkProgram(prog);gl.useProgram(prog);
+
+const buf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const aLoc=gl.getAttribLocation(prog,"a");
+gl.enableVertexAttribArray(aLoc);
+gl.vertexAttribPointer(aLoc,2,gl.FLOAT,false,0,0);
+
+const uT=gl.getUniformLocation(prog,"t");
+const uR=gl.getUniformLocation(prog,"r");
+const uW=[];const uWC=gl.getUniformLocation(prog,"wc");
+for(let i=0;i<MAX_WELLS;i++){
+  uW[i]=gl.getUniformLocation(prog,"w["+i+"]");
+}
+
+// --- Wells ---
+let wells=[];
+let wellCounter=0;
+
+function addWell(nx,ny){
+  if(wells.length>=MAX_WELLS){
+    wells.shift();
+  }
+  wells.push({
+    x:nx,y:ny,
+    strength:0,targetStrength:1,
+    hue:(wellCounter*GOLDEN_ANGLE)%360,
+    age:performance.now()*0.001,
+    id:wellCounter++
+  });
+}
+
+// --- Particles ---
+let px,py,pvx,pvy,pc,pa;
+
+function initParticles(){
+  const n=particleCount;
+  px=new Float32Array(n);py=new Float32Array(n);
+  pvx=new Float32Array(n);pvy=new Float32Array(n);
+  pc=new Float32Array(n);pa=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    px[i]=Math.random()*W*dpr;
+    py[i]=Math.random()*H*dpr;
+    pvx[i]=(Math.random()-0.5)*0.5;
+    pvy[i]=(Math.random()-0.5)*0.5;
+    pc[i]=Math.random()*360;
+    pa[i]=0.3+Math.random()*0.7;
+  }
+}
+
+// --- Pointer ---
+let pointerX=-100,pointerY=-100,pointerActive=false;
+let accelX=0,accelY=0;
+
+function normalizeCoord(ex,ey){
+  return[ex/W,1.0-ey/H];
+}
+
+document.addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  pointerActive=true;
+  pointerX=e.clientX;pointerY=e.clientY;
+  const[nx,ny]=normalizeCoord(e.clientX,e.clientY);
+  addWell(nx,ny);
+},{passive:false});
+
+document.addEventListener("pointermove",e=>{
+  e.preventDefault();
+  pointerX=e.clientX;pointerY=e.clientY;
+},{passive:false});
+
+document.addEventListener("pointerup",e=>{
+  pointerActive=false;
+},{passive:false});
+
+document.addEventListener("pointercancel",e=>{
+  pointerActive=false;
+},{passive:false});
+
+// Multi-touch
+document.addEventListener("touchstart",e=>{
+  e.preventDefault();
+  for(let i=0;i<e.changedTouches.length;i++){
+    const touch=e.changedTouches[i];
+    const[nx,ny]=normalizeCoord(touch.clientX,touch.clientY);
+    addWell(nx,ny);
+  }
+},{passive:false});
+
+// Accelerometer
+if(window.DeviceMotionEvent){
+  window.addEventListener("devicemotion",e=>{
+    const a=e.accelerationIncludingGravity;
+    if(a){
+      accelX=Math.max(-0.5,Math.min(0.5,(a.x||0)*0.05));
+      accelY=Math.max(-0.5,Math.min(0.5,(a.y||0)*0.05));
+    }
+  });
+  if(typeof DeviceMotionEvent.requestPermission==="function"){
+    document.addEventListener("click",()=>{
+      DeviceMotionEvent.requestPermission().catch(()=>{});
+    },{once:true});
+  }
+}
+
+// --- Animation ---
+let lastTime=0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min((now-lastTime)*0.001,0.05);
+  lastTime=now;
+  const time=now*0.001;
+
+  // Update well strengths
+  for(let i=0;i<wells.length;i++){
+    const w=wells[i];
+    w.strength+=(w.targetStrength-w.strength)*dt*3;
+  }
+
+  // --- Render membrane ---
+  gl.uniform1f(uT,time);
+  gl.uniform2f(uR,G.width,G.height);
+  gl.uniform1i(uWC,wells.length);
+  for(let i=0;i<MAX_WELLS;i++){
+    if(i<wells.length){
+      const w=wells[i];
+      gl.uniform4f(uW[i],w.x,w.y,w.age,w.strength);
+    }else{
+      gl.uniform4f(uW[i],0,0,0,0);
+    }
+  }
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+
+  // --- Render particles ---
+  ctx.globalCompositeOperation="source-over";
+  ctx.fillStyle="rgba(0,0,0,0.03)";
+  ctx.fillRect(0,0,P.width,P.height);
+  ctx.globalCompositeOperation="screen";
+
+  const n=Math.min(particleCount,px.length);
+  const ww=W*dpr,hh=H*dpr;
+
+  for(let i=0;i<n;i++){
+    let ax=accelX,ay=accelY;
+
+    // Gravity from wells
+    for(let j=0;j<wells.length;j++){
+      const w=wells[j];
+      const wx=w.x*ww,wy=(1-w.y)*hh;
+      const ddx=wx-px[i],ddy=wy-py[i];
+      const dist=Math.sqrt(ddx*ddx+ddy*ddy)+10;
+      const force=w.strength*800/(dist*dist)*dpr;
+      const maxForce=2*dpr;
+      const f=Math.min(force,maxForce);
+      ax+=ddx/dist*f;
+      ay+=ddy/dist*f;
+
+      // Tangential (orbital) component
+      const tang=f*0.6;
+      ax+=-ddy/dist*tang;
+      ay+=ddx/dist*tang;
+    }
+
+    // Brownian
+    ax+=(Math.random()-0.5)*1.2;
+    ay+=(Math.random()-0.5)*1.2;
+
+    pvx[i]=(pvx[i]+ax*dt)*0.98;
+    pvy[i]=(pvy[i]+ay*dt)*0.98;
+
+    const speed=Math.sqrt(pvx[i]*pvx[i]+pvy[i]*pvy[i]);
+    const maxSpeed=(0.3+Math.random()*0.5)*dpr*60;
+    if(speed>maxSpeed){
+      pvx[i]*=maxSpeed/speed;
+      pvy[i]*=maxSpeed/speed;
+    }
+
+    px[i]+=pvx[i];
+    py[i]+=pvy[i];
+
+    // Wrap
+    if(px[i]<0)px[i]+=ww;
+    if(px[i]>ww)px[i]-=ww;
+    if(py[i]<0)py[i]+=hh;
+    if(py[i]>hh)py[i]-=hh;
+
+    // Color based on nearest well
+    let nearestDist=Infinity,nearestHue=pc[i];
+    for(let j=0;j<wells.length;j++){
+      const w=wells[j];
+      const wx=w.x*ww,wy=(1-w.y)*hh;
+      const dd=Math.abs(wx-px[i])+Math.abs(wy-py[i]);
+      if(dd<nearestDist){nearestDist=dd;nearestHue=w.hue;}
+    }
+    pc[i]+=(nearestHue-pc[i])*dt*0.5;
+
+    const alpha=pa[i]*Math.min(speed*0.1,1)*0.15+0.02;
+    ctx.fillStyle=`hsla(${pc[i]|0},60%,65%,${alpha.toFixed(3)})`;
+    ctx.fillRect(px[i],py[i],dpr,dpr);
+  }
+
+  // Cursor glow
+  if(pointerX>0&&pointerY>0){
+    const cx=pointerX*dpr,cy=pointerY*dpr;
+    const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,6*dpr);
+    grad.addColorStop(0,"rgba(255,255,255,0.9)");
+    grad.addColorStop(0.3,"rgba(255,255,255,0.3)");
+    grad.addColorStop(1,"rgba(255,255,255,0)");
+    ctx.globalCompositeOperation="screen";
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.arc(cx,cy,6*dpr,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+window.addEventListener("resize",resize);
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
