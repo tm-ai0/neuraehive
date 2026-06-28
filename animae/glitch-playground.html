@@ -1627,6 +1627,7 @@
         })
         syncUI()
         scheduleRender()
+        var _mk = ['speed','band','chroma','depth']; window.currentMacro = _mk[Math.floor(Math.random()*4)]
       })
       document.getElementById('resetBtn').addEventListener('click', () => {
         GROUPS.forEach((g) => {
@@ -1681,12 +1682,13 @@
         var lerpTimer = null
         var prevClientX = null, prevClientY = null
         var savedBand = null, bandTimer = null
+        var souffleAmp = 0, souffleFreq = 1.0
 
         // trail canvas
         var tCv = document.getElementById('trailCanvas')
         var tCtx = tCv.getContext('2d')
         var trailRafId = null, trailFadeTimer = null
-        var trailPx = null, trailPy = null, trailSpd = 0
+        var trailPrevPx = null, trailPrevPy = null, trailSpd = 0
 
         function resizeTrail() {
           tCv.width  = tCv.offsetWidth
@@ -1695,23 +1697,34 @@
         resizeTrail()
         window.addEventListener('resize', resizeTrail)
 
+        function drawStroke(x, y, spd) {
+          if (trailPrevPx === null) { trailPrevPx = x; trailPrevPy = y; return }
+          var t = Math.min(1, spd / 18)
+          var r = Math.round(195 + (232 - 195) * t)
+          var g = Math.round(78  + (184 - 78)  * t)
+          var b = Math.round(160 + (108 - 160) * t)
+          var col = 'rgb(' + r + ',' + g + ',' + b + ')'
+          var lw = 2 + t * 16
+          tCtx.globalCompositeOperation = 'lighter'
+          tCtx.strokeStyle = col
+          tCtx.lineWidth = lw
+          tCtx.lineCap = 'round'
+          tCtx.lineJoin = 'round'
+          tCtx.shadowBlur = lw * 2
+          tCtx.shadowColor = col
+          tCtx.beginPath()
+          tCtx.moveTo(trailPrevPx, trailPrevPy)
+          tCtx.lineTo(x, y)
+          tCtx.stroke()
+          tCtx.shadowBlur = 0
+          tCtx.globalCompositeOperation = 'source-over'
+          trailPrevPx = x; trailPrevPy = y
+        }
+
         function trailFrame() {
-          tCtx.fillStyle = 'rgba(0,0,0,0.08)'
+          tCtx.globalCompositeOperation = 'source-over'
+          tCtx.fillStyle = 'rgba(0,0,0,0.04)'
           tCtx.fillRect(0, 0, tCv.width, tCv.height)
-          if (trailPx !== null) {
-            var t = Math.min(1, trailSpd / 18)
-            var r = Math.round(195 + (232 - 195) * t)
-            var g = Math.round(78  + (184 - 78)  * t)
-            var b = Math.round(160 + (108 - 160) * t)
-            var col = 'rgb(' + r + ',' + g + ',' + b + ')'
-            tCtx.shadowBlur = 20
-            tCtx.shadowColor = col
-            tCtx.beginPath()
-            tCtx.arc(trailPx, trailPy, 12, 0, 6.283)
-            tCtx.fillStyle = col
-            tCtx.fill()
-            tCtx.shadowBlur = 0
-          }
           trailRafId = requestAnimationFrame(trailFrame)
         }
         function startTrailLoop() {
@@ -1736,12 +1749,44 @@
             } else {
               abCurrent += delta * 0.18
             }
-            state.params.abMag = abCurrent
+            var pulse = souffleAmp > 0 ? souffleAmp * Math.sin(Date.now() * souffleFreq * 0.00628) : 0
+            state.params.abMag = Math.max(0, Math.min(30, abCurrent + pulse))
             var r = document.getElementById('r_abMag'), v = document.getElementById('v_abMag')
-            if (r) r.value = abCurrent
-            if (v) v.textContent = abCurrent.toFixed(1)
+            if (r) r.value = state.params.abMag
+            if (v) v.textContent = state.params.abMag.toFixed(1)
             scheduleRender()
           }, 16)
+        }
+
+        function applyModeEffects(nx, ny, spd) {
+          var macro = window.currentMacro || 'speed'
+          if (macro === 'speed') {
+            souffleAmp  = Math.min(8, spd * 0.5)
+            souffleFreq = 0.5 + spd * 0.12
+            state.params.echoFalloff = Math.min(0.85, 0.3 + spd * 0.03)
+            var rE = document.getElementById('r_echoFalloff'), vE = document.getElementById('v_echoFalloff')
+            if (rE) rE.value = state.params.echoFalloff
+            if (vE) vE.textContent = state.params.echoFalloff.toFixed(2)
+          } else if (macro === 'band') {
+            state.params.bandFreq = 0.02 + nx * 0.33
+            var rF = document.getElementById('r_bandFreq'), vF = document.getElementById('v_bandFreq')
+            if (rF) rF.value = state.params.bandFreq
+            if (vF) vF.textContent = state.params.bandFreq.toFixed(3)
+          } else if (macro === 'chroma') {
+            state.params.abAngle = ((Math.atan2(ny - 0.5, nx - 0.5) * (180 / Math.PI)) % 360 + 360) % 360
+            var rA = document.getElementById('r_abAngle'), vA = document.getElementById('v_abAngle')
+            if (rA) rA.value = state.params.abAngle
+            if (vA) vA.textContent = Math.round(state.params.abAngle)
+          } else if (macro === 'depth') {
+            ANIM.tunnelSpeed = 20 + ny * 120
+            ANIM.tunnelRot   = -60 + nx * 120
+            var rTs = document.getElementById('m_tunnelSpeed'), vTs = document.getElementById('v_tunnelSpeed')
+            var rTr = document.getElementById('m_tunnelRot'),   vTr = document.getElementById('v_tunnelRot')
+            if (rTs) rTs.value = ANIM.tunnelSpeed.toFixed(0)
+            if (vTs) vTs.textContent = ANIM.tunnelSpeed.toFixed(0)
+            if (rTr) rTr.value = ANIM.tunnelRot.toFixed(0)
+            if (vTr) vTr.textContent = ANIM.tunnelRot.toFixed(0)
+          }
         }
 
         function xyUpdate(clientX, clientY) {
@@ -1753,8 +1798,8 @@
           var velY = prevClientY !== null ? clientY - prevClientY : 0
           prevClientX = clientX; prevClientY = clientY
           trailSpd = Math.sqrt(velX * velX + velY * velY)
-          trailPx = clientX - rect.left
-          trailPy = clientY - rect.top
+          var px = clientX - rect.left, py = clientY - rect.top
+          drawStroke(px, py, trailSpd)
           startTrailLoop()
           startLerp()
           ANIM.speed = 3.0 - ny * 2.8
@@ -1763,6 +1808,7 @@
           if (vSpd) vSpd.textContent = ANIM.speed.toFixed(1)
           reticle.style.left = (nx * 100) + '%'
           reticle.style.top  = (ny * 100) + '%'
+          applyModeEffects(nx, ny, trailSpd)
         }
 
         function xyEnter(clientX, clientY) {
@@ -1790,7 +1836,8 @@
           xyActive = false
           reticle.style.display = 'none'
           prevClientX = null; prevClientY = null
-          trailPx = null
+          trailPrevPx = null; trailPrevPy = null
+          souffleAmp = 0
           scheduleTrailStop()
         }
 
@@ -1914,6 +1961,7 @@
         })
         refreshSrcBar('tunnel')
         if (!ANIM.playing) setPlaying(true)
+        var _mk = ['speed','band','chroma','depth']; window.currentMacro = _mk[Math.floor(Math.random()*4)]
         var MACRO_DEFS = {
           speed:  { get: function(){ return typeof ANIM!=='undefined' ? ANIM.speed/3 : 0.33 },
                     set: function(v){ if(typeof ANIM==='undefined') return; ANIM.speed=v*3; var r=document.getElementById('m_speed'),vv=document.getElementById('v_speed'); if(r)r.value=ANIM.speed; if(vv)vv.textContent=ANIM.speed.toFixed(1); if(typeof scheduleRender==='function')scheduleRender() } },
@@ -1937,6 +1985,7 @@
           }
           card.addEventListener('mousedown', function(e){ dragging=true; startX=e.clientX; startV=def.get() })
           card.addEventListener('mousedown', function() {
+            window.currentMacro = key
             var allCards = document.querySelectorAll('#layerPublic .macro[data-macro]')
             allCards.forEach(function(c){ c.classList.toggle('active', c===card); c.classList.toggle('inactive', c!==card) })
             if (['upload','video','cam'].indexOf(state.sourceMode) === -1) {
