@@ -48,7 +48,8 @@ const PALETTES={
     grad:["#00e5ff","#0066ff","#39ff14"],
     particleHues:[185,220,100],
     particleSat:85,particleLight:60,
-    wellHueOffset:0,wellCoreSat:0.2,wellCoreLight:0.9,
+    wellHues:[185,210,120,240],
+    wellCoreSat:0.2,wellCoreLight:0.9,
     wellGlowSat:0.8,wellGlowLight:0.5,
     membraneHueBase:0.52,membraneHueRange:0.12,
     membraneSat:0.8
@@ -58,7 +59,8 @@ const PALETTES={
     grad:["#00ff87","#00e5ff","#ffffff"],
     particleHues:[150,180,0],
     particleSat:80,particleLight:65,
-    wellHueOffset:290,wellCoreSat:0.9,wellCoreLight:0.6,
+    wellHues:[290,320,260,340],
+    wellCoreSat:0.9,wellCoreLight:0.6,
     wellGlowSat:0.85,wellGlowLight:0.55,
     membraneHueBase:0.4,membraneHueRange:0.15,
     membraneSat:0.75
@@ -69,7 +71,8 @@ const PALETTES={
     particleHues:[0,0,0],
     particleMono:true,
     particleSat:5,particleLight:70,
-    wellHueOffset:0,wellCoreSat:0.95,wellCoreLight:0.6,
+    wellHues:[0,120,240,30],
+    wellCoreSat:0.95,wellCoreLight:0.6,
     wellGlowSat:0.9,wellGlowLight:0.5,
     membraneHueBase:0,membraneHueRange:1,
     membraneSat:0.05
@@ -79,7 +82,8 @@ const PALETTES={
     grad:["#ff00ff","#00ffff","#8b00ff"],
     particleHues:[300,180,270],
     particleSat:90,particleLight:60,
-    wellHueOffset:300,wellCoreSat:0.95,wellCoreLight:0.65,
+    wellHues:[300,190,270,330],
+    wellCoreSat:0.95,wellCoreLight:0.65,
     wellGlowSat:0.9,wellGlowLight:0.55,
     membraneHueBase:0.78,membraneHueRange:0.18,
     membraneSat:0.9
@@ -320,20 +324,17 @@ let wellCounter=0;
 
 function addWell(nx,ny){
   if(wells.length>=MAX_WELLS) wells.shift();
-  const pal=getCurrentPalette();
-  let hue;
-  if(pal.wellGlowHueShift>0){
-    hue=(wellCounter*GOLDEN_ANGLE+pal.wellCore[0])%360;
-  }else{
-    hue=(wellCounter*GOLDEN_ANGLE)%360;
-  }
   wells.push({
     x:nx,y:ny,
     strength:0,targetStrength:1,
-    hue:hue,
+    colorIdx:wellCounter,
     age:performance.now()*0.001,
     id:wellCounter++
   });
+}
+
+function resolveWellHue(well,pal){
+  return pal.wellHues[well.colorIdx%pal.wellHues.length];
 }
 
 // --- Particles ---
@@ -422,15 +423,6 @@ function hslToRgb(h,s,l){
 
 function fract(x){return x-Math.floor(x);}
 
-function getParticleHue(particleIdx,pal){
-  const hues=pal.particleHues;
-  return hues[particleIdx%hues.length];
-}
-
-function wellHue(well,pal){
-  return (well.hue+pal.wellHueOffset)%360;
-}
-
 // --- Animation ---
 let lastTime=0;
 
@@ -461,16 +453,16 @@ function frame(now){
   gl.uniform1f(uHueRange,memHueRange);
   gl.uniform1f(uMemSat,memSat);
 
-  // Lerped well glow parameters for GLSL
-  const glslWellSat=lerpVal(ppal.wellGlowSat||0.8,pal.wellGlowSat||0.8,easeT);
-  const glslWellHueOff=lerpVal(ppal.wellHueOffset||0,pal.wellHueOffset||0,easeT);
+  const glslGlowSat=lerpVal(ppal.wellGlowSat,pal.wellGlowSat,easeT);
 
   for(let i=0;i<MAX_WELLS;i++){
     if(i<wells.length){
       const w=wells[i];
       gl.uniform4f(uW[i],w.x,w.y,w.age,w.strength);
-      const wh=fract((w.hue+glslWellHueOff)/360);
-      gl.uniform3f(uWellColors[i],wh,glslWellSat,0);
+      const prevH=resolveWellHue(w,ppal);
+      const curH=resolveWellHue(w,pal);
+      const wh=lerpVal(prevH,curH,easeT)/360;
+      gl.uniform3f(uWellColors[i],fract(wh),glslGlowSat,0);
     }else{
       gl.uniform4f(uW[i],0,0,0,0);
       gl.uniform3f(uWellColors[i],0,0,0);
@@ -487,18 +479,18 @@ function frame(now){
   const n=Math.min(particleCount,px.length);
   const ww=W*dpr,hh=H*dpr;
 
-  // Lerped well canvas colors
   const wcCoreSat=lerpVal(ppal.wellCoreSat,pal.wellCoreSat,easeT);
   const wcCoreLight=lerpVal(ppal.wellCoreLight,pal.wellCoreLight,easeT);
   const wcGlowSat=lerpVal(ppal.wellGlowSat,pal.wellGlowSat,easeT);
   const wcGlowLight=lerpVal(ppal.wellGlowLight,pal.wellGlowLight,easeT);
-  const wcHueOff=lerpVal(ppal.wellHueOffset,pal.wellHueOffset,easeT);
 
   // Well halos on canvas
   for(let j=0;j<wells.length;j++){
     const w=wells[j];
     const wx=w.x*ww,wy=(1-w.y)*hh;
-    const wh=(w.hue+wcHueOff)%360;
+    const prevH=resolveWellHue(w,ppal);
+    const curH=resolveWellHue(w,pal);
+    const wh=lerpVal(prevH,curH,easeT);
     const [cr,cg,cb]=hslToRgb(wh,wcCoreSat,wcCoreLight);
     const [or2,og,ob]=hslToRgb(wh,wcGlowSat,wcGlowLight);
     const radius=Math.min(ww,hh)*0.18;
