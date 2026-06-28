@@ -42,15 +42,15 @@ Le fil **idios / Prince Myshkine** (l'intraduisible, la rencontre de deux esprit
 _Mis à jour le 2026-06-28_
 
 **Derniers changements :**
-- `animae-recherche.md` créé — brief fondateur Cowork (philo anima/pneuma, glitch Menkman, refs visuelles) · boussole de DA permanente.
-- Panel droit réorganisé dans `glitch-playground.html` : SOURCE (FIELD/SHARDS/MESH/TUNNEL) monté tout en haut → vignette juste dessous → motion/global speed → reste des effets.
-- Commande custom `/recap` créée (`.claude/commands/recap.md`) : met à jour ce fichier et commit automatiquement.
+- XY pad entièrement refondu : hold+drag uniquement (plus de hover), trail fluid néon (lignes continues, blur 6px, lw=2–28), barre verticale contextuelle (3 px → 5 px, fill couleur par mode, labels expressifs Y/X).
+- Effets par mode au drag : SOUFFLE (X→echoFalloff, Y→abMag), FRACTURE (X→bandFreq, Y→bandAmount), SPECTRE (X→abAngle, Y→abMag), PROFONDEUR (X→tunnelRot, Y→tunnelSpeed).
+- Barre source : blend mode toujours visible (plus conditionnel). Clic GEN stoppe proprement la webcam + vide uploadedImage.
+- Feedback loop GEN : blend mode (Add/Screen/Overlay…) accumule les frames sur ctx via blitOffscreen + drawImage — rémanence psychédélique.
+- Blend "Multiply" remplacé par "Overlay".
 
-**Stack actée :** three.js r128, un seul HTML autonome. WebGPU/Vite = chez Thomas plus tard, jamais dans l'aperçu.
+**Étape Roadmap :** #3–4 (UX modes + tunnel psyché) — **en cours**. Étapes #1–2 (renommage DA + webcam/vidéo) déjà livrées dans les sessions précédentes.
 
-**Étape Roadmap :** #1 (renommage + DA piste C) — **pas encore commencée**. Panel trié = prérequis UX fait.
-
-**Prochaine action :** démarrer étape #1 — renommer l'UI "corruption_lab" → Animæ et appliquer la DA piste C (couleurs/typo spectre, cf. `design.md`).
+**Prochaine action :** valider le feedback loop visuellement (Add/Screen sur TUNNEL), puis continuer vers les macros ou l'audio-réactif selon priorité Thomas.
 
 ## À NE PAS faire (rappel)
 reconstruire · sur-produire · deviner la DA · refaire Synaptic Mirror · sprinter sans validation · sur-promettre.
