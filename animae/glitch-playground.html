@@ -99,6 +99,10 @@
     #xyReticle::after  { content:'';position:absolute;height:1px;width:20px;background:rgba(195,78,160,.6);left:-10px;top:0; }
     .xy-dot { position:absolute;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;transition:none; }
     #trailCanvas { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;mix-blend-mode:screen; }
+    #xyBar { position:absolute;pointer-events:none;z-index:3; }
+    #xyBarTrack { width:3px;height:80px;background:rgba(255,255,255,.08);border-radius:2px;position:relative;overflow:hidden; }
+    #xyBarFill  { position:absolute;bottom:0;left:0;width:100%;border-radius:2px; }
+    #xyBarLabel { font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:1px;color:rgba(200,197,192,.7);margin-bottom:4px;white-space:nowrap;text-align:center; }
     .hint-text { font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:2px;color:rgba(195,78,160,.5);margin:0 0 18px; }
     .hint-dots { display:flex;gap:14px;justify-content:center; }
     .dot { width:8px;height:8px;border-radius:50%; }
@@ -218,6 +222,7 @@
     </div>
     <canvas id="cv"></canvas>
     <canvas id="trailCanvas"></canvas>
+    <div id="xyBar" style="display:none"><div id="xyBarLabel"></div><div id="xyBarTrack"><div id="xyBarFill"></div></div></div>
     <input type="file" id="fileIn" accept="image/*" />
     <input type="file" id="vidIn" accept="video/*" />
     <div class="ui-over">
@@ -1676,19 +1681,22 @@
 
       /* XY pad */
       ;(function () {
-        var reticle = document.getElementById('xyReticle')
-        var xyActive = false
-        var abTarget = state.params.abMag, abCurrent = state.params.abMag
-        var lerpTimer = null
+        var holdActive = false
         var prevClientX = null, prevClientY = null
-        var savedBand = null, bandTimer = null
-        var souffleAmp = 0, souffleFreq = 1.0
 
         // trail canvas
         var tCv = document.getElementById('trailCanvas')
         var tCtx = tCv.getContext('2d')
         var trailRafId = null, trailFadeTimer = null
         var trailPrevPx = null, trailPrevPy = null, trailSpd = 0
+
+        // bar
+        var xyBar   = document.getElementById('xyBar')
+        var xyFill  = document.getElementById('xyBarFill')
+        var xyLabel = document.getElementById('xyBarLabel')
+
+        var MODE_COLORS = { speed:'#c34ea0', band:'#e8b86c', chroma:'#7d68e6', depth:'#56d6ff' }
+        var MODE_YLABEL = { speed:'abMag', band:'bandAmt', chroma:'abMag', depth:'tunSpd' }
 
         function resizeTrail() {
           tCv.width  = tCv.offsetWidth
@@ -1704,8 +1712,9 @@
           var g = Math.round(78  + (184 - 78)  * t)
           var b = Math.round(160 + (108 - 160) * t)
           var col = 'rgb(' + r + ',' + g + ',' + b + ')'
-          var lw = 2 + t * 16
+          var lw = Math.min(28, Math.max(2, 2 + spd * 1.8))
           tCtx.globalCompositeOperation = 'lighter'
+          tCtx.filter = 'blur(3px)'
           tCtx.strokeStyle = col
           tCtx.lineWidth = lw
           tCtx.lineCap = 'round'
@@ -1716,6 +1725,7 @@
           tCtx.moveTo(trailPrevPx, trailPrevPy)
           tCtx.lineTo(x, y)
           tCtx.stroke()
+          tCtx.filter = 'none'
           tCtx.shadowBlur = 0
           tCtx.globalCompositeOperation = 'source-over'
           trailPrevPx = x; trailPrevPy = y
@@ -1739,61 +1749,61 @@
           }, 1200)
         }
 
-        function startLerp() {
-          if (lerpTimer) return
-          lerpTimer = setInterval(function () {
-            var delta = abTarget - abCurrent
-            if (Math.abs(delta) < 0.05) {
-              abCurrent = abTarget
-              clearInterval(lerpTimer); lerpTimer = null
-            } else {
-              abCurrent += delta * 0.18
-            }
-            var pulse = souffleAmp > 0 ? souffleAmp * Math.sin(Date.now() * souffleFreq * 0.00628) : 0
-            state.params.abMag = Math.max(0, Math.min(30, abCurrent + pulse))
-            var r = document.getElementById('r_abMag'), v = document.getElementById('v_abMag')
-            if (r) r.value = state.params.abMag
-            if (v) v.textContent = state.params.abMag.toFixed(1)
-            scheduleRender()
-          }, 16)
+        function updateBar(canvasX, canvasY, ny) {
+          var macro = window.currentMacro || 'speed'
+          xyFill.style.height = (ny * 80) + 'px'
+          xyFill.style.background = MODE_COLORS[macro] || '#e8b86c'
+          xyLabel.textContent = MODE_YLABEL[macro] || ''
+          xyBar.style.left = (canvasX + 16) + 'px'
+          xyBar.style.top  = (canvasY - 40) + 'px'
         }
 
-        function applyModeEffects(nx, ny, spd) {
+        function applyModeEffects(nx, ny) {
           var macro = window.currentMacro || 'speed'
           if (macro === 'speed') {
-            souffleAmp  = Math.min(8, spd * 0.5)
-            souffleFreq = 0.5 + spd * 0.12
-            state.params.echoFalloff = Math.min(0.85, 0.3 + spd * 0.03)
+            state.params.echoFalloff = 0.2 + nx * 0.7
+            state.params.abMag = ny * 20
             var rE = document.getElementById('r_echoFalloff'), vE = document.getElementById('v_echoFalloff')
             if (rE) rE.value = state.params.echoFalloff
             if (vE) vE.textContent = state.params.echoFalloff.toFixed(2)
+            var rA = document.getElementById('r_abMag'), vA = document.getElementById('v_abMag')
+            if (rA) rA.value = state.params.abMag
+            if (vA) vA.textContent = state.params.abMag.toFixed(1)
           } else if (macro === 'band') {
-            state.params.bandFreq = 0.02 + nx * 0.33
+            state.params.bandFreq = 0.01 + nx * 0.39
+            state.params.bandAmount = 20 + ny * 280
             var rF = document.getElementById('r_bandFreq'), vF = document.getElementById('v_bandFreq')
             if (rF) rF.value = state.params.bandFreq
             if (vF) vF.textContent = state.params.bandFreq.toFixed(3)
+            var rB = document.getElementById('r_bandAmount'), vB = document.getElementById('v_bandAmount')
+            if (rB) rB.value = state.params.bandAmount
+            if (vB) vB.textContent = Math.round(state.params.bandAmount)
           } else if (macro === 'chroma') {
-            state.params.abAngle = ((Math.atan2(ny - 0.5, nx - 0.5) * (180 / Math.PI)) % 360 + 360) % 360
-            var rA = document.getElementById('r_abAngle'), vA = document.getElementById('v_abAngle')
-            if (rA) rA.value = state.params.abAngle
-            if (vA) vA.textContent = Math.round(state.params.abAngle)
+            state.params.abAngle = nx * 360
+            state.params.abMag = ny * 25
+            var rAng = document.getElementById('r_abAngle'), vAng = document.getElementById('v_abAngle')
+            if (rAng) rAng.value = state.params.abAngle
+            if (vAng) vAng.textContent = Math.round(state.params.abAngle)
+            var rM = document.getElementById('r_abMag'), vM = document.getElementById('v_abMag')
+            if (rM) rM.value = state.params.abMag
+            if (vM) vM.textContent = state.params.abMag.toFixed(1)
           } else if (macro === 'depth') {
-            ANIM.tunnelSpeed = 20 + ny * 120
             ANIM.tunnelRot   = -60 + nx * 120
-            var rTs = document.getElementById('m_tunnelSpeed'), vTs = document.getElementById('v_tunnelSpeed')
+            ANIM.tunnelSpeed = 20  + ny * 120
             var rTr = document.getElementById('m_tunnelRot'),   vTr = document.getElementById('v_tunnelRot')
-            if (rTs) rTs.value = ANIM.tunnelSpeed.toFixed(0)
-            if (vTs) vTs.textContent = ANIM.tunnelSpeed.toFixed(0)
+            var rTs = document.getElementById('m_tunnelSpeed'), vTs = document.getElementById('v_tunnelSpeed')
             if (rTr) rTr.value = ANIM.tunnelRot.toFixed(0)
             if (vTr) vTr.textContent = ANIM.tunnelRot.toFixed(0)
+            if (rTs) rTs.value = ANIM.tunnelSpeed.toFixed(0)
+            if (vTs) vTs.textContent = ANIM.tunnelSpeed.toFixed(0)
           }
+          scheduleRender()
         }
 
         function xyUpdate(clientX, clientY) {
           var rect = cv.getBoundingClientRect()
           var nx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
           var ny = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
-          abTarget = nx * 25
           var velX = prevClientX !== null ? clientX - prevClientX : 0
           var velY = prevClientY !== null ? clientY - prevClientY : 0
           prevClientX = clientX; prevClientY = clientY
@@ -1801,60 +1811,40 @@
           var px = clientX - rect.left, py = clientY - rect.top
           drawStroke(px, py, trailSpd)
           startTrailLoop()
-          startLerp()
-          ANIM.speed = 3.0 - ny * 2.8
-          var rSpd = document.getElementById('m_speed'), vSpd = document.getElementById('v_speed')
-          if (rSpd) rSpd.value = ANIM.speed.toFixed(2)
-          if (vSpd) vSpd.textContent = ANIM.speed.toFixed(1)
-          reticle.style.left = (nx * 100) + '%'
-          reticle.style.top  = (ny * 100) + '%'
-          applyModeEffects(nx, ny, trailSpd)
+          updateBar(px, py, ny)
+          applyModeEffects(nx, ny)
         }
 
-        function xyEnter(clientX, clientY) {
-          xyActive = true
-          reticle.style.display = 'block'
-          savedBand = state.params.bandAmount
-          state.params.bandAmount = 60
-          var rB = document.getElementById('r_bandAmount'), vB = document.getElementById('v_bandAmount')
-          if (rB) rB.value = 60; if (vB) vB.textContent = '60'
-          scheduleRender()
-          clearTimeout(bandTimer)
-          bandTimer = setTimeout(function () {
-            if (savedBand !== null) {
-              state.params.bandAmount = savedBand; savedBand = null
-              var r = document.getElementById('r_bandAmount'), v = document.getElementById('v_bandAmount')
-              if (r) r.value = state.params.bandAmount
-              if (v) v.textContent = Math.round(state.params.bandAmount)
-              scheduleRender()
-            }
-          }, 100)
+        function xyStart(clientX, clientY) {
+          holdActive = true
+          prevClientX = null; prevClientY = null
+          xyBar.style.display = 'block'
           xyUpdate(clientX, clientY)
         }
 
-        function xyLeave() {
-          xyActive = false
-          reticle.style.display = 'none'
-          prevClientX = null; prevClientY = null
+        function xyEnd() {
+          if (!holdActive) return
+          holdActive = false
           trailPrevPx = null; trailPrevPy = null
-          souffleAmp = 0
+          xyBar.style.display = 'none'
           scheduleTrailStop()
         }
 
-        cv.addEventListener('mouseenter', function (e) { xyEnter(e.clientX, e.clientY) })
-        cv.addEventListener('mouseleave', xyLeave)
-        cv.addEventListener('mousemove', function (e) {
-          if (!xyActive) return
+        cv.addEventListener('mousedown', function (e) { xyStart(e.clientX, e.clientY) })
+        window.addEventListener('mousemove', function (e) {
+          if (!holdActive) return
           xyUpdate(e.clientX, e.clientY)
         })
+        window.addEventListener('mouseup', xyEnd)
+
         cv.addEventListener('touchstart', function (e) {
-          xyEnter(e.touches[0].clientX, e.touches[0].clientY)
+          xyStart(e.touches[0].clientX, e.touches[0].clientY)
         }, { passive: true })
-        cv.addEventListener('touchmove', function (e) {
-          if (!xyActive || !e.touches.length) return
+        window.addEventListener('touchmove', function (e) {
+          if (!holdActive || !e.touches.length) return
           xyUpdate(e.touches[0].clientX, e.touches[0].clientY)
         }, { passive: true })
-        cv.addEventListener('touchend', xyLeave)
+        window.addEventListener('touchend', xyEnd)
       })()
 
       /* export */
