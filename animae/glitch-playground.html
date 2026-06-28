@@ -46,6 +46,7 @@
     /* modebar */
     .modebar { position:absolute;top:30px;left:50%;transform:translateX(-50%);padding:7px 8px;border-radius:30px;background:rgba(18,20,24,.4);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid var(--line);display:flex; }
     .seg { padding:7px 16px;border-radius:22px;display:flex;align-items:center;gap:8px;opacity:.42;cursor:pointer;transition:opacity .2s;user-select:none; }
+    .seg > * { pointer-events:none; }
     .seg.on { opacity:1;background:rgba(255,255,255,.06); }
     .slabel { font-size:10px;letter-spacing:2.5px;color:var(--ink-dim); }
     .seg.on .slabel { color:#f2efec; }
@@ -67,7 +68,6 @@
     .hud { position:absolute;left:20px;bottom:16px;font-size:10px;letter-spacing:1.5px;color:var(--ink-faint);display:flex;gap:8px;align-items:center; }
     /* mode layers */
     .mode-layer { position:absolute;inset:0;pointer-events:none; }
-    .mode-layer.active { pointer-events:auto; }
     .mode-layer.hidden { display:none; }
     .mode-layer > * { pointer-events:auto; }
     /* simple */
@@ -1499,7 +1499,9 @@
             if (c.type === 'check') {
               state.params[c.id] = Math.random() < 0.4
             } else {
-              const v = c.min + Math.random() * (c.max - c.min)
+              const lo = c.id === 'vigSize' ? 0.80 : c.min
+              const hi = c.id === 'vigSize' ? 1.0  : c.max
+              const v = lo + Math.random() * (hi - lo)
               state.params[c.id] =
                 c.step < 1 ? Math.round(v / c.step) * c.step : Math.round(v)
             }
