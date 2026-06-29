@@ -179,7 +179,7 @@ function resize(){
   G.style.width=W+"px";G.style.height=H+"px";
   P.style.width=W+"px";P.style.height=H+"px";
   gl.viewport(0,0,G.width,G.height);
-  particleCount=W<500?6000:12000;
+  particleCount=W<500?10000:20000;
   initParticles();
 }
 
@@ -549,7 +549,7 @@ function frame(now){
 
   // --- Render particles ---
   ctx.globalCompositeOperation="source-over";
-  ctx.fillStyle="rgba(0,0,0,0.025)";
+  ctx.fillStyle="rgba(0,0,0,0.02)";
   ctx.fillRect(0,0,P.width,P.height);
   ctx.globalCompositeOperation="screen";
 
@@ -681,7 +681,7 @@ function frame(now){
     pvy[i]=(pvy[i]+ay*dt)*0.985;
 
     const speed=Math.sqrt(pvx[i]*pvx[i]+pvy[i]*pvy[i]);
-    const maxSpeed=(0.3+Math.random()*0.5)*dpr*60;
+    const maxSpeed=(0.2+Math.random()*0.3)*dpr*60;
     if(speed>maxSpeed){
       pvx[i]*=maxSpeed/speed;
       pvy[i]*=maxSpeed/speed;
@@ -716,8 +716,7 @@ function frame(now){
     const finalLight=pLight+proxGlow*15;
 
     ctx.fillStyle=`hsla(${pH|0},${finalSat|0}%,${finalLight|0}%,${alpha.toFixed(3)})`;
-    const sz=dpr;
-    ctx.fillRect(px[i],py[i],sz,sz);
+    ctx.fillRect(px[i],py[i],1,1);
   }
 
   // Cursor glow
