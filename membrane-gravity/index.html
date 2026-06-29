@@ -382,9 +382,11 @@ function initParticles(){
   }
 }
 
-// --- Pointer ---
+// --- Pointer & drag ---
 let pointerX=-100,pointerY=-100,pointerActive=false;
 let accelX=0,accelY=0;
+const DRAG_THRESHOLD=8;
+const dragPoints=new Map();
 
 function normalizeCoord(ex,ey){return[ex/W,1.0-ey/H];}
 
@@ -398,30 +400,38 @@ document.addEventListener("pointerdown",e=>{
   pointerActive=true;
   pointerX=e.clientX;pointerY=e.clientY;
   resetPillFade();
-  if(!isPillHit(e)){
-    const[nx,ny]=normalizeCoord(e.clientX,e.clientY);
-    addWell(nx,ny);
-  }
+  const pill_hit=isPillHit(e);
+  dragPoints.set(e.pointerId,{
+    x:e.clientX,y:e.clientY,
+    startX:e.clientX,startY:e.clientY,
+    dragged:false,pillHit:pill_hit
+  });
 },{passive:false});
 
 document.addEventListener("pointermove",e=>{
   e.preventDefault();
   pointerX=e.clientX;pointerY=e.clientY;
+  const dp=dragPoints.get(e.pointerId);
+  if(dp){
+    dp.x=e.clientX;dp.y=e.clientY;
+    const dx=e.clientX-dp.startX,dy=e.clientY-dp.startY;
+    if(dx*dx+dy*dy>DRAG_THRESHOLD*DRAG_THRESHOLD) dp.dragged=true;
+  }
 },{passive:false});
 
-document.addEventListener("pointerup",e=>{pointerActive=false;},{passive:false});
-document.addEventListener("pointercancel",e=>{pointerActive=false;},{passive:false});
-
-document.addEventListener("touchstart",e=>{
-  e.preventDefault();
-  resetPillFade();
-  for(let i=0;i<e.changedTouches.length;i++){
-    const touch=e.changedTouches[i];
-    if(!isPillHit(touch)){
-      const[nx,ny]=normalizeCoord(touch.clientX,touch.clientY);
-      addWell(nx,ny);
-    }
+document.addEventListener("pointerup",e=>{
+  pointerActive=false;
+  const dp=dragPoints.get(e.pointerId);
+  if(dp&&!dp.dragged&&!dp.pillHit){
+    const[nx,ny]=normalizeCoord(dp.startX,dp.startY);
+    addWell(nx,ny);
   }
+  dragPoints.delete(e.pointerId);
+},{passive:false});
+
+document.addEventListener("pointercancel",e=>{
+  pointerActive=false;
+  dragPoints.delete(e.pointerId);
 },{passive:false});
 
 if(window.DeviceMotionEvent){
@@ -649,9 +659,26 @@ function frame(now){
   const prevHues=ppal.particleHues;
   const curHues=pal.particleHues;
 
+  // Collect active drag attractors
+  const attractors=[];
+  for(const[,dp] of dragPoints){
+    if(dp.dragged) attractors.push({x:dp.x*dpr,y:dp.y*dpr});
+  }
+
   // Particles
   for(let i=0;i<n;i++){
     let ax=accelX,ay=accelY;
+
+    for(let a=0;a<attractors.length;a++){
+      const ddx=attractors[a].x-px[i],ddy=attractors[a].y-py[i];
+      const dist=Math.sqrt(ddx*ddx+ddy*ddy)+10;
+      const reach=Math.min(ww,hh)*0.25;
+      if(dist<reach){
+        const f=400*dpr/(dist*dist)*(1-dist/reach);
+        ax+=ddx/dist*f;
+        ay+=ddy/dist*f;
+      }
+    }
 
     for(let j=0;j<wells.length;j++){
       const w=wells[j];
