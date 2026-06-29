@@ -435,7 +435,26 @@ document.addEventListener("pointerup",e=>{
   const dp=dragPoints.get(e.pointerId);
   if(dp){
     clearTimeout(dp.timer);
-    if(dp.mode!=="drag"&&!dp.pillHit){
+    if(dp.mode==="drag"&&!dp.pillHit){
+      const[nx,ny]=normalizeCoord(dp.x,dp.y);
+      const baseR=Math.min(W*dpr,H*dpr)*0.18;
+      const r=Math.min(80*dpr,baseR)/baseR;
+      if(wells.length>=MAX_WELLS) wells.shift();
+      wells.push({
+        x:nx,y:ny,ox:nx,oy:ny,
+        strength:1.5,targetStrength:1.5,
+        colorIdx:dp.colorIdx!==undefined?dp.colorIdx:wellCounter++,
+        age:performance.now()*0.001,
+        birthTime:performance.now()*0.001,
+        lifetime:0,
+        deathType:(Math.random()*4)|0,
+        dying:true,deathProgress:0,
+        radius:r,flash:0,
+        deform:dp.deform||makeDeform(),
+        fragments:null,
+        id:wellCounter++
+      });
+    }else if(dp.mode!=="drag"&&!dp.pillHit){
       const[nx,ny]=normalizeCoord(dp.startX,dp.startY);
       addWell(nx,ny);
     }
