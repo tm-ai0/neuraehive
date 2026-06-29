@@ -548,15 +548,18 @@ function frame(now){
 
   // Build temporary drag wells
   const dragWells=[];
+  const dragBaseR=Math.min(W*dpr,H*dpr)*0.18;
+  const dragRadius=Math.min(80*dpr,dragBaseR)/dragBaseR;
   for(const[,dp] of dragPoints){
     if(dp.mode==="drag"){
       if(!dp.deform) dp.deform=makeDeform();
+      if(dp.colorIdx===undefined) dp.colorIdx=wellCounter++;
       dragWells.push({
         x:dp.x/W,y:1-dp.y/H,
-        strength:3,targetStrength:3,
-        colorIdx:0,
+        strength:1.5,targetStrength:1.5,
+        colorIdx:dp.colorIdx,
         age:time,birthTime:time,lifetime:999,
-        radius:2,flash:0,
+        radius:dragRadius,flash:0,
         deform:dp.deform,
         dying:false,deathProgress:0,deathType:0,fragments:null,
         id:-1
