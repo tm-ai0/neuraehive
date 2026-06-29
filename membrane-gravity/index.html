@@ -70,12 +70,12 @@ const PALETTES={
     grad:["#ffffff","#aaaaaa","#666666"],
     particleHues:[0,0,0],
     particleMono:true,
-    particleSat:5,particleLight:70,
-    wellHues:[0,120,240,30],
-    wellCoreSat:0.95,wellCoreLight:0.6,
-    wellGlowSat:0.9,wellGlowLight:0.5,
-    membraneHueBase:0,membraneHueRange:1,
-    membraneSat:0.05
+    particleSat:0,particleLight:75,
+    wellHues:[0,0,0,0],
+    wellCoreSat:0,wellCoreLight:0.92,
+    wellGlowSat:0,wellGlowLight:0.8,
+    membraneHueBase:0,membraneHueRange:0,
+    membraneSat:0
   },
   SYNTHWAVE:{
     name:"SYNTHWAVE",
@@ -255,7 +255,8 @@ void main(){
 
   float crest=smoothstep(0.3,1.5,slope);
   float crestHue=fract(h+0.15);
-  vec3 crestCol=hsl2rgb(crestHue,min(uMemSat+0.2,0.95),0.55);
+  float crestSat=uMemSat>0.01?min(uMemSat+0.2,0.95):0.0;
+  vec3 crestCol=hsl2rgb(crestHue,crestSat,0.55);
   col=mix(col,crestCol,crest*0.6);
   col*=1.4;
 
@@ -270,7 +271,7 @@ void main(){
     float glow3=exp(-d*d*400.0)*str*0.8;
 
     vec3 wc3=uWellColors[i];
-    vec3 wellCore=hsl2rgb(wc3.x,0.95,0.65);
+    vec3 wellCore=hsl2rgb(wc3.x,wc3.z,0.65);
     vec3 wellMid=hsl2rgb(fract(wc3.x+0.08),wc3.y,0.45);
     vec3 wellOuter=hsl2rgb(fract(wc3.x-0.05),wc3.y*0.8,0.25);
 
@@ -280,7 +281,7 @@ void main(){
 
     float ring=abs(d-0.06)*50.0;
     float ringGlow=exp(-ring*ring)*str*0.15;
-    col+=hsl2rgb(fract(wc3.x+0.1),wc3.y,0.5)*ringGlow;
+    col+=hsl2rgb(fract(wc3.x+0.1),wc3.z,0.5)*ringGlow;
   }
 
   col=pow(col,vec3(0.85));
@@ -500,6 +501,7 @@ function frame(now){
   gl.uniform1f(uMemSat,memSat);
 
   const glslGlowSat=lerpVal(ppal.wellGlowSat,pal.wellGlowSat,easeT);
+  const glslCoreSat=lerpVal(ppal.wellCoreSat,pal.wellCoreSat,easeT);
 
   for(let i=0;i<MAX_WELLS;i++){
     if(i<wells.length){
@@ -508,7 +510,7 @@ function frame(now){
       const prevH=resolveWellHue(w,ppal);
       const curH=resolveWellHue(w,pal);
       const wh=lerpVal(prevH,curH,easeT)/360;
-      gl.uniform3f(uWellColors[i],fract(wh),glslGlowSat,0);
+      gl.uniform3f(uWellColors[i],fract(wh),glslGlowSat,glslCoreSat);
     }else{
       gl.uniform4f(uW[i],0,0,0,0);
       gl.uniform3f(uWellColors[i],0,0,0);
@@ -556,7 +558,7 @@ function frame(now){
   // Lerped particle color params
   const pSat=lerpVal(ppal.particleSat,pal.particleSat,easeT);
   const pLight=lerpVal(ppal.particleLight,pal.particleLight,easeT);
-  const isMono=pal.particleMono&&easeT>=1;
+  const isMono=!!pal.particleMono;
   const prevHues=ppal.particleHues;
   const curHues=pal.particleHues;
 
