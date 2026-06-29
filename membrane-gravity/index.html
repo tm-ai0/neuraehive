@@ -546,10 +546,28 @@ function frame(now){
     w.strength+=(w.targetStrength-w.strength)*dt*8;
   }
 
+  // Build temporary drag wells
+  const dragWells=[];
+  for(const[,dp] of dragPoints){
+    if(dp.mode==="drag"){
+      if(!dp.deform) dp.deform=makeDeform();
+      dragWells.push({
+        x:dp.x/W,y:1-dp.y/H,
+        strength:3,targetStrength:3,
+        colorIdx:0,
+        age:time,birthTime:time,lifetime:999,
+        radius:2,flash:0,
+        deform:dp.deform,
+        dying:false,deathProgress:0,deathType:0,fragments:null,
+        id:-1
+      });
+    }
+  }
+  const allWells=wells.concat(dragWells);
+
   // --- Render membrane ---
   gl.uniform1f(uT,time);
   gl.uniform2f(uR,G.width,G.height);
-  gl.uniform1i(uWC,wells.length);
   gl.uniform1f(uHueBase,memHueBase);
   gl.uniform1f(uHueRange,memHueRange);
   gl.uniform1f(uMemSat,memSat);
@@ -557,9 +575,10 @@ function frame(now){
   const glslGlowSat=lerpVal(ppal.wellGlowSat,pal.wellGlowSat,easeT);
   const glslCoreSat=lerpVal(ppal.wellCoreSat,pal.wellCoreSat,easeT);
 
+  gl.uniform1i(uWC,Math.min(allWells.length,MAX_WELLS));
   for(let i=0;i<MAX_WELLS;i++){
-    if(i<wells.length){
-      const w=wells[i];
+    if(i<allWells.length){
+      const w=allWells[i];
       gl.uniform4f(uW[i],w.x,w.y,w.age,w.strength);
       const prevH=resolveWellHue(w,ppal);
       const curH=resolveWellHue(w,pal);
@@ -588,8 +607,8 @@ function frame(now){
 
   // Well halos on canvas — organic blob shapes
   const SEG=48;
-  for(let j=0;j<wells.length;j++){
-    const w=wells[j];
+  for(let j=0;j<allWells.length;j++){
+    const w=allWells[j];
     const wx=w.x*ww,wy=(1-w.y)*hh;
     const prevH=resolveWellHue(w,ppal);
     const curH=resolveWellHue(w,pal);
@@ -674,35 +693,12 @@ function frame(now){
   const prevHues=ppal.particleHues;
   const curHues=pal.particleHues;
 
-  // Collect active drag attractors (only confirmed drags)
-  const attractors=[];
-  for(const[,dp] of dragPoints){
-    if(dp.mode==="drag") attractors.push({x:dp.x*dpr,y:dp.y*dpr});
-  }
-
   // Particles
   for(let i=0;i<n;i++){
     let ax=accelX,ay=accelY;
 
-    for(let a=0;a<attractors.length;a++){
-      const ddx=attractors[a].x-px[i],ddy=attractors[a].y-py[i];
-      const dist=Math.sqrt(ddx*ddx+ddy*ddy)+10;
-      const reach=Math.min(ww,hh)*0.35;
-      if(dist<reach){
-        const falloff=1-dist/reach;
-        const f=1800*dpr/(dist*dist)*falloff;
-        const mf=4*dpr;
-        const cf=Math.min(f,mf);
-        ax+=ddx/dist*cf;
-        ay+=ddy/dist*cf;
-        const tang=cf*0.4;
-        ax+=-ddy/dist*tang;
-        ay+=ddx/dist*tang;
-      }
-    }
-
-    for(let j=0;j<wells.length;j++){
-      const w=wells[j];
+    for(let j=0;j<allWells.length;j++){
+      const w=allWells[j];
       const wx=w.x*ww,wy=(1-w.y)*hh;
       const ddx=wx-px[i],ddy=wy-py[i];
       const dist=Math.sqrt(ddx*ddx+ddy*ddy)+10;
@@ -744,14 +740,14 @@ function frame(now){
     if(py[i]>hh)py[i]-=hh;
 
     let nearestDist=Infinity;
-    for(let j=0;j<wells.length;j++){
-      const w=wells[j];
+    for(let j=0;j<allWells.length;j++){
+      const w=allWells[j];
       const wx=w.x*ww,wy=(1-w.y)*hh;
       const dd=Math.abs(wx-px[i])+Math.abs(wy-py[i]);
       if(dd<nearestDist)nearestDist=dd;
     }
 
-    const proxGlow=wells.length>0?Math.max(0,1-nearestDist/(Math.min(ww,hh)*0.4)):0;
+    const proxGlow=allWells.length>0?Math.max(0,1-nearestDist/(Math.min(ww,hh)*0.4)):0;
     const baseAlpha=0.08+proxGlow*0.25;
     const speedAlpha=Math.min(speed*0.08,0.4);
     const alpha=Math.min(pa[i]*(baseAlpha+speedAlpha),0.7);
@@ -765,22 +761,6 @@ function frame(now){
 
     ctx.fillStyle=`hsla(${pH|0},${finalSat|0}%,${finalLight|0}%,${alpha.toFixed(3)})`;
     ctx.fillRect(px[i],py[i],1,1);
-  }
-
-  // Drag attractor glow
-  for(const[,dp] of dragPoints){
-    if(dp.mode==="drag"){
-      const dx=dp.x*dpr,dy=dp.y*dpr;
-      const r=30*dpr;
-      const grad=ctx.createRadialGradient(dx,dy,0,dx,dy,r);
-      grad.addColorStop(0,"rgba(255,255,255,0.3)");
-      grad.addColorStop(0.3,"rgba(200,220,255,0.1)");
-      grad.addColorStop(1,"rgba(0,0,0,0)");
-      ctx.fillStyle=grad;
-      ctx.beginPath();
-      ctx.arc(dx,dy,r,0,Math.PI*2);
-      ctx.fill();
-    }
   }
 
   // Cursor glow
