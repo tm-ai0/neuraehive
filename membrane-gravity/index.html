@@ -385,7 +385,8 @@ function initParticles(){
 // --- Pointer & drag ---
 let pointerX=-100,pointerY=-100,pointerActive=false;
 let accelX=0,accelY=0;
-const DRAG_THRESHOLD=8;
+const DRAG_DIST=5;
+const DRAG_TIME=200;
 const dragPoints=new Map();
 
 function normalizeCoord(ex,ey){return[ex/W,1.0-ey/H];}
@@ -400,12 +401,17 @@ document.addEventListener("pointerdown",e=>{
   pointerActive=true;
   pointerX=e.clientX;pointerY=e.clientY;
   resetPillFade();
-  const pill_hit=isPillHit(e);
-  dragPoints.set(e.pointerId,{
+  const pillHit=isPillHit(e);
+  const dp={
     x:e.clientX,y:e.clientY,
     startX:e.clientX,startY:e.clientY,
-    dragged:false,pillHit:pill_hit
-  });
+    startTime:performance.now(),
+    mode:"pending",pillHit:pillHit
+  };
+  dp.timer=setTimeout(()=>{
+    if(dp.mode==="pending") dp.mode="tap";
+  },DRAG_TIME);
+  dragPoints.set(e.pointerId,dp);
 },{passive:false});
 
 document.addEventListener("pointermove",e=>{
@@ -414,24 +420,33 @@ document.addEventListener("pointermove",e=>{
   const dp=dragPoints.get(e.pointerId);
   if(dp){
     dp.x=e.clientX;dp.y=e.clientY;
-    const dx=e.clientX-dp.startX,dy=e.clientY-dp.startY;
-    if(dx*dx+dy*dy>DRAG_THRESHOLD*DRAG_THRESHOLD) dp.dragged=true;
+    if(dp.mode==="pending"){
+      const dx=e.clientX-dp.startX,dy=e.clientY-dp.startY;
+      if(dx*dx+dy*dy>DRAG_DIST*DRAG_DIST){
+        dp.mode="drag";
+        clearTimeout(dp.timer);
+      }
+    }
   }
 },{passive:false});
 
 document.addEventListener("pointerup",e=>{
   pointerActive=false;
   const dp=dragPoints.get(e.pointerId);
-  if(dp&&!dp.dragged&&!dp.pillHit){
-    const[nx,ny]=normalizeCoord(dp.startX,dp.startY);
-    addWell(nx,ny);
+  if(dp){
+    clearTimeout(dp.timer);
+    if(dp.mode!=="drag"&&!dp.pillHit){
+      const[nx,ny]=normalizeCoord(dp.startX,dp.startY);
+      addWell(nx,ny);
+    }
+    dragPoints.delete(e.pointerId);
   }
-  dragPoints.delete(e.pointerId);
 },{passive:false});
 
 document.addEventListener("pointercancel",e=>{
   pointerActive=false;
-  dragPoints.delete(e.pointerId);
+  const dp=dragPoints.get(e.pointerId);
+  if(dp){clearTimeout(dp.timer);dragPoints.delete(e.pointerId);}
 },{passive:false});
 
 if(window.DeviceMotionEvent){
@@ -659,10 +674,10 @@ function frame(now){
   const prevHues=ppal.particleHues;
   const curHues=pal.particleHues;
 
-  // Collect active drag attractors
+  // Collect active drag attractors (only confirmed drags)
   const attractors=[];
   for(const[,dp] of dragPoints){
-    if(dp.dragged) attractors.push({x:dp.x*dpr,y:dp.y*dpr});
+    if(dp.mode==="drag") attractors.push({x:dp.x*dpr,y:dp.y*dpr});
   }
 
   // Particles
