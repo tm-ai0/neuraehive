@@ -405,13 +405,13 @@ document.addEventListener("pointerdown",e=>{
   const dp={
     x:e.clientX,y:e.clientY,
     startX:e.clientX,startY:e.clientY,
-    startTime:performance.now(),
     mode:"pending",pillHit:pillHit
   };
   dp.timer=setTimeout(()=>{
     if(dp.mode==="pending") dp.mode="tap";
   },DRAG_TIME);
   dragPoints.set(e.pointerId,dp);
+  e.target.setPointerCapture(e.pointerId);
 },{passive:false});
 
 document.addEventListener("pointermove",e=>{
@@ -420,7 +420,7 @@ document.addEventListener("pointermove",e=>{
   const dp=dragPoints.get(e.pointerId);
   if(dp){
     dp.x=e.clientX;dp.y=e.clientY;
-    if(dp.mode==="pending"){
+    if(dp.mode!=="drag"){
       const dx=e.clientX-dp.startX,dy=e.clientY-dp.startY;
       if(dx*dx+dy*dy>DRAG_DIST*DRAG_DIST){
         dp.mode="drag";
@@ -687,11 +687,17 @@ function frame(now){
     for(let a=0;a<attractors.length;a++){
       const ddx=attractors[a].x-px[i],ddy=attractors[a].y-py[i];
       const dist=Math.sqrt(ddx*ddx+ddy*ddy)+10;
-      const reach=Math.min(ww,hh)*0.25;
+      const reach=Math.min(ww,hh)*0.35;
       if(dist<reach){
-        const f=400*dpr/(dist*dist)*(1-dist/reach);
-        ax+=ddx/dist*f;
-        ay+=ddy/dist*f;
+        const falloff=1-dist/reach;
+        const f=1800*dpr/(dist*dist)*falloff;
+        const mf=4*dpr;
+        const cf=Math.min(f,mf);
+        ax+=ddx/dist*cf;
+        ay+=ddy/dist*cf;
+        const tang=cf*0.4;
+        ax+=-ddy/dist*tang;
+        ay+=ddx/dist*tang;
       }
     }
 
@@ -759,6 +765,22 @@ function frame(now){
 
     ctx.fillStyle=`hsla(${pH|0},${finalSat|0}%,${finalLight|0}%,${alpha.toFixed(3)})`;
     ctx.fillRect(px[i],py[i],1,1);
+  }
+
+  // Drag attractor glow
+  for(const[,dp] of dragPoints){
+    if(dp.mode==="drag"){
+      const dx=dp.x*dpr,dy=dp.y*dpr;
+      const r=30*dpr;
+      const grad=ctx.createRadialGradient(dx,dy,0,dx,dy,r);
+      grad.addColorStop(0,"rgba(255,255,255,0.3)");
+      grad.addColorStop(0.3,"rgba(200,220,255,0.1)");
+      grad.addColorStop(1,"rgba(0,0,0,0)");
+      ctx.fillStyle=grad;
+      ctx.beginPath();
+      ctx.arc(dx,dy,r,0,Math.PI*2);
+      ctx.fill();
+    }
   }
 
   // Cursor glow
