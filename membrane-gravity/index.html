@@ -326,8 +326,17 @@ let wellCounter=0;
 
 function addWell(nx,ny){
   if(wells.length>=MAX_WELLS) wells.shift();
-  const lifetime=8+Math.random()*4;
+  const lifetime=4+Math.random()*2;
   const deathType=[DEATH_FADE,DEATH_IMPLODE,DEATH_EXPLODE][(Math.random()*3)|0];
+  const deform=[];
+  for(let d=0;d<7;d++){
+    deform.push({
+      amp:0.03+Math.random()*0.09,
+      freq:1+Math.floor(Math.random()*4),
+      phase:Math.random()*Math.PI*2,
+      speed:0.3+Math.random()*0.7
+    });
+  }
   wells.push({
     x:nx,y:ny,ox:nx,oy:ny,
     strength:0,targetStrength:1,
@@ -337,7 +346,8 @@ function addWell(nx,ny){
     lifetime:lifetime,
     deathType:deathType,
     dying:false,deathProgress:0,
-    radius:1,
+    radius:1,flash:0,
+    deform:deform,
     id:wellCounter++
   });
 }
@@ -460,26 +470,35 @@ function frame(now){
     }
 
     if(w.dying){
+      w.deathProgress+=dt/0.8;
+      const t=Math.min(w.deathProgress,1);
+      w.flash=0;
+
       if(w.deathType===DEATH_FADE){
-        w.deathProgress+=dt/15;
-        w.targetStrength=1-w.deathProgress;
-        w.radius=1;
+        w.targetStrength=(1-t)*(1-t);
+        w.radius=1-t*0.7;
       }else if(w.deathType===DEATH_IMPLODE){
-        w.deathProgress+=dt/3;
-        const t=w.deathProgress;
-        w.radius=Math.max(0,1-t*t);
-        w.targetStrength=w.radius;
-      }else if(w.deathType===DEATH_EXPLODE){
-        w.deathProgress+=dt/4;
-        const t=w.deathProgress;
-        if(t<0.6){
-          const pulseSpeed=1+t*8;
-          w.targetStrength=1+Math.sin(t*pulseSpeed*Math.PI*2)*0.3*t;
-          w.radius=1;
+        if(t<0.65){
+          const ct=t/0.65;
+          w.radius=Math.max(0.03,1-ct*ct*0.97);
+          w.targetStrength=1+ct*1.5;
         }else{
-          const burst=(t-0.6)/0.4;
-          w.targetStrength=Math.max(0,(1-burst)*(1-burst));
-          w.radius=1+burst*3;
+          const ft=(t-0.65)/0.35;
+          w.radius=0.03;
+          w.targetStrength=Math.max(0,4*(1-ft));
+          w.flash=Math.max(0,1-ft*1.5);
+        }
+      }else if(w.deathType===DEATH_EXPLODE){
+        if(t<0.45){
+          const pt=t/0.45;
+          const pulse=Math.sin(pt*Math.PI*3);
+          w.radius=1+pt*0.5+pulse*0.2*(1+pt);
+          w.targetStrength=1+pulse*0.5*pt+pt*0.5;
+        }else{
+          const bt=(t-0.45)/0.55;
+          w.radius=1.5+bt*5;
+          w.targetStrength=Math.max(0,3*(1-bt*bt));
+          w.flash=Math.max(0,1-bt*2.5);
         }
       }
 
@@ -489,7 +508,7 @@ function frame(now){
       }
     }
 
-    w.strength+=(w.targetStrength-w.strength)*dt*3;
+    w.strength+=(w.targetStrength-w.strength)*dt*8;
   }
 
   // --- Render membrane ---
@@ -532,7 +551,8 @@ function frame(now){
   const wcGlowSat=lerpVal(ppal.wellGlowSat,pal.wellGlowSat,easeT);
   const wcGlowLight=lerpVal(ppal.wellGlowLight,pal.wellGlowLight,easeT);
 
-  // Well halos on canvas
+  // Well halos on canvas — organic blob shapes
+  const SEG=48;
   for(let j=0;j<wells.length;j++){
     const w=wells[j];
     const wx=w.x*ww,wy=(1-w.y)*hh;
@@ -544,15 +564,39 @@ function frame(now){
     const baseR=Math.min(ww,hh)*0.18;
     const radius=baseR*w.radius;
     if(radius<1)continue;
-    const grad=ctx.createRadialGradient(wx,wy,0,wx,wy,radius);
+    const gradR=radius*1.15;
+    const grad=ctx.createRadialGradient(wx,wy,0,wx,wy,gradR);
     grad.addColorStop(0,`rgba(${cr},${cg},${cb},${(0.4*w.strength).toFixed(3)})`);
-    grad.addColorStop(0.15,`rgba(${cr},${cg},${cb},${(0.25*w.strength).toFixed(3)})`);
-    grad.addColorStop(0.4,`rgba(${or2},${og},${ob},${(0.12*w.strength).toFixed(3)})`);
+    grad.addColorStop(0.13,`rgba(${cr},${cg},${cb},${(0.25*w.strength).toFixed(3)})`);
+    grad.addColorStop(0.35,`rgba(${or2},${og},${ob},${(0.12*w.strength).toFixed(3)})`);
     grad.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=grad;
     ctx.beginPath();
-    ctx.arc(wx,wy,radius,0,Math.PI*2);
+    for(let s=0;s<=SEG;s++){
+      const ang=(s/SEG)*Math.PI*2;
+      let r=radius;
+      for(let d=0;d<w.deform.length;d++){
+        const h=w.deform[d];
+        r+=radius*h.amp*Math.sin(ang*h.freq+h.phase+time*h.speed);
+      }
+      const bx=wx+Math.cos(ang)*r,by=wy+Math.sin(ang)*r;
+      if(s===0)ctx.moveTo(bx,by);else ctx.lineTo(bx,by);
+    }
+    ctx.closePath();
     ctx.fill();
+
+    if(w.flash>0){
+      const fAlpha=w.flash*0.7*w.strength;
+      const fRad=radius*(w.deathType===DEATH_IMPLODE?0.4:1.8);
+      const fGrad=ctx.createRadialGradient(wx,wy,0,wx,wy,fRad);
+      fGrad.addColorStop(0,`rgba(255,255,255,${fAlpha.toFixed(3)})`);
+      fGrad.addColorStop(0.3,`rgba(${cr},${cg},${cb},${(fAlpha*0.5).toFixed(3)})`);
+      fGrad.addColorStop(1,"rgba(0,0,0,0)");
+      ctx.fillStyle=fGrad;
+      ctx.beginPath();
+      ctx.arc(wx,wy,fRad,0,Math.PI*2);
+      ctx.fill();
+    }
   }
 
   // Lerped particle color params
@@ -574,7 +618,7 @@ function frame(now){
       const force=w.strength*1200/(dist*dist)*dpr;
       const maxForce=3*dpr;
       let f=Math.min(force,maxForce);
-      const isExploding=w.dying&&w.deathType===DEATH_EXPLODE&&w.deathProgress>=0.6;
+      const isExploding=w.dying&&w.deathType===DEATH_EXPLODE&&w.deathProgress>=0.45;
       if(isExploding)f*=-2.5;
       ax+=ddx/dist*f;
       ay+=ddy/dist*f;
