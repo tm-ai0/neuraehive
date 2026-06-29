@@ -320,14 +320,12 @@ for(let i=0;i<MAX_WELLS;i++){
 }
 
 // --- Wells ---
-const DEATH_FADE=0,DEATH_IMPLODE=1,DEATH_EXPLODE=2;
+const DEATH_FADE=0,DEATH_IMPLODE=1,DEATH_EXPLODE=2,DEATH_FRAGMENT=3;
+const DEATH_DURATIONS=[1.0,0.3,0.5,1.0];
 let wells=[];
 let wellCounter=0;
 
-function addWell(nx,ny){
-  if(wells.length>=MAX_WELLS) wells.shift();
-  const lifetime=4+Math.random()*2;
-  const deathType=[DEATH_FADE,DEATH_IMPLODE,DEATH_EXPLODE][(Math.random()*3)|0];
+function makeDeform(){
   const deform=[];
   for(let d=0;d<7;d++){
     deform.push({
@@ -337,6 +335,13 @@ function addWell(nx,ny){
       speed:0.3+Math.random()*0.7
     });
   }
+  return deform;
+}
+
+function addWell(nx,ny){
+  if(wells.length>=MAX_WELLS) wells.shift();
+  const lifetime=4+Math.random()*2;
+  const deathType=(Math.random()*4)|0;
   wells.push({
     x:nx,y:ny,ox:nx,oy:ny,
     strength:0,targetStrength:1,
@@ -347,7 +352,8 @@ function addWell(nx,ny){
     deathType:deathType,
     dying:false,deathProgress:0,
     radius:1,flash:0,
-    deform:deform,
+    deform:makeDeform(),
+    fragments:null,
     id:wellCounter++
   });
 }
@@ -470,36 +476,40 @@ function frame(now){
     }
 
     if(w.dying){
-      w.deathProgress+=dt/0.8;
+      const dur=DEATH_DURATIONS[w.deathType];
+      w.deathProgress+=dt/dur;
       const t=Math.min(w.deathProgress,1);
       w.flash=0;
 
       if(w.deathType===DEATH_FADE){
         w.targetStrength=(1-t)*(1-t);
-        w.radius=1-t*0.7;
+        w.radius=1-t*0.8;
       }else if(w.deathType===DEATH_IMPLODE){
-        if(t<0.65){
-          const ct=t/0.65;
-          w.radius=Math.max(0.03,1-ct*ct*0.97);
-          w.targetStrength=1+ct*1.5;
-        }else{
-          const ft=(t-0.65)/0.35;
-          w.radius=0.03;
-          w.targetStrength=Math.max(0,4*(1-ft));
-          w.flash=Math.max(0,1-ft*1.5);
-        }
+        const contract=t*t*t;
+        w.radius=Math.max(0.02,1-contract*0.98);
+        w.targetStrength=(1-t)*2;
+        if(t>0.7) w.flash=(t-0.7)/0.3;
       }else if(w.deathType===DEATH_EXPLODE){
-        if(t<0.45){
-          const pt=t/0.45;
-          const pulse=Math.sin(pt*Math.PI*3);
-          w.radius=1+pt*0.5+pulse*0.2*(1+pt);
-          w.targetStrength=1+pulse*0.5*pt+pt*0.5;
-        }else{
-          const bt=(t-0.45)/0.55;
-          w.radius=1.5+bt*5;
-          w.targetStrength=Math.max(0,3*(1-bt*bt));
-          w.flash=Math.max(0,1-bt*2.5);
+        w.radius=1+t*1.0;
+        w.targetStrength=Math.max(0,(1-t)*(1-t)*2);
+        if(t<0.3) w.flash=t/0.3;
+        else w.flash=Math.max(0,1-(t-0.3)/0.3);
+      }else if(w.deathType===DEATH_FRAGMENT){
+        if(!w.fragments){
+          const count=3+((Math.random()*2)|0);
+          w.fragments=[];
+          for(let f=0;f<count;f++){
+            const ang=(f/count)*Math.PI*2+Math.random()*0.5;
+            w.fragments.push({
+              ang:ang,
+              speed:0.04+Math.random()*0.04,
+              scale:0.2+Math.random()*0.15,
+              deform:makeDeform()
+            });
+          }
         }
+        w.targetStrength=0;
+        w.radius=0;
       }
 
       if(w.deathProgress>=1){
@@ -586,16 +596,49 @@ function frame(now){
     ctx.fill();
 
     if(w.flash>0){
-      const fAlpha=w.flash*0.7*w.strength;
-      const fRad=radius*(w.deathType===DEATH_IMPLODE?0.4:1.8);
+      const fAlpha=w.flash*0.7;
+      const maxFlashPx=w.deathType===DEATH_IMPLODE?30*dpr:radius*0.6;
+      const fRad=Math.min(maxFlashPx,radius*0.5);
       const fGrad=ctx.createRadialGradient(wx,wy,0,wx,wy,fRad);
       fGrad.addColorStop(0,`rgba(255,255,255,${fAlpha.toFixed(3)})`);
-      fGrad.addColorStop(0.3,`rgba(${cr},${cg},${cb},${(fAlpha*0.5).toFixed(3)})`);
+      fGrad.addColorStop(0.4,`rgba(${cr},${cg},${cb},${(fAlpha*0.4).toFixed(3)})`);
       fGrad.addColorStop(1,"rgba(0,0,0,0)");
       ctx.fillStyle=fGrad;
       ctx.beginPath();
       ctx.arc(wx,wy,fRad,0,Math.PI*2);
       ctx.fill();
+    }
+
+    if(w.fragments&&w.dying){
+      const ft=Math.min(w.deathProgress,1);
+      const fragAlpha=(1-ft)*(1-ft);
+      const fragBaseR=baseR*0.25;
+      for(let fi=0;fi<w.fragments.length;fi++){
+        const frag=w.fragments[fi];
+        const dist=frag.speed*baseR*ft*3;
+        const fx=wx+Math.cos(frag.ang)*dist;
+        const fy=wy+Math.sin(frag.ang)*dist;
+        const fr=fragBaseR*frag.scale*(1-ft*0.5);
+        if(fr<1)continue;
+        const fGrad=ctx.createRadialGradient(fx,fy,0,fx,fy,fr);
+        fGrad.addColorStop(0,`rgba(${cr},${cg},${cb},${(0.35*fragAlpha).toFixed(3)})`);
+        fGrad.addColorStop(0.4,`rgba(${or2},${og},${ob},${(0.15*fragAlpha).toFixed(3)})`);
+        fGrad.addColorStop(1,"rgba(0,0,0,0)");
+        ctx.fillStyle=fGrad;
+        ctx.beginPath();
+        for(let s=0;s<=SEG;s++){
+          const ang=(s/SEG)*Math.PI*2;
+          let r=fr;
+          for(let d=0;d<frag.deform.length;d++){
+            const h=frag.deform[d];
+            r+=fr*h.amp*Math.sin(ang*h.freq+h.phase+time*h.speed);
+          }
+          const bx=fx+Math.cos(ang)*r,by=fy+Math.sin(ang)*r;
+          if(s===0)ctx.moveTo(bx,by);else ctx.lineTo(bx,by);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
 
@@ -618,8 +661,10 @@ function frame(now){
       const force=w.strength*1200/(dist*dist)*dpr;
       const maxForce=3*dpr;
       let f=Math.min(force,maxForce);
-      const isExploding=w.dying&&w.deathType===DEATH_EXPLODE&&w.deathProgress>=0.45;
-      if(isExploding)f*=-2.5;
+      const isExploding=w.dying&&w.deathType===DEATH_EXPLODE;
+      const explodeRadius=Math.min(ww,hh)*0.18*2;
+      if(isExploding&&dist<explodeRadius)f*=-1.5;
+      else if(isExploding)f=0;
       ax+=ddx/dist*f;
       ay+=ddy/dist*f;
       if(!isExploding){
