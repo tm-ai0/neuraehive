@@ -27,8 +27,8 @@ fn lumaAt(tex: texture_2d<f32>, uv: vec2f) -> f32 {
     // procedural nebula instead of a camera imprint.
     let p = (uv - vec2f(0.5)) * vec2f(1.777, 1.0);
     let rings = 0.55 + 0.45 * cos(length(p) * 22.0 - 1.5);
-    let cloud = fbmSimplex2d(p * 5.0, 4, 2.17, 0.5) * 0.5 + 0.5;
-    let imprint = clamp(rings * 0.35 + cloud * 0.75 - 0.18, 0.0, 1.0);
+    let cloud = fbmSimplex2d(p * 3.2, 4, 2.17, 0.5) * 0.5 + 0.5;
+    let imprint = clamp(rings * 0.22 + cloud * 0.85 - 0.28, 0.0, 1.0);
     return vec4f(0.0, 0.0, imprint, 0.0);
   }
 
