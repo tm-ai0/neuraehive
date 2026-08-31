@@ -1,8 +1,14 @@
-// Particle simulation. Position/velocity live in screen-UV space [0,1]^2.
-// The optical-flow field pushes like wind (never attracts); audio shapes the
-// matter: bass -> force, treble -> turbulence, silence -> crystallization.
-// titleMode pulls every grain onto the CINERÆ wordmark targets; chaos runs an
-// inverted-wind aspiration then a turbulence burst; touch emits dust.
+// Particle simulation. Position/velocity live in screen-UV space [0,1]^2;
+// each particle carries a second vec4: heat (ember glow), age (life cycle,
+// wraps at 1), comet (torn-off flight), spare.
+//
+// Life cycle: born ember on a strong audio transient (orange, brief), cools
+// to warm white, ages into ash (darker, slower, sediments toward the edges),
+// then quietly re-brightens in place. Vigorous local camera motion stirs the
+// ash bed and re-ignites a few embers. At rest the dust condenses onto the
+// zero level-set of a slow drifting noise field (iron-filings filaments),
+// combed every so often by a global gust. A dominant sustained tone aligns
+// the dust on Chladni figures; a very fast camera gesture tears comets off.
 import { simplex3d } from "@vgpu/wgsl-std/noise/simplex";
 
 struct SimParams {
@@ -20,12 +26,21 @@ struct SimParams {
   count: f32,
   titleMode: f32,       // 0 = free matter, 1 = word fully crystallized
   titleCount: f32,
-  titleScale: vec2f,    // cap-height units -> UV
+  titleScale: vec2f,    // ink-height units -> UV
   titleOffset: vec2f,   // word center in UV
   chaosAspire: f32,     // inverted-wind aspiration phase
   chaosBurst: f32,      // turbulence burst phase
   dissolve: f32,        // random thermalizing kick while the word melts
   touch: vec3f,         // xy = UV, z = strength
+  gust: vec2f,          // resting-state wind gust (direction x envelope)
+  cymMN: vec2f,         // Chladni mode numbers (m, n)
+  cymatic: f32,         // sustained-tone envelope x gain, 0..~2
+  ember: f32,           // ember birth gain on strong transients
+  filament: f32,        // resting filament field strength
+  lifeRate: f32,        // 1 / life-cycle seconds
+  ashLevel: f32,        // age where dust turns to ash (~0.97 - ash share)
+  sediment: f32,        // peripheral drift strength for ash
+  cometGain: f32,       // camera-tear sensitivity
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -57,12 +72,12 @@ fn homeOf(i: u32) -> vec2f {
   );
 }
 
-// Where this grain condenses on the wordmark: a stroke point plus a small
-// gaussian-ish offset along the stroke normal, so lines read as dust, not ink.
+// Where this grain condenses on the wordmark. Targets are sampled from the
+// actual ink, so only a whisper of jitter is needed to soften them to dust.
 fn titleTargetOf(i: u32) -> vec2f {
   let t = titleTargets[i % u32(max(params.titleCount, 1.0))];
-  let perp = (hash01(i * 5u + 11u) + hash01(i * 5u + 12u) - 1.0) * 0.030;
-  let along = (hash01(i * 5u + 13u) - 0.5) * 0.045;
+  let perp = (hash01(i * 5u + 11u) + hash01(i * 5u + 12u) - 1.0) * 0.010;
+  let along = (hash01(i * 5u + 13u) - 0.5) * 0.012;
   let tangent = vec2f(t.w, -t.z);
   let local = t.xy + t.zw * perp + tangent * along;
   return params.titleOffset + local * params.titleScale;
@@ -79,6 +94,13 @@ fn curlNoise(p: vec2f, t: f32) -> vec2f {
   return vec2f((n1 - n2), -(n3 - n4)) / (2.0 * e * scale);
 }
 
+// 0 = living dust, 1 = ash. Falls after ashLevel, releases just before the
+// wrap so the rebirth at age 0 is seamless (the grain re-brightens in place).
+fn ashWeight(age: f32) -> f32 {
+  return smoothstep(params.ashLevel, params.ashLevel + 0.04, age)
+    * (1.0 - smoothstep(0.965, 1.0, age));
+}
+
 @compute @workgroup_size(256)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let i = id.x;
@@ -86,8 +108,11 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     return;
   }
 
-  var pos = src[i].xy;
-  var vel = src[i].zw;
+  var pos = src[i * 2u].xy;
+  var vel = src[i * 2u].zw;
+  var heat = src[i * 2u + 1u].x;
+  var age = src[i * 2u + 1u].y;
+  var comet = src[i * 2u + 1u].z;
   let dt = params.dt;
   let title = params.titleMode;
 
@@ -99,7 +124,8 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       let a = hash01(i * 7u + salt + 1u) * 6.2831853;
       let r = sqrt(hash01(i * 7u + salt + 2u)) * 0.012;
       let dir = vec2f(cos(a), sin(a));
-      dst[i] = vec4f(params.touch.xy + dir * r, dir * (0.03 + hash01(i * 7u + salt + 3u) * 0.16));
+      dst[i * 2u] = vec4f(params.touch.xy + dir * r, dir * (0.03 + hash01(i * 7u + salt + 3u) * 0.16));
+      dst[i * 2u + 1u] = vec4f(0.0, 0.0, 0.0, 0.0);
       return;
     }
   }
@@ -108,30 +134,140 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // and kicks fade so the strokes can actually set.
   let calm = 1.0 - title * title * 0.92;
 
-  // Wind from the camera's optical flow; bass adds pressure behind it.
-  // The chaos aspiration briefly inverts it and breathes everything inward.
   let f = textureSampleLevel(field, fieldSamp, pos, 0.0);
+  let flowSpeed = length(f.rg);
+
+  // ---- life cycle ----------------------------------------------------------
+  // Aging, with a per-particle tempo so the population never pulses in sync.
+  age = fract(age + dt * params.lifeRate * (0.7 + 0.6 * hash01(i * 9u + 3u)));
+  heat *= exp(-dt * 0.85);
+
+  var ash = ashWeight(age);
+
+  // Strong transient: a sparse scatter of living grains is reborn as embers.
+  // Brief and localized, never a wash — and never the sleeping ash bed,
+  // which only vigorous camera motion may stir.
+  let strong = clamp((params.transient - 0.55) * 2.2, 0.0, 1.0);
+  if (strong > 0.0 && params.ember > 0.0 && ash < 0.5) {
+    let salt = pcg(u32(params.time * 83.0));
+    if (hash01(i * 17u + salt) < strong * params.ember * dt * 0.9) {
+      heat = 1.0;
+      age = 0.0;
+    }
+  }
+
+  // Vigorous camera motion stirs the local ash bed; a few grains re-ignite.
+  if (ash > 0.5 && f.a > 0.18) {
+    let salt = pcg(u32(params.time * 71.0) + 917u);
+    if (hash01(i * 23u + salt) < f.a * dt * 5.0) {
+      age = hash01(i * 23u + salt + 1u) * 0.1;
+      if (hash01(i * 23u + salt + 2u) < 0.18) {
+        heat = max(heat, 0.7 + 0.3 * hash01(i * 23u + salt + 3u));
+      }
+      vel += f.rg * 0.3;
+      ash = 0.0;
+    }
+  }
+
+  // A very fast gesture tears a few grains off as hot comets.
+  if (comet < 0.05 && f.a > 0.5 && flowSpeed > 0.35 && params.cometGain > 0.0) {
+    let salt = pcg(u32(params.time * 57.0) + 331u);
+    if (hash01(i * 29u + salt) < params.cometGain * f.a * dt * 1.2) {
+      comet = 1.0;
+      heat = max(heat, 0.9);
+      age = 0.0;
+      vel += f.rg / max(flowSpeed, 1e-4) * (0.45 + 0.35 * hash01(i * 29u + salt + 2u));
+    }
+  }
+  comet *= exp(-dt * 0.75);
+  let flight = clamp(comet * 4.0, 0.0, 1.0); // free-flight factor
+
+  // ---- forces --------------------------------------------------------------
+  // Wind from the camera's optical flow; bass adds pressure behind it. Ash is
+  // heavy and barely feels it — unless the local motion energy churns the bed.
   let windDir = 1.0 - params.chaosAspire * 3.5;
-  var acc = f.rg * params.force * (0.6 + params.bass * 1.6) * windDir * calm;
+  let ashWind = 1.0 - ash * 0.75 * (1.0 - min(f.a * 2.5, 1.0));
+  var acc = f.rg * params.force * (0.6 + params.bass * 1.6) * windDir * calm * ashWind;
   acc += (vec2f(0.5) - pos) * params.chaosAspire * 1.8;
 
-  // Treble feeds fine turbulence; the chaos burst multiplies it hard.
-  let turb = params.turbulence * (0.35 + params.treble * 2.0) * (1.0 + params.chaosBurst * 5.0) * calm;
+  let cym = params.cymatic * calm * (1.0 - ash) * (1.0 - flight);
+
+  // How much the scene is at rest: no sound, no camera motion, no word, no
+  // held tone. Only then does the filament field take the matter over.
+  let act = clamp(
+    params.bass * 1.1 + params.treble * 0.9 + params.transient * 1.6
+      + flowSpeed * 2.5 + f.a * 2.0 + params.chaosBurst,
+    0.0, 1.0
+  );
+  let c = params.crystal * (1.0 - title);
+  let c2 = c * c;
+  let restness = (1.0 - act) * calm * (1.0 - c2) * (1.0 - min(cym, 1.0));
+
+  // Treble feeds fine turbulence; the chaos burst multiplies it hard. Rest
+  // and a held tone both quiet it so structure can emerge from the fur.
+  let turb = params.turbulence * (0.35 + params.treble * 2.0)
+    * (1.0 + params.chaosBurst * 5.0) * calm
+    * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75);
   acc += curlNoise(pos, params.time * 0.15 + f32(i % 7u) * 0.001) * turb;
+
+  // Resting filaments: condense on the zero level-set of a slow drifting
+  // noise (iron filings on a wandering magnet) and slide gently along it.
+  let rest = params.filament * restness * (1.0 - flight);
+  if (rest > 0.003) {
+    let asp = params.gridCols / max(params.gridRows, 1.0);
+    let q = vec2f(pos.x * asp, pos.y) * 2.3
+      + vec2f(params.time * 0.011, -params.time * 0.007);
+    let tz = params.time * 0.035;
+    let e = 0.05;
+    let n0 = simplex3d(vec3f(q.x, q.y, tz));
+    let gx = simplex3d(vec3f(q.x + e, q.y, tz)) - simplex3d(vec3f(q.x - e, q.y, tz));
+    let gy = simplex3d(vec3f(q.x, q.y + e, tz)) - simplex3d(vec3f(q.x, q.y - e, tz));
+    let grad = vec2f(gx, gy) / (2.0 * e);
+    let gl = sqrt(dot(grad, grad) + 0.05);
+    acc += (-n0 * grad * 3.2 + vec2f(grad.y, -grad.x) * 0.5) / gl * rest;
+  }
+
+  // The resting gust: everything bends the same way, then it dies down.
+  acc += params.gust * calm * (1.0 - ash * 0.7);
+
+  // Cymatics: a dominant sustained tone aligns the dust on the nodal lines
+  // of a Chladni figure; the pattern follows the detected pitch.
+  if (cym > 0.003) {
+    let pi = 3.14159265;
+    let m = params.cymMN.x;
+    let n = params.cymMN.y;
+    let px = pos.x * pi;
+    let py = pos.y * pi;
+    let amp = cos(n * px) * cos(m * py) - cos(m * px) * cos(n * py);
+    let gA = vec2f(
+      (-n * sin(n * px) * cos(m * py) + m * sin(m * px) * cos(n * py)) * pi,
+      (-m * cos(n * px) * sin(m * py) + n * cos(m * px) * sin(n * py)) * pi,
+    );
+    acc += -amp * gA / (length(gA) + 1.5) * cym * 3.0;
+  }
 
   // Audio transients, the chaos burst and the melting word all shatter
   // outward — the dissolve kick re-seeds entropy so the released cluster
   // mixes back into dust instead of shearing into laminae.
-  let kick = (params.transient + params.chaosBurst * 0.8) * calm + params.dissolve;
+  let kick = ((params.transient + params.chaosBurst * 0.8) * calm + params.dissolve)
+    * (1.0 - ash * 0.6);
   if (kick > 0.001) {
     let a = hash01(i * 3u + u32(params.time * 997.0)) * 6.2831853;
     acc += vec2f(cos(a), sin(a)) * kick * 1.4;
   }
 
+  // Ash sediments toward the peripheral bed, then settles inside it.
+  if (ash > 0.001 && params.sediment > 0.001) {
+    let edgeDist = min(min(pos.x, 1.0 - pos.x), min(pos.y, 1.0 - pos.y));
+    let fromCenter = pos - vec2f(0.5);
+    let l = length(fromCenter);
+    if (l > 1e-4) {
+      acc += fromCenter / l * smoothstep(0.06, 0.30, edgeDist) * ash * params.sediment;
+    }
+  }
+
   // Crystallization: silence pulls each grain slowly to its home cell.
   // The wordmark takes precedence over the camera imprint.
-  let c = params.crystal * (1.0 - title);
-  let c2 = c * c;
   acc += (homeOf(i) - pos) * c2 * 14.0;
   let t2 = title * title;
   if (title > 0.001) {
@@ -139,20 +275,34 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
 
   vel += acc * dt;
-  // Viscosity damps motion; a forming crystal or the word damp it much harder.
-  vel *= exp(-dt * (params.viscosity + c2 * 22.0 + t2 * 26.0));
+  // Viscosity damps motion; ash, a forming crystal, a held tone or the word
+  // damp it much harder. Comets fly nearly free.
+  let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
+    + ash * 4.0 + min(cym, 1.0) * 4.0 + c2 * 22.0 + t2 * 26.0;
+  vel *= exp(-dt * drag);
+  let maxSpeed = 0.9 + flight * 0.9;
   let speed = length(vel);
-  if (speed > 0.9) {
-    vel *= 0.9 / speed;
+  if (speed > maxSpeed) {
+    vel *= maxSpeed / speed;
   }
 
   pos += vel * dt;
-  // Wrap so grains re-enter as dust — unless the word holds them.
+  // Wrap so grains re-enter as dust — unless the word holds them. A comet
+  // that leaves the screen lands as fresh ash on the opposite edge.
   if (title < 0.5) {
-    pos = fract(pos + vec2f(1.0));
+    if (any(pos < vec2f(0.0)) || any(pos > vec2f(1.0))) {
+      if (comet > 0.05) {
+        comet = 0.0;
+        heat = 0.0;
+        age = clamp(params.ashLevel + 0.02, 0.0, 0.95);
+        vel *= 0.2;
+      }
+      pos = fract(pos + vec2f(1.0));
+    }
   } else {
     pos = clamp(pos, vec2f(-0.05), vec2f(1.05));
   }
 
-  dst[i] = vec4f(pos, vel);
+  dst[i * 2u] = vec4f(pos, vel);
+  dst[i * 2u + 1u] = vec4f(heat, age, comet, 0.0);
 }

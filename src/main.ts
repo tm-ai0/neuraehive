@@ -26,7 +26,16 @@ const AUDIO_DEFAULTS = {
   bassGain: 1,
   trebleGain: 1,
   transientGain: 1,
+  tonalThreshold: 0.75, // periodicity clarity above which a tone is "held"
 };
+
+// Chladni figures by rising pitch: one pair of plate modes per ~major third,
+// growing in complexity as the tone climbs.
+const CHLADNI_MODES: [number, number][] = [
+  [1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [2, 5],
+  [3, 5], [4, 5], [3, 6], [5, 6], [4, 7], [5, 8],
+];
+const smooth01 = (t: number) => t * t * (3 - 2 * t);
 
 function fail(message: string, error?: unknown) {
   console.error("[cinerae]", message, error ?? "");
@@ -37,7 +46,7 @@ function fail(message: string, error?: unknown) {
 async function boot() {
   let renderer: Renderer;
   try {
-    renderer = await createRenderer(canvas, sampleWordmark());
+    renderer = await createRenderer(canvas, await sampleWordmark());
   } catch (error) {
     fail(
       "WebGPU n'a pas pu démarrer. Il faut un navigateur récent (Chrome/Edge) avec un GPU actif.",
@@ -60,6 +69,15 @@ async function boot() {
   let lastActivity = performance.now();
   let motionAvg = 0;
   let chaosStart = -Infinity;
+  let gustStart = -Infinity;
+  let gustNext = performance.now() + (10 + Math.random() * 10) * 1000;
+  let gustDirX = 1;
+  let gustDirY = 0;
+  let cym = 0;
+  let sustain = 0;
+  let cymIdx = 0;
+  let pendingIdx = -1;
+  let pendingSince = 0;
   let autoTier = QUALITY_TIERS.indexOf(renderer.tuning.count);
   if (autoTier < 0) autoTier = 2;
   let slowSince: number | undefined;
@@ -136,6 +154,13 @@ async function boot() {
     renderer.dynamics.bass = 0;
     renderer.dynamics.treble = 0;
     renderer.dynamics.transient = 0;
+    cym = 0;
+    sustain = 0;
+    renderer.dynamics.cymatic = 0;
+    // Without an ear, no silence to hear: release the crystal so the matter
+    // goes back to living freely instead of staying frozen forever.
+    crystal = 0;
+    silenceTime = 0;
     updateStatus();
   }
 
@@ -229,6 +254,43 @@ async function boot() {
         silenceTime = 0;
         crystal = Math.max(0, crystal - dt * (0.4 + a.level * 5));
       }
+
+      // Cymatics: a held tonal sound (note, drone, sung voice) builds the
+      // figure progressively; silence or a percussive attack dissolves it.
+      const tonal =
+        a.pitch > 0 &&
+        a.tonality > audioState.tonalThreshold &&
+        a.level >= audioState.silenceThreshold &&
+        a.transient < 0.5;
+      if (tonal) {
+        sustain += dt;
+        const midi = 69 + 12 * Math.log2(a.pitch / 440);
+        const idx = Math.max(
+          0,
+          Math.min(CHLADNI_MODES.length - 1, Math.floor((midi - 45) / 4))
+        );
+        // Hysteresis: the figure only follows a pitch that settles, so a
+        // vibrato does not flicker between neighbouring patterns.
+        if (idx !== cymIdx) {
+          if (idx !== pendingIdx) {
+            pendingIdx = idx;
+            pendingSince = now;
+          } else if (now - pendingSince > 250) {
+            cymIdx = idx;
+          }
+        } else {
+          pendingIdx = -1;
+        }
+      } else {
+        sustain = Math.max(0, sustain - dt * 4);
+      }
+      cym =
+        tonal && sustain > 0.35
+          ? Math.min(1, cym + dt / 2.2)
+          : Math.max(0, cym - dt / (a.transient > 0.4 ? 0.3 : 0.8));
+      renderer.dynamics.cymatic = cym;
+      renderer.dynamics.cymM = CHLADNI_MODES[cymIdx]![0];
+      renderer.dynamics.cymN = CHLADNI_MODES[cymIdx]![1];
     }
     // The camera imprint melts while the wordmark takes the matter over.
     crystal = Math.max(0, crystal - dt * renderer.dynamics.titleMode * 0.6);
@@ -251,6 +313,25 @@ async function boot() {
       t < titleTarget ? Math.min(titleTarget, t + step) : Math.max(titleTarget, t - step);
     // While the word melts, keep kicking entropy back into the cluster.
     renderer.dynamics.dissolve = titleTarget === 0 && t > 0.02 ? 0.4 : 0;
+
+    // Resting gust: every 10-20 s a wind rises, bends everything the same
+    // way for a breath, then dies. The shader quiets it outside of rest.
+    if (now >= gustNext) {
+      gustStart = now;
+      const angle = Math.random() * Math.PI * 2;
+      gustDirX = Math.cos(angle);
+      gustDirY = Math.sin(angle);
+      gustNext = now + (10 + Math.random() * 10) * 1000;
+    }
+    const gustT = (now - gustStart) / 1000;
+    const gustEnv =
+      gustT >= 0 && gustT < 5
+        ? gustT < 0.8
+          ? smooth01(gustT / 0.8)
+          : Math.exp(-(gustT - 0.8) / 1.1)
+        : 0;
+    renderer.dynamics.gustX = gustDirX * gustEnv * 0.7;
+    renderer.dynamics.gustY = gustDirY * gustEnv * 0.7;
 
     // Chaos envelope: inverted-wind aspiration, then a turbulence burst.
     const chaosT = (now - chaosStart) / 1000;

@@ -1,6 +1,8 @@
 // Instanced soft-dot rendering of the particle buffer, additive into the
-// trail target. Warm-white monochrome; crystallized grains take their
-// brightness from the camera luminance imprint stored in the field texture.
+// trail target. Warm-white monochrome as a rule; the life cycle bends it:
+// fresh embers glow orange and cool to white, ash grains dim toward the
+// background, comets stretch along their flight and burn bright. Crystallized
+// grains take their brightness from the camera luminance imprint.
 struct RenderParams {
   viewport: vec2f,   // target size in px
   pointSize: f32,    // grain diameter in px
@@ -10,12 +12,14 @@ struct RenderParams {
   gridCols: f32,
   gridRows: f32,
   titleMode: f32,
+  ashLevel: f32,     // must match the simulation's life-cycle threshold
 };
 
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) pointCoord: vec2f,
   @location(1) brightness: f32,
+  @location(2) tint: vec3f,
 };
 
 @group(0) @binding(0) var<uniform> params: RenderParams;
@@ -53,6 +57,14 @@ fn quadCorner(vertexIndex: u32) -> vec2f {
   }
 }
 
+// 1 = living dust, dips toward the ash floor, releases just before the age
+// wrap so rebirth in place is a slow re-brightening, never a pop.
+fn lifeTone(age: f32) -> f32 {
+  let fall = smoothstep(params.ashLevel, params.ashLevel + 0.04, age);
+  let rise = smoothstep(0.965, 1.0, age);
+  return mix(1.0, 0.16, fall * (1.0 - rise));
+}
+
 @vertex fn vs_main(
   @builtin(vertex_index) vertexIndex: u32,
   @builtin(instance_index) instanceIndex: u32,
@@ -62,12 +74,17 @@ fn quadCorner(vertexIndex: u32) -> vec2f {
     out.position = vec4f(2.0, 2.0, 0.0, 1.0); // off-screen, degenerate
     out.pointCoord = vec2f(0.0);
     out.brightness = 0.0;
+    out.tint = vec3f(0.0);
     return out;
   }
 
-  let p = particles[instanceIndex];
+  let p = particles[instanceIndex * 2u];
+  let extra = particles[instanceIndex * 2u + 1u];
   let pos = p.xy;
   let speed = length(p.zw);
+  let heat = extra.x;
+  let age = extra.y;
+  let comet = extra.z;
 
   // Crystallized grains inherit the luminance imprint at their home cell;
   // dark cells go out, bright cells stay lit -> the frozen image emerges.
@@ -79,15 +96,29 @@ fn quadCorner(vertexIndex: u32) -> vec2f {
   let frozen = 0.10 + imprint * 1.2;
   let crystalWeight = params.crystal * (1.0 - params.titleMode);
   var brightness = mix(fluid, frozen, crystalWeight * crystalWeight);
+  // The life cycle darkens ash; embers and comets burn over everything.
+  brightness *= lifeTone(age);
+  brightness *= 1.0 + heat * 1.1 + comet * 0.8;
   // While the wordmark holds the matter, every grain glows evenly; the
   // additive pile-up on the strokes does the rest.
   brightness = mix(brightness, 0.55, params.titleMode * params.titleMode);
   out.brightness = brightness;
 
+  // Ember orange fades back to warm white as the grain cools.
+  let hotness = clamp(heat * 1.15, 0.0, 1.0);
+  out.tint = mix(vec3f(1.0), vec3f(1.0, 0.42, 0.16), hotness);
+
   let corner = quadCorner(vertexIndex);
+  var offsetPx = corner * params.pointSize;
+  // Comets stretch along their flight — a long hot streak, not a dot.
+  if (comet > 0.02 && speed > 1e-4) {
+    let dir = p.zw / speed;
+    let stretch = 1.0 + comet * min(speed * 30.0, 14.0);
+    offsetPx = (dir * corner.x * stretch + vec2f(-dir.y, dir.x) * corner.y) * params.pointSize;
+  }
   let ndc = vec2f(pos.x * 2.0 - 1.0, 1.0 - pos.y * 2.0);
-  let offset = corner * params.pointSize / params.viewport;
-  out.position = vec4f(ndc + offset, 0.0, 1.0);
+  // UV y grows downward, NDC y upward: flip the offset's y.
+  out.position = vec4f(ndc + vec2f(offsetPx.x, -offsetPx.y) / params.viewport, 0.0, 1.0);
   out.pointCoord = corner;
   return out;
 }
@@ -98,7 +129,7 @@ fn quadCorner(vertexIndex: u32) -> vec2f {
     discard;
   }
   let falloff = (1.0 - d2) * (1.0 - d2);
-  // Pure intensity; the present pass owns tint and grade.
+  // Intensity with the life-cycle tint; the present pass owns the grade.
   let a = params.baseAlpha * falloff * in.brightness;
-  return vec4f(a, a, a, a);
+  return vec4f(in.tint * a, a);
 }

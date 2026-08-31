@@ -1,87 +1,127 @@
-// CINERÆ wordmark: the validated stroke paths, sampled into particle targets.
-// Uses the browser's own SVG path measurement, so arcs are exact.
-// Output: vec4 per point — xy = position in cap-height units centered on the
-// word, zw = unit normal (for perpendicular condensation jitter in-shader).
+// The definitive "cineræ" wordmark: Ephesis (embedded locally, no runtime
+// network), straightened by 8°, stroke fattened 1.1 px at the 88 px reference,
+// "neræ" pulled 4 px left to erase the i–n snag. The lettering is rendered
+// offscreen and TITLE_POINTS targets are sampled from the actual ink, so the
+// crystallized title is this exact drawing in dust at every screen size.
+// Output: vec4 per point — xy = position in ink-height units centered on the
+// word, zw = unit normal (edge gradient; random inside the stroke).
+import ephesisUrl from "./assets/fonts/Ephesis-Regular.ttf?url";
 
-const GLYPH_PATHS = [
-  "M224 88 A20 32 0 1 0 224 138", // C
-  "M248 81 L248 145", // I
-  "M272 145 L272 81 L312 145 L312 81", // N
-  "M368 81 L334 81 L334 145 L368 151 M334 113 L362 113", // E
-  "M386 145 L386 81 L410 81 A14 15 0 0 1 410 111 L386 111 M402 111 L422 145", // R
-  "M426 145 L460 81 M460 81 L460 145 M460 81 L490 81 M443 113 L484 113 M460 145 L492 145", // Æ
-];
+export const TITLE_POINTS = 4096;
 
-export const TITLE_POINTS = 2048;
-const CAP_HEIGHT = 64; // y 81 -> 145
-
-export function sampleWordmark(): Float32Array<ArrayBuffer> {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("width", "0");
-  svg.setAttribute("height", "0");
-  svg.style.position = "absolute";
-  svg.style.visibility = "hidden";
-  const paths = GLYPH_PATHS.map((d) => {
-    const p = document.createElementNS(ns, "path");
-    p.setAttribute("d", d);
-    svg.appendChild(p);
-    return p;
-  });
-  document.body.appendChild(svg);
-
-  try {
-    const lengths = paths.map((p) => p.getTotalLength());
-    const total = lengths.reduce((a, b) => a + b, 0);
-
-    // Bounding box of the sampled strokes, to center the word exactly.
-    let minX = Infinity;
-    let maxX = -Infinity;
-    for (const p of paths) {
-      const box = p.getBBox();
-      minX = Math.min(minX, box.x);
-      maxX = Math.max(maxX, box.x + box.width);
-    }
-    const centerX = (minX + maxX) / 2;
-    const centerY = (81 + 145) / 2; // optical center between cap line and baseline
-
-    const data = new Float32Array(TITLE_POINTS * 4);
-    let written = 0;
-    for (let g = 0; g < paths.length; g++) {
-      const path = paths[g]!;
-      const length = lengths[g]!;
-      const quota =
-        g === paths.length - 1
-          ? TITLE_POINTS - written
-          : Math.round((length / total) * TITLE_POINTS);
-      for (let k = 0; k < quota && written < TITLE_POINTS; k++) {
-        const at = ((k + 0.5) / quota) * length;
-        const point = path.getPointAtLength(at);
-        const eps = Math.min(0.5, length / 2);
-        const ahead = path.getPointAtLength(Math.min(length, at + eps));
-        const behind = path.getPointAtLength(Math.max(0, at - eps));
-        let tx = ahead.x - behind.x;
-        let ty = ahead.y - behind.y;
-        const norm = Math.hypot(tx, ty) || 1;
-        tx /= norm;
-        ty /= norm;
-        const o = written * 4;
-        data[o] = (point.x - centerX) / CAP_HEIGHT;
-        data[o + 1] = (point.y - centerY) / CAP_HEIGHT;
-        data[o + 2] = -ty; // normal = tangent rotated 90°
-        data[o + 3] = tx;
-        written++;
-      }
-    }
-    // If rounding left a tail unfilled, repeat from the start of the data.
-    for (let i = written; i < TITLE_POINTS; i++) {
-      data.copyWithin(i * 4, (i - written) * 4, (i - written) * 4 + 4);
-    }
-    return data;
-  } finally {
-    svg.remove();
-  }
+export interface Wordmark {
+  data: Float32Array<ArrayBuffer>;
+  /** Ink width / ink height, for layout math. */
+  aspect: number;
 }
 
-/** Aspect ratio (width / cap-height) of the sampled word, for layout math. */
-export const WORDMARK_ASPECT = (492 - 204) / CAP_HEIGHT;
+const WORD_HEAD = "ci";
+const WORD_TAIL = "neræ";
+const REF_SIZE = 88; // px — the validated reference rendering
+const STRAIGHTEN = (8 * Math.PI) / 180; // skewX undoing part of the italic lean
+const STROKE_REF = 1.1; // px of fattening stroke at REF_SIZE
+const TIGHTEN_REF = 4; // px pulling "neræ" toward "ci" (≈ -0.045em)
+const SS = 3; // supersampling factor for crisp ink
+
+export async function sampleWordmark(): Promise<Wordmark> {
+  const face = new FontFace("Ephesis", `url(${ephesisUrl})`);
+  await face.load();
+  document.fonts.add(face);
+
+  const fs = REF_SIZE * SS;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(fs * 6);
+  canvas.height = Math.ceil(fs * 3);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.font = `${fs}px Ephesis`;
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = STROKE_REF * SS;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  // x' = x + tan(8°)·y shifts the tops left relative to the baseline —
+  // the inverse of the italic lean. Measurements are transform-independent.
+  ctx.setTransform(1, 0, Math.tan(STRAIGHTEN), 1, 0, 0);
+
+  const x0 = fs * 0.6;
+  const y0 = fs * 1.7; // baseline, roomy for the script descenders
+  const xTail = x0 + ctx.measureText(WORD_HEAD).width - TIGHTEN_REF * SS;
+  for (const [text, x] of [
+    [WORD_HEAD, x0],
+    [WORD_TAIL, xTail],
+  ] as const) {
+    ctx.fillText(text, x, y0);
+    ctx.strokeText(text, x, y0);
+  }
+
+  const { width: w, height: h } = canvas;
+  const alpha = new Uint8Array(w * h);
+  {
+    const rgba = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3]!;
+  }
+
+  // Ink bounding box, to center the word and set its unit height.
+  let minX = w;
+  let maxX = 0;
+  let minY = h;
+  let maxY = 0;
+  const ink: number[] = []; // packed pixel indices with alpha above threshold
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const a = alpha[y * w + x]!;
+      if (a < 16) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      ink.push(y * w + x);
+    }
+  }
+  if (ink.length < TITLE_POINTS / 4) {
+    throw new Error("Le lettrage Ephesis n'a pas produit d'encre exploitable.");
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const unit = Math.max(1, maxY - minY);
+
+  const at = (x: number, y: number) =>
+    x < 0 || y < 0 || x >= w || y >= h ? 0 : alpha[y * w + x]!;
+
+  // Rejection-sample the ink, alpha-weighted, so point density follows the
+  // actual coverage of the strokes.
+  const data = new Float32Array(TITLE_POINTS * 4);
+  for (let i = 0; i < TITLE_POINTS; i++) {
+    let x = 0;
+    let y = 0;
+    for (;;) {
+      const idx = ink[(Math.random() * ink.length) | 0]!;
+      if (Math.random() * 255 < alpha[idx]!) {
+        x = idx % w;
+        y = (idx / w) | 0;
+        break;
+      }
+    }
+    // Normal from the local alpha gradient; random deep inside the stroke.
+    const gx = at(x + 2, y) - at(x - 2, y);
+    const gy = at(x, y + 2) - at(x, y - 2);
+    const len = Math.hypot(gx, gy);
+    let nx: number;
+    let ny: number;
+    if (len > 24) {
+      nx = gx / len;
+      ny = gy / len;
+    } else {
+      const angle = Math.random() * Math.PI * 2;
+      nx = Math.cos(angle);
+      ny = Math.sin(angle);
+    }
+    const o = i * 4;
+    data[o] = (x + Math.random() - 0.5 - cx) / unit;
+    data[o + 1] = (y + Math.random() - 0.5 - cy) / unit;
+    data[o + 2] = nx;
+    data[o + 3] = ny;
+  }
+
+  return { data, aspect: (maxX - minX) / unit };
+}
