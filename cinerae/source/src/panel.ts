@@ -1,110 +1,423 @@
-// Minimal on-screen control panel + FPS counter, styled to disappear into
-// the instrument. No dependency: a handful of range inputs and a select.
+// Settings panel. Three complexity modes (non-initié / curieux / pro),
+// sensor switches, Chaos and Reset. Desktop: collapsible card top-right.
+// Mobile (coarse pointer / narrow): bottom sheet with a large handle.
+// Every control writes straight into live state read by the render loop —
+// no rebuild, no debounce, no latency.
+import type { Tuning } from "./renderer";
 
-export interface PanelBindings {
-  force: number;
-  viscosity: number;
-  turbulence: number;
-  silenceThreshold: number;
-  particleCount: number;
+export type PanelMode = "simple" | "curieux" | "pro";
+
+export interface PanelState {
+  tuning: Tuning;
+  audio: {
+    silenceThreshold: number;
+    bassGain: number;
+    trebleGain: number;
+    transientGain: number;
+  };
+  quality: { auto: boolean };
 }
 
-export interface PanelCallbacks {
-  onChange(values: PanelBindings): void;
+export interface PanelHooks {
+  onSensor(kind: "camera" | "mic", enabled: boolean): void;
+  onChaos(): void;
+  onReset(): void;
+  onInteraction(): void;
 }
 
-const QUALITIES: { label: string; count: number }[] = [
-  { label: "Basse — 50 k", count: 50_000 },
-  { label: "Moyenne — 120 k", count: 120_000 },
-  { label: "Haute — 200 k", count: 200_000 },
-  { label: "Ultra — 400 k", count: 400_000 },
+interface ControlDef {
+  key: string;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  modes: PanelMode[];
+  format?: (v: number) => string;
+  get(): number;
+  set(v: number): void;
+}
+
+const MODES: { id: PanelMode; label: string }[] = [
+  { id: "simple", label: "Non-initié" },
+  { id: "curieux", label: "Curieux" },
+  { id: "pro", label: "Pro" },
 ];
+
+const SLIDERS_ICON = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 10h14M3 14h14"/><circle cx="7" cy="6" r="1.8" fill="#050403"/><circle cx="13" cy="10" r="1.8" fill="#050403"/><circle cx="9" cy="14" r="1.8" fill="#050403"/></svg>`;
+
+const percent = (v: number) => `${Math.round(v * 100)} %`;
+const thousands = (v: number) => `${Math.round(v / 1000)} k`;
+const plain = (v: number) =>
+  Number(v)
+    .toFixed(3)
+    .replace(/0+$/, "")
+    .replace(/\.$/, "");
 
 export function createPanel(
   root: HTMLElement,
-  initial: PanelBindings,
-  callbacks: PanelCallbacks
+  state: PanelState,
+  hooks: PanelHooks
 ) {
-  const values = { ...initial };
-  const panel = document.createElement("div");
+  let mode: PanelMode = "simple";
+  let collapsed = false;
+  let sensors = { camera: false, mic: false };
+
+  const controls: ControlDef[] = [
+    {
+      key: "intensity",
+      label: "intensité",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      modes: ["simple"],
+      format: percent,
+      get: () => state.tuning.force / 3,
+      set: (v) => (state.tuning.force = v * 3),
+    },
+    {
+      key: "storm",
+      label: "calme → tempête",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      modes: ["simple"],
+      format: percent,
+      get: () => state.tuning.turbulence / 1.6,
+      set: (v) => {
+        state.tuning.turbulence = v * 1.6;
+        state.tuning.viscosity = 6.5 - v * 5.7;
+      },
+    },
+    {
+      key: "force",
+      label: "force du vent",
+      min: 0,
+      max: 3,
+      step: 0.05,
+      modes: ["curieux", "pro"],
+      get: () => state.tuning.force,
+      set: (v) => (state.tuning.force = v),
+    },
+    {
+      key: "viscosity",
+      label: "viscosité",
+      min: 0,
+      max: 8,
+      step: 0.1,
+      modes: ["curieux", "pro"],
+      get: () => state.tuning.viscosity,
+      set: (v) => (state.tuning.viscosity = v),
+    },
+    {
+      key: "turbulence",
+      label: "turbulence",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      modes: ["curieux", "pro"],
+      get: () => state.tuning.turbulence,
+      set: (v) => (state.tuning.turbulence = v),
+    },
+    {
+      key: "trails",
+      label: "trainées",
+      min: 0.6,
+      max: 0.97,
+      step: 0.005,
+      modes: ["curieux", "pro"],
+      format: (v) => percent((v - 0.6) / 0.37),
+      get: () => state.tuning.trailDecay,
+      set: (v) => (state.tuning.trailDecay = v),
+    },
+    {
+      key: "silence",
+      label: "seuil de silence",
+      min: 0.001,
+      max: 0.15,
+      step: 0.001,
+      modes: ["curieux", "pro"],
+      get: () => state.audio.silenceThreshold,
+      set: (v) => (state.audio.silenceThreshold = v),
+    },
+    {
+      key: "fringe",
+      label: "teinte de la frange",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      modes: ["curieux", "pro"],
+      format: (v) => (v < 0.4 ? "chaude" : v > 0.6 ? "froide" : "neutre"),
+      get: () => state.tuning.fringeTint,
+      set: (v) => (state.tuning.fringeTint = v),
+    },
+    {
+      key: "size",
+      label: "taille des grains",
+      min: 0.8,
+      max: 5,
+      step: 0.1,
+      modes: ["pro"],
+      get: () => state.tuning.pointSize,
+      set: (v) => (state.tuning.pointSize = v),
+    },
+    {
+      key: "count",
+      label: "particules",
+      min: 10_000,
+      max: 400_000,
+      step: 10_000,
+      modes: ["pro"],
+      format: thousands,
+      get: () => state.tuning.count,
+      set: (v) => (state.tuning.count = v),
+    },
+    {
+      key: "exposure",
+      label: "exposition",
+      min: 0.5,
+      max: 3,
+      step: 0.05,
+      modes: ["pro"],
+      get: () => state.tuning.exposure,
+      set: (v) => (state.tuning.exposure = v),
+    },
+    {
+      key: "bassGain",
+      label: "gain basses",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      modes: ["pro"],
+      get: () => state.audio.bassGain,
+      set: (v) => (state.audio.bassGain = v),
+    },
+    {
+      key: "trebleGain",
+      label: "gain aigus",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      modes: ["pro"],
+      get: () => state.audio.trebleGain,
+      set: (v) => (state.audio.trebleGain = v),
+    },
+    {
+      key: "transientGain",
+      label: "gain transitoires",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      modes: ["pro"],
+      get: () => state.audio.transientGain,
+      set: (v) => (state.audio.transientGain = v),
+    },
+  ];
+
+  // ----- skeleton ----------------------------------------------------------
+  const panel = document.createElement("section");
   panel.className = "cinerae-panel";
+  panel.setAttribute("aria-label", "Réglages Cineræ");
   root.appendChild(panel);
 
-  const fpsLine = document.createElement("div");
+  const openButton = document.createElement("button");
+  openButton.type = "button";
+  openButton.className = "cinerae-open";
+  openButton.setAttribute("aria-label", "Ouvrir les réglages");
+  openButton.innerHTML = SLIDERS_ICON;
+  root.appendChild(openButton);
+
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "cinerae-handle";
+  handle.setAttribute("aria-label", "Ouvrir ou fermer les réglages");
+  handle.innerHTML = `<span class="cinerae-handle-bar"></span>`;
+  panel.appendChild(handle);
+
+  const header = document.createElement("header");
+  header.className = "cinerae-header";
+  panel.appendChild(header);
+
+  const fpsLine = document.createElement("span");
   fpsLine.className = "cinerae-fps";
   fpsLine.textContent = "— fps";
-  panel.appendChild(fpsLine);
+  header.appendChild(fpsLine);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "cinerae-close";
+  closeButton.setAttribute("aria-label", "Replier les réglages");
+  closeButton.textContent = "–";
+  header.appendChild(closeButton);
 
   const statusLine = document.createElement("div");
   statusLine.className = "cinerae-status";
-  statusLine.textContent = "en attente d'activation";
+  statusLine.textContent = "en attente";
   panel.appendChild(statusLine);
 
   const crystalBar = document.createElement("div");
   crystalBar.className = "cinerae-crystal";
   crystalBar.innerHTML = `<span class="cinerae-crystal-label">cristal</span><span class="cinerae-crystal-track"><span class="cinerae-crystal-fill"></span></span>`;
   panel.appendChild(crystalBar);
-  const crystalFill = crystalBar.querySelector(
-    ".cinerae-crystal-fill"
-  ) as HTMLElement;
+  const crystalFill = crystalBar.querySelector(".cinerae-crystal-fill") as HTMLElement;
 
-  const emit = () => callbacks.onChange({ ...values });
+  const modeBar = document.createElement("div");
+  modeBar.className = "cinerae-modes";
+  modeBar.setAttribute("role", "tablist");
+  panel.appendChild(modeBar);
+  const modeButtons = MODES.map((m) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = m.label;
+    b.setAttribute("role", "tab");
+    b.addEventListener("click", () => {
+      mode = m.id;
+      hooks.onInteraction();
+      renderMode();
+    });
+    modeBar.appendChild(b);
+    return b;
+  });
 
-  const slider = (
+  const sensorsBox = document.createElement("div");
+  sensorsBox.className = "cinerae-sensors";
+  panel.appendChild(sensorsBox);
+
+  const makeSwitch = (
     label: string,
-    key: keyof Omit<PanelBindings, "particleCount">,
-    min: number,
-    max: number,
-    step: number
+    get: () => boolean,
+    toggle: (next: boolean) => void
   ) => {
-    const row = document.createElement("label");
-    row.className = "cinerae-row";
-    const readout = document.createElement("span");
-    readout.className = "cinerae-value";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "cinerae-switch";
+    row.setAttribute("role", "switch");
     const name = document.createElement("span");
     name.textContent = label;
-    const input = document.createElement("input");
-    input.type = "range";
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-    input.value = String(values[key]);
-    const show = () => (readout.textContent = Number(input.value).toFixed(3).replace(/0+$/, "").replace(/\.$/, ""));
-    show();
-    input.addEventListener("input", () => {
-      values[key] = Number(input.value);
-      show();
-      emit();
+    const track = document.createElement("span");
+    track.className = "cinerae-switch-track";
+    track.innerHTML = `<span class="cinerae-switch-thumb"></span>`;
+    row.append(name, track);
+    const sync = () => row.setAttribute("aria-checked", String(get()));
+    row.addEventListener("click", () => {
+      hooks.onInteraction();
+      toggle(!get());
+      sync();
     });
-    row.append(name, input, readout);
-    panel.appendChild(row);
+    sensorsBox.appendChild(row);
+    return { row, sync };
   };
 
-  slider("force", "force", 0, 3, 0.05);
-  slider("viscosité", "viscosity", 0, 8, 0.1);
-  slider("turbulence", "turbulence", 0, 2, 0.05);
-  slider("seuil de cristallisation", "silenceThreshold", 0.001, 0.15, 0.001);
+  const cameraSwitch = makeSwitch(
+    "caméra",
+    () => sensors.camera,
+    (next) => hooks.onSensor("camera", next)
+  );
+  const micSwitch = makeSwitch(
+    "micro",
+    () => sensors.mic,
+    (next) => hooks.onSensor("mic", next)
+  );
+  const mirrorSwitch = makeSwitch(
+    "miroir caméra",
+    () => state.tuning.mirror > 0.5,
+    (next) => (state.tuning.mirror = next ? 1 : 0)
+  );
+  const overlaySwitch = makeSwitch(
+    "champ de vent",
+    () => state.tuning.windOverlay > 0.01,
+    (next) => (state.tuning.windOverlay = next ? 0.85 : 0)
+  );
+  const autoSwitch = makeSwitch(
+    "qualité auto",
+    () => state.quality.auto,
+    (next) => (state.quality.auto = next)
+  );
 
-  const qualityRow = document.createElement("label");
-  qualityRow.className = "cinerae-row";
-  const qualityName = document.createElement("span");
-  qualityName.textContent = "particules";
-  const select = document.createElement("select");
-  for (const q of QUALITIES) {
-    const option = document.createElement("option");
-    option.value = String(q.count);
-    option.textContent = q.label;
-    if (q.count === values.particleCount) option.selected = true;
-    select.appendChild(option);
-  }
-  select.addEventListener("change", () => {
-    values.particleCount = Number(select.value);
-    emit();
+  const actions = document.createElement("div");
+  actions.className = "cinerae-actions";
+  panel.appendChild(actions);
+  const chaosButton = document.createElement("button");
+  chaosButton.type = "button";
+  chaosButton.textContent = "Chaos";
+  chaosButton.addEventListener("click", () => {
+    hooks.onInteraction();
+    hooks.onChaos();
   });
-  qualityRow.append(qualityName, select);
-  panel.appendChild(qualityRow);
+  const resetButton = document.createElement("button");
+  resetButton.type = "button";
+  resetButton.textContent = "Reset";
+  resetButton.addEventListener("click", () => {
+    hooks.onInteraction();
+    hooks.onReset();
+    renderMode();
+  });
+  actions.append(chaosButton, resetButton);
+
+  const slidersBox = document.createElement("div");
+  slidersBox.className = "cinerae-sliders";
+  panel.appendChild(slidersBox);
+
+  // ----- rendering ---------------------------------------------------------
+  function renderMode() {
+    modeButtons.forEach((b, i) => {
+      const active = MODES[i]!.id === mode;
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-selected", String(active));
+    });
+    mirrorSwitch.row.style.display = "";
+    overlaySwitch.row.style.display = mode === "pro" ? "" : "none";
+    overlaySwitch.sync();
+    autoSwitch.sync();
+    mirrorSwitch.sync();
+
+    slidersBox.replaceChildren();
+    for (const def of controls) {
+      if (!def.modes.includes(mode)) continue;
+      const row = document.createElement("label");
+      row.className = "cinerae-row";
+      const name = document.createElement("span");
+      name.textContent = def.label;
+      const readout = document.createElement("span");
+      readout.className = "cinerae-value";
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(def.min);
+      input.max = String(def.max);
+      input.step = String(def.step);
+      input.value = String(def.get());
+      const show = () =>
+        (readout.textContent = (def.format ?? plain)(def.get()));
+      show();
+      input.addEventListener("input", () => {
+        def.set(Number(input.value));
+        show();
+        hooks.onInteraction();
+      });
+      row.append(name, input, readout);
+      slidersBox.appendChild(row);
+    }
+  }
+
+  function applyCollapsed() {
+    panel.classList.toggle("collapsed", collapsed);
+    openButton.classList.toggle("visible", collapsed);
+  }
+  const setCollapsed = (next: boolean) => {
+    collapsed = next;
+    hooks.onInteraction();
+    applyCollapsed();
+  };
+  closeButton.addEventListener("click", () => setCollapsed(true));
+  openButton.addEventListener("click", () => setCollapsed(false));
+  handle.addEventListener("click", () => setCollapsed(!collapsed));
+
+  renderMode();
+  applyCollapsed();
 
   return {
+    get mode() {
+      return mode;
+    },
     setFps(fps: number) {
       fpsLine.textContent = `${Math.round(fps)} fps`;
     },
@@ -114,5 +427,19 @@ export function createPanel(
     setCrystal(value: number) {
       crystalFill.style.width = `${Math.round(value * 100)}%`;
     },
+    setSensors(camera: boolean, mic: boolean) {
+      sensors = { camera, mic };
+      cameraSwitch.sync();
+      micSwitch.sync();
+    },
+    refresh() {
+      renderMode();
+    },
+    collapse() {
+      collapsed = true;
+      applyCollapsed();
+    },
   };
 }
+
+export type Panel = ReturnType<typeof createPanel>;

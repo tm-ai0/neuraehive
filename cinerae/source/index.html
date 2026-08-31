@@ -7,6 +7,11 @@
     <style>
       :root {
         color-scheme: dark;
+        --ink: #e8ddcc;
+        --ink-bright: #f2e7d3;
+        --ink-dim: rgba(232, 221, 204, 0.5);
+        --ink-faint: rgba(232, 221, 204, 0.14);
+        --bg: #050403;
       }
       * {
         box-sizing: border-box;
@@ -15,10 +20,12 @@
       html,
       body {
         height: 100%;
-        background: #050403;
-        color: #e8ddcc;
+        background: var(--bg);
+        color: var(--ink);
         font-family: "Segoe UI", system-ui, sans-serif;
         overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
       canvas#stage {
         position: fixed;
@@ -26,29 +33,32 @@
         width: 100%;
         height: 100%;
         display: block;
+        touch-action: none;
       }
+
+      /* ---- intro (the title itself is particles on the canvas) ---- */
       #overlay {
         position: fixed;
         inset: 0;
+        pointer-events: none;
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 1.6rem;
-        background: radial-gradient(ellipse at center, rgba(5, 4, 3, 0.25), rgba(5, 4, 3, 0.82));
-        transition: opacity 0.9s ease;
+        justify-content: flex-start;
+        padding-top: 56vh;
+        gap: 1.5rem;
+        opacity: 0;
+        transition-property: opacity;
+        transition-duration: 1.4s;
+        transition-timing-function: ease-out;
         z-index: 10;
       }
-      #overlay.hidden {
-        opacity: 0;
-        pointer-events: none;
+      #overlay.shown {
+        opacity: 1;
       }
-      #overlay h1 {
-        font-size: clamp(2.2rem, 6vw, 4rem);
-        font-weight: 200;
-        letter-spacing: 0.55em;
-        margin-left: 0.55em;
-        color: #f2e7d3;
+      #overlay.gone {
+        opacity: 0;
+        transition-duration: 0.9s;
       }
       #overlay p {
         max-width: 34rem;
@@ -56,30 +66,41 @@
         font-size: 0.82rem;
         line-height: 1.7;
         letter-spacing: 0.08em;
-        color: rgba(232, 221, 204, 0.55);
+        color: var(--ink-dim);
         padding: 0 1.5rem;
+        text-wrap: pretty;
       }
       #overlay .buttons {
         display: flex;
         gap: 1rem;
         flex-wrap: wrap;
         justify-content: center;
+        pointer-events: auto;
+      }
+      #overlay.gone .buttons {
+        pointer-events: none;
       }
       #overlay button {
         appearance: none;
         background: transparent;
         border: 1px solid rgba(232, 221, 204, 0.4);
-        color: #e8ddcc;
+        color: var(--ink);
         padding: 0.85rem 1.8rem;
+        min-height: 44px;
         font-size: 0.78rem;
         letter-spacing: 0.22em;
         text-transform: uppercase;
         cursor: pointer;
-        transition: background 0.25s ease, border-color 0.25s ease;
+        transition-property: background-color, border-color, scale;
+        transition-duration: 0.25s;
+        transition-timing-function: ease-out;
       }
       #overlay button:hover {
         background: rgba(232, 221, 204, 0.08);
         border-color: rgba(232, 221, 204, 0.8);
+      }
+      #overlay button:active {
+        scale: 0.96;
       }
       #overlay .error {
         color: #d9a08a;
@@ -87,28 +108,100 @@
         letter-spacing: 0.08em;
         min-height: 1.2em;
       }
+
+      /* ---- settings panel ---- */
       .cinerae-panel {
         position: fixed;
         top: 1rem;
         right: 1rem;
-        width: 15.5rem;
-        padding: 0.9rem 1rem 1rem;
-        background: rgba(5, 4, 3, 0.72);
-        border: 1px solid rgba(232, 221, 204, 0.14);
-        backdrop-filter: blur(6px);
+        width: 17rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+        padding: 0.85rem 1rem 1rem;
+        background: rgba(5, 4, 3, 0.78);
+        border: 1px solid var(--ink-faint);
+        backdrop-filter: blur(8px);
         font-size: 0.68rem;
         letter-spacing: 0.06em;
-        z-index: 5;
+        z-index: 20;
         user-select: none;
+        transition-property: opacity, translate;
+        transition-duration: 0.3s;
+        transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+      }
+      .cinerae-panel.collapsed {
+        opacity: 0;
+        translate: 0 -0.5rem;
+        pointer-events: none;
+      }
+      .cinerae-open {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        appearance: none;
+        background: rgba(5, 4, 3, 0.7);
+        border: 1px solid var(--ink-faint);
+        color: var(--ink-dim);
+        cursor: pointer;
+        z-index: 19;
+        opacity: 0;
+        pointer-events: none;
+        transition-property: opacity, color, scale;
+        transition-duration: 0.25s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-open.visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .cinerae-open:hover {
+        color: var(--ink-bright);
+      }
+      .cinerae-open:active {
+        scale: 0.96;
+      }
+      .cinerae-open svg {
+        width: 20px;
+        height: 20px;
+      }
+      .cinerae-handle {
+        display: none;
+      }
+      .cinerae-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 0.15rem;
       }
       .cinerae-fps {
         font-size: 0.92rem;
         letter-spacing: 0.18em;
-        color: #f2e7d3;
-        margin-bottom: 0.15rem;
+        color: var(--ink-bright);
+        font-variant-numeric: tabular-nums;
+      }
+      .cinerae-close {
+        appearance: none;
+        background: transparent;
+        border: none;
+        color: var(--ink-dim);
+        font-size: 1rem;
+        line-height: 1;
+        width: 32px;
+        height: 32px;
+        margin: -6px -8px 0 0;
+        cursor: pointer;
+        transition-property: color;
+        transition-duration: 0.2s;
+      }
+      .cinerae-close:hover {
+        color: var(--ink-bright);
       }
       .cinerae-status {
-        color: rgba(232, 221, 204, 0.5);
+        color: var(--ink-dim);
         margin-bottom: 0.7rem;
         min-height: 1em;
       }
@@ -116,10 +209,10 @@
         display: flex;
         align-items: center;
         gap: 0.55rem;
-        margin-bottom: 0.8rem;
+        margin-bottom: 0.85rem;
       }
       .cinerae-crystal-label {
-        color: rgba(232, 221, 204, 0.5);
+        color: var(--ink-dim);
       }
       .cinerae-crystal-track {
         flex: 1;
@@ -131,8 +224,112 @@
         display: block;
         height: 100%;
         width: 0%;
-        background: #e8ddcc;
-        transition: width 0.2s linear;
+        background: var(--ink);
+        transition-property: width;
+        transition-duration: 0.2s;
+        transition-timing-function: linear;
+      }
+      .cinerae-modes {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        border: 1px solid var(--ink-faint);
+        margin-bottom: 0.85rem;
+      }
+      .cinerae-modes button {
+        appearance: none;
+        background: transparent;
+        border: none;
+        color: var(--ink-dim);
+        padding: 0.5rem 0.2rem;
+        min-height: 34px;
+        font-size: 0.62rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition-property: background-color, color;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-modes button.active {
+        background: rgba(232, 221, 204, 0.12);
+        color: var(--ink-bright);
+      }
+      .cinerae-sensors {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 0.85rem;
+      }
+      .cinerae-switch {
+        appearance: none;
+        background: transparent;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: rgba(232, 221, 204, 0.78);
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        padding: 0.35rem 0;
+        min-height: 34px;
+        cursor: pointer;
+      }
+      .cinerae-switch-track {
+        position: relative;
+        width: 34px;
+        height: 18px;
+        border-radius: 9px;
+        border: 1px solid rgba(232, 221, 204, 0.3);
+        transition-property: background-color, border-color;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-switch-thumb {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: var(--ink-dim);
+        transition-property: translate, background-color;
+        transition-duration: 0.2s;
+        transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+      }
+      .cinerae-switch[aria-checked="true"] .cinerae-switch-track {
+        background: rgba(232, 221, 204, 0.18);
+        border-color: rgba(232, 221, 204, 0.6);
+      }
+      .cinerae-switch[aria-checked="true"] .cinerae-switch-thumb {
+        translate: 16px 0;
+        background: var(--ink-bright);
+      }
+      .cinerae-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+        margin-bottom: 0.85rem;
+      }
+      .cinerae-actions button {
+        appearance: none;
+        background: transparent;
+        border: 1px solid rgba(232, 221, 204, 0.35);
+        color: var(--ink);
+        padding: 0.5rem 0;
+        min-height: 36px;
+        font-size: 0.66rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition-property: background-color, border-color, scale;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-actions button:hover {
+        background: rgba(232, 221, 204, 0.08);
+        border-color: rgba(232, 221, 204, 0.7);
+      }
+      .cinerae-actions button:active {
+        scale: 0.96;
       }
       .cinerae-row {
         display: grid;
@@ -142,26 +339,94 @@
         color: rgba(232, 221, 204, 0.78);
       }
       .cinerae-row input[type="range"] {
-        grid-column: 1 / 2;
+        grid-column: 1 / 3;
         width: 100%;
         accent-color: #cfc2a6;
-        height: 1rem;
+        height: 1.1rem;
+        cursor: pointer;
       }
       .cinerae-row .cinerae-value {
         justify-self: end;
         align-self: end;
         color: rgba(232, 221, 204, 0.45);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
-      .cinerae-row select {
-        grid-column: 1 / 3;
-        background: rgba(5, 4, 3, 0.9);
-        color: #e8ddcc;
-        border: 1px solid rgba(232, 221, 204, 0.2);
-        padding: 0.25rem 0.3rem;
-        font-size: 0.68rem;
-        letter-spacing: 0.06em;
+
+      /* ---- mobile: bottom sheet ---- */
+      @media (max-width: 720px), (pointer: coarse) and (max-width: 1024px) {
+        .cinerae-panel {
+          top: auto;
+          right: 0;
+          left: 0;
+          bottom: 0;
+          width: 100%;
+          max-height: min(70vh, 34rem);
+          border-left: none;
+          border-right: none;
+          border-bottom: none;
+          padding: 0 1.2rem calc(1.2rem + env(safe-area-inset-bottom));
+          font-size: 0.8rem;
+          translate: 0 0;
+          transition-property: translate, opacity;
+        }
+        .cinerae-panel.collapsed {
+          opacity: 1;
+          pointer-events: auto;
+          translate: 0 calc(100% - 52px);
+          overflow-y: hidden;
+        }
+        .cinerae-open {
+          display: none;
+        }
+        .cinerae-handle {
+          display: grid;
+          place-items: center;
+          appearance: none;
+          background: transparent;
+          border: none;
+          width: 100%;
+          height: 52px;
+          margin: 0 0 0.2rem;
+          cursor: pointer;
+        }
+        .cinerae-handle-bar {
+          display: block;
+          width: 56px;
+          height: 4px;
+          border-radius: 2px;
+          background: rgba(232, 221, 204, 0.35);
+        }
+        .cinerae-close {
+          display: none;
+        }
+        .cinerae-switch,
+        .cinerae-modes button,
+        .cinerae-actions button {
+          min-height: 44px;
+        }
+        .cinerae-row input[type="range"] {
+          height: 2rem;
+          font-size: 16px;
+        }
+        .cinerae-switch-track {
+          width: 44px;
+          height: 24px;
+          border-radius: 12px;
+        }
+        .cinerae-switch-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 9px;
+        }
+        .cinerae-switch[aria-checked="true"] .cinerae-switch-thumb {
+          translate: 20px 0;
+        }
+        #overlay {
+          padding-top: 58vh;
+        }
       }
+
       #fatal {
         position: fixed;
         inset: 0;
@@ -174,15 +439,14 @@
         letter-spacing: 0.1em;
         line-height: 1.8;
         color: #d9a08a;
-        background: #050403;
-        z-index: 20;
+        background: var(--bg);
+        z-index: 30;
       }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
     <div id="overlay">
-      <h1>CINERÆ</h1>
       <p>
         Poussière de lumière pilotée par le mouvement et le son. La caméra
         n'est jamais affichée&nbsp;: seul son mouvement souffle sur les

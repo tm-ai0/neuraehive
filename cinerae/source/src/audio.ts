@@ -36,6 +36,10 @@ export async function requestMicrophone(): Promise<MicSource> {
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.55;
+  // Cut the byte-spectrum noise floor: with the default -100 dB floor, total
+  // silence still reads ~0.4 in every band and fake-drives the simulation.
+  analyser.minDecibels = -72;
+  analyser.maxDecibels = -22;
   source.connect(analyser);
 
   const bins = analyser.frequencyBinCount;

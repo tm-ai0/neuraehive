@@ -1,5 +1,7 @@
 // The vgpu graph. Per frame: (camera upload) -> luma -> optical flow ->
 // particle compute -> trail fade + additive particles -> graded present.
+// Buffers are allocated once at MAX_PARTICLES; the live count is a uniform
+// plus a per-call instance count, so every control acts without any rebuild.
 import {
   clock,
   compute,
@@ -9,11 +11,10 @@ import {
   init,
   pingPongStorage,
   sampler,
+  storage,
   surface,
   target,
-  type Draw,
   type Gpu,
-  type PingPongStorage,
   type Target,
   type Texture,
 } from "vgpu";
@@ -24,12 +25,14 @@ import lumaWgsl from "./shaders/luma.wgsl";
 import particlesWgsl from "./shaders/particles.wgsl";
 import presentWgsl from "./shaders/present.wgsl";
 import simulateWgsl from "./shaders/simulate.wgsl";
+import { TITLE_POINTS, WORDMARK_ASPECT } from "./wordmark";
 
 const FLOW_W = 192;
 const FLOW_H = 108;
 const FIELD_FORMAT: GPUTextureFormat = "rgba16float";
 const WORKGROUP = 256;
 const BYTES_PER_PARTICLE = 16;
+export const MAX_PARTICLES = 400_000;
 
 export interface Tuning {
   force: number;
@@ -39,6 +42,10 @@ export interface Tuning {
   baseAlpha: number;
   trailDecay: number;
   exposure: number;
+  fringeTint: number; // 0 warm .. 1 cool
+  windOverlay: number; // 0 off .. 1 full veils
+  mirror: number; // 1 = mirrored camera (default)
+  count: number;
 }
 
 export interface Dynamics {
@@ -46,6 +53,13 @@ export interface Dynamics {
   treble: number;
   transient: number;
   crystal: number;
+  titleMode: number;
+  chaosAspire: number;
+  chaosBurst: number;
+  dissolve: number;
+  touchX: number;
+  touchY: number;
+  touchStrength: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -56,6 +70,10 @@ export const DEFAULT_TUNING: Tuning = {
   baseAlpha: 0.11,
   trailDecay: 0.84,
   exposure: 1.6,
+  fringeTint: 0.5,
+  windOverlay: 0,
+  mirror: 1,
+  count: 200_000,
 };
 
 interface CameraInput {
@@ -65,15 +83,28 @@ interface CameraInput {
   consumeDirty(): boolean;
 }
 
-interface ParticleSystem {
-  count: number;
-  gridCols: number;
-  gridRows: number;
-  buffers: PingPongStorage;
-  drawable: Draw;
+function makeSeed(count: number): Float32Array<ArrayBuffer> {
+  const seed = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    seed[i * 4] = Math.random();
+    seed[i * 4 + 1] = Math.random();
+  }
+  return seed;
 }
 
-export async function createRenderer(canvas: HTMLCanvasElement) {
+function decodeF16(bits: number): number {
+  const sign = bits & 0x8000 ? -1 : 1;
+  const exp = (bits >> 10) & 0x1f;
+  const mant = bits & 0x3ff;
+  if (exp === 0) return sign * mant * 2 ** -24;
+  if (exp === 31) return mant ? Number.NaN : sign * Infinity;
+  return sign * (1 + mant / 1024) * 2 ** (exp - 15);
+}
+
+export async function createRenderer(
+  canvas: HTMLCanvasElement,
+  titleData: Float32Array<ArrayBuffer>
+) {
   const gpu: Gpu = await init();
   const output = surface(gpu, canvas, { dpr: [1, 1.5] });
   const time = clock(gpu);
@@ -112,36 +143,39 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const presentEffect = effect(gpu, presentWgsl, { label: "cinerae-present" });
   const simulate = compute(gpu, simulateWgsl, { label: "cinerae-simulate" });
 
+  const titleBuffer = storage(gpu, TITLE_POINTS * 16, "read");
+  titleBuffer.write(titleData);
+
   const tuning: Tuning = { ...DEFAULT_TUNING };
-  const dynamics: Dynamics = { bass: 0, treble: 0, transient: 0, crystal: 0 };
+  const dynamics: Dynamics = {
+    bass: 0,
+    treble: 0,
+    transient: 0,
+    crystal: 0,
+    titleMode: 0,
+    chaosAspire: 0,
+    chaosBurst: 0,
+    dissolve: 0,
+    touchX: 0,
+    touchY: 0,
+    touchStrength: 0,
+  };
 
   let camera: CameraInput | undefined;
   let cameraTexture: Texture | undefined;
   let cameraSeen = false; // at least one uploaded frame
 
-  function buildParticles(count: number): ParticleSystem {
-    const aspect = output.size[0] / Math.max(1, output.size[1]);
-    const gridCols = Math.max(1, Math.ceil(Math.sqrt(count * aspect)));
-    const gridRows = Math.max(1, Math.ceil(count / gridCols));
-    const buffers = pingPongStorage(gpu, count * BYTES_PER_PARTICLE);
-    const seed = new Float32Array(count * 4);
-    for (let i = 0; i < count; i++) {
-      seed[i * 4] = Math.random();
-      seed[i * 4 + 1] = Math.random();
-    }
-    buffers.read.write(seed);
-    buffers.write.write(seed);
-    const drawable = draw(gpu, {
-      shader: particlesWgsl,
-      vertices: 6,
-      instances: count,
-      blend: { color: { src: "one", dst: "one" }, alpha: { src: "one", dst: "one" } },
-      label: "cinerae-particles",
-    });
-    return { count, gridCols, gridRows, buffers, drawable };
-  }
-
-  let particles = buildParticles(200_000);
+  const buffers = pingPongStorage(gpu, MAX_PARTICLES * BYTES_PER_PARTICLE);
+  const initialSeed = makeSeed(MAX_PARTICLES);
+  buffers.read.write(initialSeed);
+  buffers.write.write(initialSeed);
+  const drawable = draw(gpu, {
+    shader: particlesWgsl,
+    vertices: 6,
+    instances: MAX_PARTICLES,
+    blend: { color: { src: "one", dst: "one" }, alpha: { src: "one", dst: "one" } },
+    label: "cinerae-particles",
+  });
 
   let fps = 0;
   let disposed = false;
@@ -155,11 +189,30 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     for (const t of previous) t.color.destroy();
   });
 
+  // Wordmark layout: centered, slightly above the middle, responsive width.
+  function titleLayout(): { scale: [number, number]; offset: [number, number] } {
+    const [w, h] = output.size;
+    const capPx = Math.max(
+      36,
+      Math.min((0.6 * w) / WORDMARK_ASPECT, 0.2 * h, 150)
+    );
+    return {
+      scale: [capPx / Math.max(1, w), capPx / Math.max(1, h)],
+      offset: [0.5, 0.42],
+    };
+  }
+
   frameLoop(gpu, (frame) => {
     if (disposed || renderError) return;
     try {
       const dt = Math.min(Math.max(time.deltaTime, 0), 1 / 30);
       if (dt > 0) fps += (1 / dt - fps) * 0.05;
+
+      const count = Math.max(1, Math.min(MAX_PARTICLES, Math.round(tuning.count)));
+      const aspect = output.size[0] / Math.max(1, output.size[1]);
+      const gridCols = Math.max(1, Math.ceil(Math.sqrt(count * aspect)));
+      const gridRows = Math.max(1, Math.ceil(count / gridCols));
+      const title = titleLayout();
 
       // 1. Upload the newest camera frame (never displayed).
       if (camera && cameraTexture && camera.consumeDirty()) {
@@ -190,17 +243,26 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
           bass: dynamics.bass,
           treble: dynamics.treble,
           transient: dynamics.transient,
-          gridCols: particles.gridCols,
-          gridRows: particles.gridRows,
-          count: particles.count,
+          gridCols,
+          gridRows,
+          count,
+          titleMode: dynamics.titleMode,
+          titleCount: TITLE_POINTS,
+          titleScale: title.scale,
+          titleOffset: title.offset,
+          chaosAspire: dynamics.chaosAspire,
+          chaosBurst: dynamics.chaosBurst,
+          dissolve: dynamics.dissolve,
+          touch: [dynamics.touchX, dynamics.touchY, dynamics.touchStrength],
         },
-        src: particles.buffers.read,
-        dst: particles.buffers.write,
+        src: buffers.read,
+        dst: buffers.write,
+        titleTargets: titleBuffer,
         field: fieldPrev,
         fieldSamp: linear,
       });
-      simulate.dispatch(Math.ceil(particles.count / WORKGROUP));
-      particles.buffers.swap();
+      simulate.dispatch(Math.ceil(count / WORKGROUP));
+      buffers.swap();
 
       // 3. Luma + flow field for the next step.
       const hasCamera = cameraSeen ? 1 : 0;
@@ -215,6 +277,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
           params: {
             scale,
             offset: [(1 - scale[0]) / 2, (1 - scale[1]) / 2],
+            mirror: tuning.mirror,
           },
           cam: cameraTexture,
           samp: linear,
@@ -244,22 +307,23 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
         trail: trailPrev,
         samp: linear,
       });
-      particles.drawable.set({
+      drawable.set({
         params: {
           viewport: [trailNext.size[0], trailNext.size[1]],
           pointSize: tuning.pointSize,
           crystal: dynamics.crystal,
           baseAlpha: tuning.baseAlpha,
-          count: particles.count,
-          gridCols: particles.gridCols,
-          gridRows: particles.gridRows,
+          count,
+          gridCols,
+          gridRows,
+          titleMode: dynamics.titleMode,
         },
-        particles: particles.buffers.read,
+        particles: buffers.read,
         field: fieldPrev,
       });
       frame.pass({ target: trailNext, clear: [0, 0, 0, 1] }, (pass) => {
         pass.draw(fadeEffect);
-        pass.draw(particles.drawable);
+        pass.draw(drawable, { instances: count });
       });
 
       // 5. Grade to the canvas.
@@ -268,9 +332,12 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
           texel: output.texelSize,
           exposure: tuning.exposure,
           fringe: dynamics.transient,
+          fringeTint: tuning.fringeTint,
+          overlay: tuning.windOverlay,
           time: time.time,
         },
         trail: trailNext,
+        field: fieldPrev,
         samp: linear,
       });
       frame.pass({ target: output, clear: [0, 0, 0, 1] }, (pass) =>
@@ -295,12 +362,8 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     },
     tuning,
     dynamics,
-    get particleCount() {
-      return particles.count;
-    },
-    setParticleCount(count: number) {
-      if (count === particles.count) return;
-      particles = buildParticles(count);
+    get hasCamera() {
+      return camera !== undefined;
     },
     attachCamera(input: CameraInput) {
       cameraTexture = gpu.device.createTexture({
@@ -311,6 +374,35 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       });
       camera = input;
       cameraSeen = false;
+    },
+    detachCamera() {
+      camera = undefined;
+      cameraSeen = false;
+      cameraTexture?.destroy();
+      cameraTexture = undefined;
+    },
+    resetMatter() {
+      const seed = makeSeed(MAX_PARTICLES);
+      buffers.read.write(seed);
+      buffers.write.write(seed);
+    },
+    /** Average optical-flow motion energy, ~0 when the scene is still. */
+    async readMotion(): Promise<number> {
+      const source = fieldTargets[1 - fieldIndex]!;
+      const bytes = await source.read();
+      const half = new Uint16Array(
+        bytes.buffer,
+        bytes.byteOffset,
+        Math.floor(bytes.byteLength / 2)
+      );
+      let sum = 0;
+      let n = 0;
+      // Alpha channel = motion energy; sample sparsely.
+      for (let i = 3; i < half.length; i += 4 * 37) {
+        sum += decodeF16(half[i]!);
+        n++;
+      }
+      return n ? sum / n : 0;
     },
     dispose() {
       disposed = true;

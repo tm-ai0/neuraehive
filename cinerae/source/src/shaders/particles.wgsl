@@ -9,6 +9,7 @@ struct RenderParams {
   count: f32,
   gridCols: f32,
   gridRows: f32,
+  titleMode: f32,
 };
 
 struct VertexOut {
@@ -75,8 +76,13 @@ fn quadCorner(vertexIndex: u32) -> vec2f {
   let texel = vec2u(clamp(home, vec2f(0.0), vec2f(0.9995)) * dims);
   let imprint = textureLoad(field, texel, 0).b;
   let fluid = 0.55 + min(speed * 9.0, 1.4);
-  let frozen = 0.12 + imprint * 1.7;
-  out.brightness = mix(fluid, frozen, params.crystal * params.crystal);
+  let frozen = 0.10 + imprint * 1.2;
+  let crystalWeight = params.crystal * (1.0 - params.titleMode);
+  var brightness = mix(fluid, frozen, crystalWeight * crystalWeight);
+  // While the wordmark holds the matter, every grain glows evenly; the
+  // additive pile-up on the strokes does the rest.
+  brightness = mix(brightness, 0.55, params.titleMode * params.titleMode);
+  out.brightness = brightness;
 
   let corner = quadCorner(vertexIndex);
   let ndc = vec2f(pos.x * 2.0 - 1.0, 1.0 - pos.y * 2.0);
