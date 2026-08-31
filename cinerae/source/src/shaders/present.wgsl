@@ -16,10 +16,6 @@ struct PresentParams {
 @group(0) @binding(2) var field: texture_2d<f32>;
 @group(0) @binding(3) var samp: sampler;
 
-fn luma(uv: vec2f) -> f32 {
-  return textureSampleLevel(trail, samp, uv, 0.0).r;
-}
-
 fn grain(uv: vec2f) -> f32 {
   let p = uv * 1000.0 + vec2f(params.time * 61.7, params.time * 39.3);
   let h = fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
@@ -31,17 +27,20 @@ fn grain(uv: vec2f) -> f32 {
   let dir = center * params.fringe * 14.0 * params.texel * 60.0;
 
   // Spectral separation along the radial axis, transitoires only.
-  // The tint biases which side of the spectrum leads.
+  // The tint biases which side of the spectrum leads. The trail carries real
+  // color now (ember orange lives in its rgb), so shift channels, not luma.
   let wr = 1.0 + (0.5 - params.fringeTint) * 1.1;
   let wb = 1.0 + (params.fringeTint - 0.5) * 1.1;
-  let g = luma(uv);
-  let r = g + (luma(uv + dir) - g) * wr;
-  let b = g + (luma(uv - dir) - g) * wb;
+  let base = textureSampleLevel(trail, samp, uv, 0.0).rgb;
+  let rShift = textureSampleLevel(trail, samp, uv + dir, 0.0).r;
+  let bShift = textureSampleLevel(trail, samp, uv - dir, 0.0).b;
+  let r = base.r + (rShift - base.r) * wr;
+  let b = base.b + (bShift - base.b) * wb;
 
   let exposure = params.exposure;
   var color = vec3f(
     1.0 - exp(-max(r, 0.0) * exposure),
-    1.0 - exp(-g * exposure),
+    1.0 - exp(-base.g * exposure),
     1.0 - exp(-max(b, 0.0) * exposure),
   );
 

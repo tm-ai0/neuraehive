@@ -1,5 +1,6 @@
 // Microphone analysis. Raw audio never leaves the page: one AnalyserNode
-// feeds four scalars per frame — bass, treble, level, transient.
+// feeds six scalars per frame — bass, treble, level, transient, pitch,
+// tonality. Pitch + tonality drive the cymatic figures on sustained tones.
 
 export interface AudioFrame {
   /** Low band energy (~40-250 Hz), 0..1. */
@@ -10,6 +11,74 @@ export interface AudioFrame {
   level: number;
   /** Spectral-flux onset envelope, spikes on attacks then decays, 0..1. */
   transient: number;
+  /** Detected fundamental in Hz, 0 when nothing tonal dominates. */
+  pitch: number;
+  /** Clarity of the periodicity, 0..1 — high for notes, drones, sung voice. */
+  tonality: number;
+}
+
+/**
+ * YIN-style pitch detection (cumulative mean normalized difference) on a
+ * mono window. Pure so it can be tested outside the browser.
+ */
+export function detectPitch(
+  wave: Float32Array,
+  sampleRate: number
+): { pitch: number; clarity: number } {
+  const n = wave.length;
+  const tauMin = Math.max(2, Math.floor(sampleRate / 1000)); // <= 1 kHz
+  const tauMax = Math.min(n >> 1, Math.ceil(sampleRate / 55)); // >= 55 Hz
+  const w = n - tauMax;
+  if (w < 64 || tauMax <= tauMin) return { pitch: 0, clarity: 0 };
+
+  const d = new Float32Array(tauMax + 1);
+  for (let tau = tauMin; tau <= tauMax; tau++) {
+    let sum = 0;
+    for (let i = 0; i < w; i++) {
+      const diff = wave[i]! - wave[i + tau]!;
+      sum += diff * diff;
+    }
+    d[tau] = sum;
+  }
+  // Cumulative-mean normalization, then take the first dip under threshold
+  // (descending to its local minimum), else the global minimum.
+  let cum = 0;
+  const nd = new Float32Array(tauMax + 1).fill(1);
+  for (let tau = tauMin; tau <= tauMax; tau++) {
+    cum += d[tau]!;
+    nd[tau] = cum > 0 ? (d[tau]! * (tau - tauMin + 1)) / cum : 1;
+  }
+  let best = -1;
+  for (let tau = tauMin + 1; tau < tauMax; tau++) {
+    if (nd[tau]! < 0.18) {
+      while (tau + 1 < tauMax && nd[tau + 1]! < nd[tau]!) tau++;
+      best = tau;
+      break;
+    }
+  }
+  if (best < 0) {
+    let min = 1;
+    for (let tau = tauMin + 1; tau < tauMax; tau++) {
+      if (nd[tau]! < min) {
+        min = nd[tau]!;
+        best = tau;
+      }
+    }
+    if (best < 0) return { pitch: 0, clarity: 0 };
+  }
+  // Parabolic refinement around the minimum.
+  let tau = best;
+  if (best > tauMin && best < tauMax) {
+    const a = nd[best - 1]!;
+    const b = nd[best]!;
+    const c = nd[best + 1]!;
+    const denom = a - 2 * b + c;
+    if (Math.abs(denom) > 1e-9) tau = best + (a - c) / (2 * denom);
+  }
+  return {
+    pitch: sampleRate / tau,
+    clarity: Math.max(0, Math.min(1, 1 - nd[best]!)),
+  };
 }
 
 export interface MicSource {
@@ -57,6 +126,9 @@ export async function requestMicrophone(): Promise<MicSource> {
 
   let fluxAvg = 0.02;
   let transient = 0;
+  // Pitch runs on a half-rate copy: plenty for voice and instruments, and
+  // it keeps the difference-function loop cheap enough for every frame.
+  const half = new Float32Array(analyser.fftSize >> 1);
 
   return {
     update(dt: number): AudioFrame {
@@ -79,11 +151,24 @@ export async function requestMicrophone(): Promise<MicSource> {
       const onset = Math.max(0, flux - fluxAvg * 1.6 - 0.004);
       transient = Math.max(transient * Math.exp(-dt * 7), Math.min(1, onset * 28));
 
+      let pitch = 0;
+      let tonality = 0;
+      if (level > 0.004) {
+        for (let i = 0; i < half.length; i++) {
+          half[i] = (wave[i * 2]! + wave[i * 2 + 1]!) * 0.5;
+        }
+        const found = detectPitch(half, ctx.sampleRate / 2);
+        pitch = found.pitch;
+        tonality = found.clarity;
+      }
+
       return {
         bass: Math.min(1, band(40, 250) * 1.4),
         treble: Math.min(1, band(2000, 10000) * 2.2),
         level,
         transient,
+        pitch,
+        tonality,
       };
     },
     dispose() {

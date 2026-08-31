@@ -25,13 +25,13 @@ import lumaWgsl from "./shaders/luma.wgsl";
 import particlesWgsl from "./shaders/particles.wgsl";
 import presentWgsl from "./shaders/present.wgsl";
 import simulateWgsl from "./shaders/simulate.wgsl";
-import { TITLE_POINTS, WORDMARK_ASPECT } from "./wordmark";
+import { TITLE_POINTS, type Wordmark } from "./wordmark";
 
 const FLOW_W = 192;
 const FLOW_H = 108;
 const FIELD_FORMAT: GPUTextureFormat = "rgba16float";
 const WORKGROUP = 256;
-const BYTES_PER_PARTICLE = 16;
+const BYTES_PER_PARTICLE = 32; // pos+vel, then heat/age/comet/spare
 export const MAX_PARTICLES = 400_000;
 
 export interface Tuning {
@@ -46,6 +46,14 @@ export interface Tuning {
   windOverlay: number; // 0 off .. 1 full veils
   mirror: number; // 1 = mirrored camera (default)
   count: number;
+  emberGain: number; // ember births on strong transients
+  cymGain: number; // cymatic figure strength
+  gustStrength: number; // resting-state gusts
+  filament: number; // resting filament field
+  ashShare: number; // ~share of the population living as dark ash
+  lifeSeconds: number; // full life-cycle duration
+  sediment: number; // peripheral drift of ash
+  cometGain: number; // camera-tear sensitivity
 }
 
 export interface Dynamics {
@@ -60,6 +68,11 @@ export interface Dynamics {
   touchX: number;
   touchY: number;
   touchStrength: number;
+  gustX: number; // gust direction x envelope, set by the orchestrator
+  gustY: number;
+  cymatic: number; // sustained-tone envelope 0..1
+  cymM: number; // Chladni mode numbers
+  cymN: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -74,6 +87,14 @@ export const DEFAULT_TUNING: Tuning = {
   windOverlay: 0,
   mirror: 1,
   count: 200_000,
+  emberGain: 1,
+  cymGain: 1,
+  gustStrength: 1,
+  filament: 1,
+  ashShare: 0.15,
+  lifeSeconds: 45,
+  sediment: 0.6,
+  cometGain: 1,
 };
 
 interface CameraInput {
@@ -84,10 +105,13 @@ interface CameraInput {
 }
 
 function makeSeed(count: number): Float32Array<ArrayBuffer> {
-  const seed = new Float32Array(count * 4);
+  const seed = new Float32Array(count * 8);
   for (let i = 0; i < count; i++) {
-    seed[i * 4] = Math.random();
-    seed[i * 4 + 1] = Math.random();
+    seed[i * 8] = Math.random();
+    seed[i * 8 + 1] = Math.random();
+    // Ages spread over the whole cycle, so the ash share is there from the
+    // first frame instead of arriving in one synchronized wave.
+    seed[i * 8 + 5] = Math.random();
   }
   return seed;
 }
@@ -103,7 +127,7 @@ function decodeF16(bits: number): number {
 
 export async function createRenderer(
   canvas: HTMLCanvasElement,
-  titleData: Float32Array<ArrayBuffer>
+  wordmark: Wordmark
 ) {
   const gpu: Gpu = await init();
   const output = surface(gpu, canvas, { dpr: [1, 1.5] });
@@ -144,7 +168,7 @@ export async function createRenderer(
   const simulate = compute(gpu, simulateWgsl, { label: "cinerae-simulate" });
 
   const titleBuffer = storage(gpu, TITLE_POINTS * 16, "read");
-  titleBuffer.write(titleData);
+  titleBuffer.write(wordmark.data);
 
   const tuning: Tuning = { ...DEFAULT_TUNING };
   const dynamics: Dynamics = {
@@ -159,6 +183,11 @@ export async function createRenderer(
     touchX: 0,
     touchY: 0,
     touchStrength: 0,
+    gustX: 0,
+    gustY: 0,
+    cymatic: 0,
+    cymM: 1,
+    cymN: 2,
   };
 
   let camera: CameraInput | undefined;
@@ -194,7 +223,7 @@ export async function createRenderer(
     const [w, h] = output.size;
     const capPx = Math.max(
       36,
-      Math.min((0.6 * w) / WORDMARK_ASPECT, 0.2 * h, 150)
+      Math.min((0.6 * w) / wordmark.aspect, 0.2 * h, 150)
     );
     return {
       scale: [capPx / Math.max(1, w), capPx / Math.max(1, h)],
@@ -254,6 +283,18 @@ export async function createRenderer(
           chaosBurst: dynamics.chaosBurst,
           dissolve: dynamics.dissolve,
           touch: [dynamics.touchX, dynamics.touchY, dynamics.touchStrength],
+          gust: [
+            dynamics.gustX * tuning.gustStrength,
+            dynamics.gustY * tuning.gustStrength,
+          ],
+          cymMN: [dynamics.cymM, dynamics.cymN],
+          cymatic: dynamics.cymatic * tuning.cymGain,
+          ember: tuning.emberGain,
+          filament: tuning.filament,
+          lifeRate: 1 / Math.max(5, tuning.lifeSeconds),
+          ashLevel: Math.min(0.95, Math.max(0.55, 0.97 - tuning.ashShare)),
+          sediment: tuning.sediment,
+          cometGain: tuning.cometGain,
         },
         src: buffers.read,
         dst: buffers.write,
@@ -317,6 +358,7 @@ export async function createRenderer(
           gridCols,
           gridRows,
           titleMode: dynamics.titleMode,
+          ashLevel: Math.min(0.95, Math.max(0.55, 0.97 - tuning.ashShare)),
         },
         particles: buffers.read,
         field: fieldPrev,
