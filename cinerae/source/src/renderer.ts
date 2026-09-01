@@ -27,7 +27,7 @@ import particlesWgsl from "./shaders/particles.wgsl";
 import presentWgsl from "./shaders/present.wgsl";
 import simulateWgsl from "./shaders/simulate.wgsl";
 import { IMPRINT_MAX_POINTS, type ImprintCloud } from "./imprints";
-import { defaultLookColors, type LookColors } from "./look";
+import { defaultLookColors, isLightBg, type LookColors } from "./look";
 
 const FLOW_W = 192;
 const FLOW_H = 108;
@@ -72,11 +72,26 @@ export interface Tuning {
   memoryGain: number; // cendre mémoire veil strength
   memorySeconds: number; // memory duration
   ghost: number; // camera-luminance veil (Pro)
-  // ---- présence (all inert while dynamics.presence stays 0) ---------------
-  presenceTrame: number; // 0 bruit, 1 dithering, 2 lignes, 3 moiré, 4 points, 5 contours
-  presenceShare: number; // share of the population serving the portrait
-  presenceSize: number; // point-size multiplier of held grains
-  presenceHold: number; // 0 = free dust (historical), 1 = rigid portrait
+  // ---- présence / deux couches (inert while dynamics.presence stays 0) ----
+  bodyMat: number; // corps material 0..7 (fumée, liquide, encre, points, dither, lignes, moiré, contours) — fractional blends
+  fondMat: number; // fond material, same scale
+  // Crossfade material pair: while matBlend > 0 the shaders blend these two
+  // materials directly (stochastic per grain) instead of sweeping the
+  // scalar through the whole ladder. Written by the A/B crossfade only.
+  bodyMatA: number;
+  bodyMatB: number;
+  fondMatA: number;
+  fondMatB: number;
+  matBlend: number;
+  presenceShare: number; // resting bias: share of the grains serving the corps
+  presenceSize: number; // point-size multiplier of corps grains
+  presenceHold: number; // serrage — 0 = free dust (historical), 1 = rigid portrait
+  elastic: number; // how far the corps yields under a gesture
+  fondVisible: number; // fond brightness while someone is there
+  bodyMargin: number; // shadow margin: fond eviction strength around the body
+  presenceTrail: number; // seconds of wake left by the corps layer
+  voiceEase: number; // how much the voice relaxes the serrage
+  fondReact: number; // how much the fond feels the gesture wind
 }
 
 export interface Dynamics {
@@ -100,6 +115,8 @@ export interface Dynamics {
   windGain: number; // effective gesture gain fed to the flow injection
   memoryClear: number; // 1 = wipe the cendre mémoire this frame (consumed)
   presence: number; // someone-in-frame envelope 0..1, set by the orchestrator
+  voice: number; // smoothed voice level 0..1 — relaxes the corps serrage
+  hand: number; // hands envelope 0..1 — fast small motion, set by the orchestrator
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -108,12 +125,12 @@ export const DEFAULT_TUNING: Tuning = {
   turbulence: 0.55,
   pointSize: 1.9,
   baseAlpha: 0.11,
-  trailDecay: 0.84,
+  trailDecay: 0.9,
   exposure: 1.6,
   fringeTint: 0.5,
   windOverlay: 0,
   mirror: 1,
-  count: 200_000,
+  count: 400_000,
   emberGain: 1,
   cymGain: 1,
   gustStrength: 1,
@@ -137,10 +154,22 @@ export const DEFAULT_TUNING: Tuning = {
   memoryGain: 0,
   memorySeconds: 12,
   ghost: 0,
-  presenceTrame: 0,
+  bodyMat: 0,
+  fondMat: 0,
+  bodyMatA: 0,
+  bodyMatB: 0,
+  fondMatA: 0,
+  fondMatB: 0,
+  matBlend: 0,
   presenceShare: 0.7,
   presenceSize: 1.5,
   presenceHold: 0.6,
+  elastic: 0.5,
+  fondVisible: 0.35,
+  bodyMargin: 1,
+  presenceTrail: 2.5,
+  voiceEase: 0.6,
+  fondReact: 1,
 };
 
 interface CameraInput {
@@ -251,6 +280,8 @@ export async function createRenderer(
     windGain: 1,
     memoryClear: 0,
     presence: 0,
+    voice: 0,
+    hand: 0,
   };
 
   let camera: CameraInput | undefined;
@@ -311,6 +342,26 @@ export async function createRenderer(
       // envelope is muted so even the ambient calming vanishes.
       const presence =
         dynamics.presence * Math.min(1, tuning.presenceHold / 0.1);
+      // The voice loosens the serrage; silence tightens it back.
+      const holdEff =
+        tuning.presenceHold *
+        (1 - Math.min(1, dynamics.voice) * tuning.voiceEase * 0.75);
+      // Papier rule: ordered screens weave artifacts on a light sheet, so
+      // only stochastic materials survive there — screens fall back to ink.
+      const guardMat = (m: number) => {
+        if (!isLightBg(look)) return m;
+        if (m > 6.5) return 7;
+        if (m > 2.001) return 2;
+        return m;
+      };
+      // During a crossfade the material pair blends A and B directly; the
+      // scalar only rules when no blend is active.
+      const blending = tuning.matBlend > 0.001;
+      const bodyMat = guardMat(blending ? tuning.bodyMatA : tuning.bodyMat);
+      const bodyMatB = guardMat(blending ? tuning.bodyMatB : tuning.bodyMat);
+      const fondMat = guardMat(blending ? tuning.fondMatA : tuning.fondMat);
+      const fondMatB = guardMat(blending ? tuning.fondMatB : tuning.fondMat);
+      const matBlend = blending ? Math.min(1, tuning.matBlend) : 0;
       const aspect = output.size[0] / Math.max(1, output.size[1]);
       const gridCols = Math.max(1, Math.ceil(Math.sqrt(count * aspect)));
       const gridRows = Math.max(1, Math.ceil(count / gridCols));
@@ -424,9 +475,16 @@ export async function createRenderer(
           stagger: imprintCloud.stagger,
           depthAmount: tuning.depthAmount,
           presence,
-          presenceMode: tuning.presenceTrame,
-          presenceShare: tuning.presenceShare,
-          presenceHold: tuning.presenceHold,
+          bodyMat,
+          bodyMatB,
+          fondMat,
+          fondMatB,
+          matBlend,
+          share: tuning.presenceShare,
+          hold: holdEff,
+          elastic: tuning.elastic,
+          margin: tuning.bodyMargin,
+          fondReact: tuning.fondReact,
         },
         src: buffers.read,
         dst: buffers.write,
@@ -497,9 +555,28 @@ export async function createRenderer(
       dynamics.memoryClear = 0;
 
       // 4. Trails: dim the previous trail, then add this frame's grains.
+      // Inside the body's light the trail decays on its own slow clock —
+      // the corps layer leaves a 2-3 s wake behind every movement. The slow
+      // decay would pile the steady emission up ~15x, so the corps grains
+      // are dimmed by the ratio of the two decay rates: the standing body
+      // stays readable, only the wake of a movement lingers.
+      const keepGlobal = Math.pow(tuning.trailDecay, adt * 60);
+      const keepBody = Math.max(
+        keepGlobal,
+        Math.exp(-adt / Math.max(0.3, tuning.presenceTrail))
+      );
+      const corpsComp = Math.max(
+        0.04,
+        (1 - keepBody) / Math.max(1e-4, 1 - keepGlobal)
+      );
       fadeEffect.set({
-        params: { decay: Math.pow(tuning.trailDecay, adt * 60) },
+        params: {
+          decay: keepGlobal,
+          bodyKeep: keepBody,
+          presence,
+        },
         trail: trailPrev,
+        field: fieldPrev,
         samp: linear,
       });
       const stop = (i: number) => {
@@ -535,10 +612,19 @@ export async function createRenderer(
           dofBlur: tuning.dofBlur,
           presence,
           presenceSize: tuning.presenceSize,
+          bodyMat,
+          bodyMatB,
+          matBlend,
+          corpsComp,
+          fondVisible: tuning.fondVisible,
+          corpsLight: [...look.corpsLight, 1],
+          corpsShadow: [...look.corpsShadow, 1],
+          hand: dynamics.hand,
         },
         particles: buffers.read,
         field: fieldPrev,
         prevTrail: trailPrev,
+        fieldSamp: linear,
       });
       frame.pass({ target: trailNext, clear: [0, 0, 0, 1] }, (pass) => {
         pass.draw(fadeEffect);

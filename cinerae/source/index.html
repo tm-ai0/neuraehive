@@ -205,6 +205,26 @@
         margin-bottom: 0.7rem;
         min-height: 1em;
       }
+      .cinerae-lang {
+        appearance: none;
+        background: transparent;
+        border: 1px solid rgba(232, 221, 204, 0.25);
+        color: var(--ink-dim);
+        font-size: 0.6rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.5rem;
+        margin-left: auto;
+        margin-right: 0.4rem;
+        min-height: 26px;
+        cursor: pointer;
+        transition-property: color, border-color;
+        transition-duration: 0.2s;
+      }
+      .cinerae-lang:hover {
+        color: var(--ink-bright);
+        border-color: rgba(232, 221, 204, 0.55);
+      }
       .cinerae-crystal {
         display: flex;
         align-items: center;
@@ -411,17 +431,91 @@
         grid-template-columns: 1fr auto;
         row-gap: 0.15rem;
         margin-bottom: 0.55rem;
+        padding-left: 0.4rem;
+        margin-left: -0.4rem;
+        border-left: 2px solid transparent;
         color: rgba(232, 221, 204, 0.78);
-        transition-property: background-color;
+        transition-property: background-color, border-color;
         transition-duration: 0.6s;
         transition-timing-function: ease-out;
       }
+      /* The touched slider takes a warm edge; the rest sleeps. */
+      .cinerae-row:hover,
+      .cinerae-row:focus-within {
+        border-left-color: rgba(224, 160, 92, 0.85);
+      }
+      .cinerae-row-name {
+        cursor: pointer;
+      }
+      /* Dust track: a static dotted bed under the thumb — pure CSS, the
+       * frame never pays for it. */
       .cinerae-row input[type="range"] {
         grid-column: 1 / 3;
         width: 100%;
-        accent-color: #cfc2a6;
-        height: 1.1rem;
+        appearance: none;
+        -webkit-appearance: none;
+        background: transparent;
+        height: 1.15rem;
         cursor: pointer;
+      }
+      .cinerae-row input[type="range"]::-webkit-slider-runnable-track {
+        height: 8px;
+        border-radius: 4px;
+        background-image:
+          radial-gradient(circle, rgba(232, 221, 204, 0.4) 0.8px, transparent 1.1px),
+          radial-gradient(circle, rgba(232, 221, 204, 0.22) 0.6px, transparent 0.9px);
+        background-size: 7px 5px, 5px 3px;
+        background-position: 0 1px, 3px 2px;
+      }
+      .cinerae-row input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 13px;
+        height: 13px;
+        margin-top: -2.5px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 35%, #f2e7d3, #a99a7e);
+        box-shadow: 0 0 5px rgba(232, 221, 204, 0.35);
+      }
+      .cinerae-row input[type="range"]::-moz-range-track {
+        height: 8px;
+        border-radius: 4px;
+        background-image:
+          radial-gradient(circle, rgba(232, 221, 204, 0.4) 0.8px, transparent 1.1px);
+        background-size: 7px 5px;
+      }
+      .cinerae-row input[type="range"]::-moz-range-thumb {
+        width: 13px;
+        height: 13px;
+        border: none;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 35%, #f2e7d3, #a99a7e);
+      }
+      /* One-line hint, revealed at touch, under the row it belongs to. */
+      .cinerae-row[data-hint]::after,
+      .cinerae-select-row[data-hint]::after,
+      .cinerae-pastilles[data-hint]::after,
+      .cinerae-chips[data-hint]::after,
+      .cinerae-colors[data-hint]::after {
+        content: attr(data-hint);
+        display: none;
+        grid-column: 1 / 3;
+        flex-basis: 100%;
+        color: rgba(232, 221, 204, 0.55);
+        font-size: 0.6rem;
+        letter-spacing: 0.05em;
+        line-height: 1.5;
+        padding-top: 0.1rem;
+        text-wrap: pretty;
+      }
+      .cinerae-row[data-hint]:hover::after,
+      .cinerae-row[data-hint]:focus-within::after,
+      .cinerae-select-row[data-hint]:hover::after,
+      .cinerae-select-row[data-hint]:focus-within::after,
+      .cinerae-pastilles[data-hint]:hover::after,
+      .cinerae-pastilles[data-hint]:focus-within::after,
+      .cinerae-chips[data-hint]:hover::after,
+      .cinerae-colors[data-hint]:hover::after {
+        display: block;
       }
       .cinerae-row .cinerae-value {
         justify-self: end;
@@ -444,11 +538,42 @@
         color: var(--ink-bright);
       }
 
-      /* ---- collapsible sections ---- */
-      .cinerae-section {
-        border-top: 1px solid var(--ink-faint);
-        margin-bottom: 0.35rem;
+      /* ---- collapsible sections: strata of sediment ---- */
+      /* No separator lines: each section is a stratum of earth, warm linen
+       * at the top down to soot, tinted at low saturation by the active
+       * palette (--strata-tint, set by the panel). The bottom edge of each
+       * stratum is a slightly wavy cut, like a soil section. */
+      .cinerae-panel {
+        --strata-tint: rgb(232 221 204);
       }
+      .cinerae-section {
+        margin: 0 -1rem;
+        padding: 0 1rem 0.35rem;
+        clip-path: polygon(
+          0 0, 100% 0,
+          100% calc(100% - 4px), 91% calc(100% - 1px), 79% calc(100% - 5px),
+          64% calc(100% - 2px), 50% calc(100% - 6px), 36% calc(100% - 2px),
+          22% calc(100% - 5px), 10% calc(100% - 1px), 0 calc(100% - 4px)
+        );
+      }
+      .cinerae-section:nth-child(even) {
+        clip-path: polygon(
+          0 0, 100% 0,
+          100% calc(100% - 2px), 88% calc(100% - 6px), 74% calc(100% - 1px),
+          58% calc(100% - 5px), 43% calc(100% - 2px), 29% calc(100% - 6px),
+          15% calc(100% - 3px), 6% calc(100% - 6px), 0 calc(100% - 2px)
+        );
+      }
+      .cinerae-strata-scenes  { background: color-mix(in srgb, var(--strata-tint) 10%, #241e16); }
+      .cinerae-strata-moi     { background: color-mix(in srgb, var(--strata-tint) 12%, #221c14); }
+      .cinerae-strata-geste   { background: color-mix(in srgb, var(--strata-tint) 11%, #1e1913); }
+      .cinerae-strata-voix    { background: color-mix(in srgb, var(--strata-tint) 10%, #1b1611); }
+      .cinerae-strata-temps   { background: color-mix(in srgb, var(--strata-tint) 9%, #18130e); }
+      .cinerae-strata-look    { background: color-mix(in srgb, var(--strata-tint) 8%, #15100c); }
+      .cinerae-strata-empreintes { background: color-mix(in srgb, var(--strata-tint) 7%, #130f0b); }
+      .cinerae-strata-modulation { background: color-mix(in srgb, var(--strata-tint) 6%, #120e0a); }
+      .cinerae-strata-midi    { background: color-mix(in srgb, var(--strata-tint) 6%, #110d09); }
+      .cinerae-strata-aide    { background: color-mix(in srgb, var(--strata-tint) 5%, #0f0c08); }
       .cinerae-section-head {
         appearance: none;
         background: transparent;
@@ -458,16 +583,31 @@
         align-items: center;
         gap: 0.45rem;
         color: var(--ink-dim);
-        letter-spacing: 0.22em;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
         font-size: 0.6rem;
         padding: 0.55rem 0 0.45rem;
         cursor: pointer;
         transition-property: color;
         transition-duration: 0.2s;
+        text-align: left;
       }
       .cinerae-section-head:hover {
         color: var(--ink);
+      }
+      .cinerae-sketch {
+        display: inline-flex;
+        width: 18px;
+        height: 18px;
+        flex: none;
+        opacity: 0.8;
+      }
+      .cinerae-sketch svg {
+        width: 100%;
+        height: 100%;
+      }
+      .cinerae-section-title {
+        flex: 1;
       }
       .cinerae-section-caret {
         width: 0;
@@ -484,6 +624,91 @@
       }
       .cinerae-section-body {
         padding-bottom: 0.45rem;
+      }
+
+      /* ---- umbra: one slider, the tints ---- */
+      .cinerae-umbra {
+        padding: 0.4rem 0 0.6rem;
+      }
+      .cinerae-umbra .cinerae-pastilles {
+        justify-content: center;
+        margin-bottom: 0.9rem;
+      }
+      .cinerae-umbra-ends {
+        display: flex;
+        justify-content: space-between;
+        color: var(--ink);
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        margin-bottom: 0.2rem;
+      }
+      .cinerae-umbra-row input[type="range"] {
+        height: 2rem;
+      }
+
+      /* ---- teintes: pastilles of colored dust, no words ---- */
+      .cinerae-pastilles {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.55rem;
+      }
+      .cinerae-pastille {
+        appearance: none;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(232, 221, 204, 0.25);
+        cursor: pointer;
+        box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.5);
+        transition-property: scale, border-color, box-shadow;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-pastille:hover {
+        border-color: rgba(232, 221, 204, 0.6);
+      }
+      .cinerae-pastille:active {
+        scale: 0.96;
+      }
+      .cinerae-pastille.active {
+        border-color: rgba(232, 221, 204, 0.9);
+        box-shadow:
+          inset 0 0 4px rgba(0, 0, 0, 0.5),
+          0 0 7px rgba(232, 221, 204, 0.35);
+      }
+
+      /* ---- aide ---- */
+      .cinerae-aide-block {
+        margin-bottom: 0.6rem;
+      }
+      .cinerae-aide-title {
+        color: var(--ink);
+        font-size: 0.62rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 0.2rem;
+      }
+      .cinerae-aide-text {
+        color: var(--ink-dim);
+        font-size: 0.64rem;
+        letter-spacing: 0.04em;
+        line-height: 1.65;
+        text-wrap: pretty;
+      }
+      .cinerae-aide-text b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .cinerae-aide-text a {
+        color: var(--ink);
+        text-decoration-thickness: from-font;
+        text-underline-offset: 2px;
+      }
+      .cinerae-aide-links {
+        margin-bottom: 0.5rem;
       }
 
       /* ---- selects, mini buttons, hints ---- */
@@ -767,7 +992,7 @@
   <body>
     <canvas id="stage"></canvas>
     <div id="overlay">
-      <p>
+      <p id="overlay-text">
         Poussière de lumière pilotée par le mouvement et le son. La caméra
         n'est jamais affichée&nbsp;: seul son mouvement souffle sur les
         particules. Le silence cristallise la matière, le son la fait fondre.

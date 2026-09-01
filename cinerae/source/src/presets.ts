@@ -45,10 +45,15 @@ export function createPresets(
   imprint: ImprintSettings,
   hooks: PresetHooks
 ) {
-  // The crossfade is itself a target (of modulation and MIDI); it is
-  // transport, not state: it never enters a captured preset.
-  const stateParams = params.filter((p) => p.key !== "xfade");
+  // The crossfade and the macro sliders are transport, not state: they
+  // never enter a captured preset.
+  const stateParams = params.filter((p) => p.key !== "xfade" && !p.transient);
   const byKey = new Map(stateParams.map((p) => [p.key, p]));
+  const allByKey = new Map(params.map((p) => [p.key, p]));
+  const writeKey = (key: string, v: number) => {
+    const def = allByKey.get(key);
+    if (def) hooks.writeParam(def, Math.min(def.max, Math.max(def.min, v)));
+  };
 
   let xfade = 0;
   let slotA: PresetData | undefined;
@@ -92,6 +97,8 @@ export function createPresets(
       }
     }
     writeColors(data.colors);
+    // A scene applies whole: no crossfade material pair left active.
+    writeKey("matBlend", 0);
     imprint.random = data.imprint.random;
     hooks.applyImprint(
       data.imprint.family,
@@ -126,43 +133,66 @@ export function createPresets(
     return p;
   }
 
+  // Scenes: moments, not colors. Each one dresses the body in a matter and
+  // sets the weather around it; the tint underneath is just one ingredient.
   const builtIns: PresetData[] = [
-    builtIn("Cendre", "cendre", {}),
-    builtIn("Braise", "braise", {
-      ember: 1.6,
-      turbulence: 0.85,
-      trails: 0.87,
-      colorDriver: 1,
-      halo: 0.25,
+    // Veillée — the piece at rest: smoke body in a dense dust field.
+    builtIn("veillee", "cendre", {
+      bodyMat: 0,
+      fondMat: 0,
+      trails: 0.9,
     }),
-    builtIn("Givre", "givre", {
+    // Givre du matin — slow frost, the body a screen of points.
+    builtIn("givre-matin", "givre", {
       viscosity: 4.2,
       trails: 0.93,
       halo: 0.4,
       colorDriver: 1,
       timeScale: 0.55,
       force: 0.9,
+      bodyMat: 3,
+      fondMat: 0,
     }),
-    builtIn("Mandala cuivre", "cuivre", {
+    // Forge — embers, sparks, a smoke body that tears easily.
+    builtIn("forge", "braise", {
+      ember: 1.6,
+      turbulence: 0.85,
+      trails: 0.87,
+      colorDriver: 1,
+      halo: 0.25,
+      bodyMat: 0,
+      comet: 1.4,
+    }),
+    // Marée — phosphorescent water: everything pours.
+    builtIn("maree", "phosphore", {
+      bodyMat: 1,
+      fondMat: 1,
+      trails: 0.93,
+      halo: 0.35,
+      viscosity: 3,
+      colorDriver: 1,
+    }),
+    // Transe — the copper mandala breathes around whoever stands there.
+    builtIn("transe", "cuivre", {
       symMode: 4,
       symN: 8,
       colorDriver: 0,
       halo: 0.3,
       trails: 0.9,
+      bodyMat: 7,
     }),
-    builtIn("Phosphore", "phosphore", {
-      colorDriver: 1,
-      blendMode: 3,
-      trails: 0.72,
-      strobe: 0.25,
-      turbulence: 0.9,
-    }),
+    // Encre — ink body on a dimmed paper field, long brush strokes.
     builtIn(
-      "Encre",
       "encre",
+      "papier",
       {
-        paperGrain: 0.45,
-        turbulence: 0.3,
+        bodyMat: 2,
+        fondMat: 0,
+        fondVisible: 0.25,
+        trails: 0.95,
+        presenceTrail: 3,
+        paperGrain: 0.5,
+        turbulence: 0.25,
         force: 0.9,
         exposure: 1.3,
         colorDriver: 0,
@@ -178,9 +208,26 @@ export function createPresets(
       const a = slotA.values[def.key];
       const b = slotB.values[def.key];
       if (a === undefined || b === undefined) continue;
-      const v = def.discrete ? (xfade < 0.5 ? a : b) : a + (b - a) * xfade;
+      // Continuous end to end: former "choices" (fusion, symmetry,
+      // materials, drivers) take fractional values the render blends.
+      const v = a + (b - a) * xfade;
       hooks.writeParam(def, Math.min(def.max, Math.max(def.min, v)));
     }
+    // Materials never sweep through the ladder between A and B: the render
+    // blends the two endpoint materials directly, grain by grain.
+    const bA = slotA.values.bodyMat;
+    const bB = slotB.values.bodyMat;
+    if (bA !== undefined && bB !== undefined) {
+      writeKey("bodyMatA", bA);
+      writeKey("bodyMatB", bB);
+    }
+    const fA = slotA.values.fondMat;
+    const fB = slotB.values.fondMat;
+    if (fA !== undefined && fB !== undefined) {
+      writeKey("fondMatA", fA);
+      writeKey("fondMatB", fB);
+    }
+    writeKey("matBlend", xfade);
     writeColors(lerpLookColors(slotA.colors, slotB.colors, xfade));
     const side = xfade < 0.5 ? "A" : "B";
     if (side !== xfadeSide) {
