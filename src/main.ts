@@ -58,6 +58,7 @@ async function boot() {
   // ----- shared live state (read by the render loop every frame) -----------
   const audioState = { ...AUDIO_DEFAULTS };
   const quality = { auto: window.matchMedia("(pointer: coarse)").matches };
+  const behavior = { titleReturn: true };
 
   let phase: "intro" | "live" = "intro";
   let titleTarget = 1;
@@ -90,7 +91,7 @@ async function boot() {
   // ----- panel --------------------------------------------------------------
   const panel = createPanel(
     document.body,
-    { tuning: renderer.tuning, audio: audioState, quality },
+    { tuning: renderer.tuning, audio: audioState, quality, behavior },
     {
       onSensor(kind, enabled) {
         if (kind === "camera") void (enabled ? startCamera() : stopCamera());
@@ -100,10 +101,13 @@ async function boot() {
         chaosStart = performance.now();
       },
       onReset() {
-        Object.assign(renderer.tuning, DEFAULT_TUNING);
-        Object.assign(audioState, AUDIO_DEFAULTS);
+        // The sliders glide home from the panel; here only the matter and
+        // the non-slider fields come back to their defaults.
         renderer.resetMatter();
         crystal = 0;
+        renderer.tuning.mirror = DEFAULT_TUNING.mirror;
+        renderer.tuning.windOverlay = DEFAULT_TUNING.windOverlay;
+        behavior.titleReturn = true;
       },
       onInteraction: markActivity,
     }
@@ -299,7 +303,12 @@ async function boot() {
     // Title envelope: intro formation, dissolution, idle re-formation.
     if (phase === "live") {
       const idleFor = (now - lastActivity) / 1000;
-      if (idleFor > IDLE_DELAY && titleTarget === 0) {
+      if (
+        behavior.titleReturn &&
+        motionAvg <= MOTION_STILL &&
+        idleFor > IDLE_DELAY &&
+        titleTarget === 0
+      ) {
         titleTarget = 1;
         titleSpeed = 1 / REFORM_TIME;
       } else if (idleFor <= 1 && titleTarget === 1) {

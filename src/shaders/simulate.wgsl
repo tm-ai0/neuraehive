@@ -83,15 +83,27 @@ fn titleTargetOf(i: u32) -> vec2f {
   return params.titleOffset + local * params.titleScale;
 }
 
-fn curlNoise(p: vec2f, t: f32) -> vec2f {
-  let e = 0.02;
-  let scale = 3.5;
-  let q = p * scale;
-  let n1 = simplex3d(vec3f(q.x, q.y + e, t));
-  let n2 = simplex3d(vec3f(q.x, q.y - e, t));
-  let n3 = simplex3d(vec3f(q.x + e, q.y, t));
-  let n4 = simplex3d(vec3f(q.x - e, q.y, t));
-  return vec2f((n1 - n2), -(n3 - n4)) / (2.0 * e * scale);
+// The simulation lives a little wider than the screen: matter drifts out of
+// frame, wraps out of frame, and no border is ever perceptible.
+const MARGIN: f32 = 0.085;
+
+fn curlOctave(q: vec2f, tz: f32, e: f32) -> vec2f {
+  let n1 = simplex3d(vec3f(q.x, q.y + e, tz));
+  let n2 = simplex3d(vec3f(q.x, q.y - e, tz));
+  let n3 = simplex3d(vec3f(q.x + e, q.y, tz));
+  let n4 = simplex3d(vec3f(q.x - e, q.y, tz));
+  return vec2f((n1 - n2), -(n3 - n4)) / (2.0 * e);
+}
+
+// Three drifting octaves of curl noise, aspect-corrected so eddies stay
+// round. The largest structure is wider than the screen and every octave
+// slides its own way through space and time — smoke, never a lattice.
+fn curlNoise(p: vec2f, t: f32, asp: f32) -> vec2f {
+  let q = vec2f(p.x * asp, p.y);
+  var sum = curlOctave(q * 0.9 + vec2f(t * 0.020, -t * 0.012), t * 0.10, 0.09) * 0.17;
+  sum += curlOctave(q * 2.6 + vec2f(-t * 0.035, t * 0.021), t * 0.17, 0.07) * 0.11;
+  sum += curlOctave(q * 6.8 + vec2f(t * 0.052, t * 0.033), t * 0.26, 0.05) * 0.06;
+  return sum;
 }
 
 // 0 = living dust, 1 = ash. Falls after ashLevel, releases just before the
@@ -183,11 +195,16 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let flight = clamp(comet * 4.0, 0.0, 1.0); // free-flight factor
 
   // ---- forces --------------------------------------------------------------
-  // Wind from the camera's optical flow; bass adds pressure behind it. Ash is
-  // heavy and barely feels it — unless the local motion energy churns the bed.
+  // Wind as entrainment: dust in air feels a drag toward the local wind
+  // velocity, so a strong current takes the grains with it — following with
+  // a slight lag — while a faint drift barely tugs. Bass adds pressure. Ash
+  // is heavy and barely feels it, unless the motion energy churns the bed.
   let windDir = 1.0 - params.chaosAspire * 3.5;
   let ashWind = 1.0 - ash * 0.75 * (1.0 - min(f.a * 2.5, 1.0));
-  var acc = f.rg * params.force * (0.6 + params.bass * 1.6) * windDir * calm * ashWind;
+  let wind = f.rg * 1.6 * windDir;
+  let couple = params.force * (0.6 + params.bass * 1.6) * calm * ashWind
+    * min(flowSpeed * 6.0, 1.0) * 2.5;
+  var acc = (wind - vel) * couple;
   acc += (vec2f(0.5) - pos) * params.chaosAspire * 1.8;
 
   let cym = params.cymatic * calm * (1.0 - ash) * (1.0 - flight);
@@ -208,7 +225,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let turb = params.turbulence * (0.35 + params.treble * 2.0)
     * (1.0 + params.chaosBurst * 5.0) * calm
     * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75);
-  acc += curlNoise(pos, params.time * 0.15 + f32(i % 7u) * 0.001) * turb;
+  acc += curlNoise(pos, params.time, params.gridCols / max(params.gridRows, 1.0)) * turb;
 
   // Resting filaments: condense on the zero level-set of a slow drifting
   // noise (iron filings on a wandering magnet) and slide gently along it.
@@ -256,13 +273,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     acc += vec2f(cos(a), sin(a)) * kick * 1.4;
   }
 
-  // Ash sediments toward the peripheral bed, then settles inside it.
+  // Ash sediments toward the peripheral bed. The bed itself straddles the
+  // screen edge — mostly out of frame — so it never draws a visible border.
   if (ash > 0.001 && params.sediment > 0.001) {
     let edgeDist = min(min(pos.x, 1.0 - pos.x), min(pos.y, 1.0 - pos.y));
     let fromCenter = pos - vec2f(0.5);
     let l = length(fromCenter);
     if (l > 1e-4) {
-      acc += fromCenter / l * smoothstep(0.06, 0.30, edgeDist) * ash * params.sediment;
+      acc += fromCenter / l * smoothstep(-0.05, 0.28, edgeDist) * ash * params.sediment;
     }
   }
 
@@ -287,17 +305,19 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
 
   pos += vel * dt;
-  // Wrap so grains re-enter as dust — unless the word holds them. A comet
-  // that leaves the screen lands as fresh ash on the opposite edge.
+  // Wrap over the extended domain, so leaving and re-entering both happen
+  // out of frame — unless the word holds the matter. A comet that flies out
+  // lands as fresh ash where it re-enters.
   if (title < 0.5) {
-    if (any(pos < vec2f(0.0)) || any(pos > vec2f(1.0))) {
+    if (any(pos < vec2f(-MARGIN)) || any(pos > vec2f(1.0 + MARGIN))) {
       if (comet > 0.05) {
         comet = 0.0;
         heat = 0.0;
         age = clamp(params.ashLevel + 0.02, 0.0, 0.95);
         vel *= 0.2;
       }
-      pos = fract(pos + vec2f(1.0));
+      let span = 1.0 + 2.0 * MARGIN;
+      pos = fract((pos + vec2f(MARGIN)) / span) * span - vec2f(MARGIN);
     }
   } else {
     pos = clamp(pos, vec2f(-0.05), vec2f(1.05));

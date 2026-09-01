@@ -20,6 +20,7 @@ struct VertexOut {
   @location(0) pointCoord: vec2f,
   @location(1) brightness: f32,
   @location(2) tint: vec3f,
+  @location(3) streak: f32, // 0 = round grain, 1 = full comet filament
 };
 
 @group(0) @binding(0) var<uniform> params: RenderParams;
@@ -75,6 +76,7 @@ fn lifeTone(age: f32) -> f32 {
     out.pointCoord = vec2f(0.0);
     out.brightness = 0.0;
     out.tint = vec3f(0.0);
+    out.streak = 0.0;
     return out;
   }
 
@@ -102,7 +104,6 @@ fn lifeTone(age: f32) -> f32 {
   // While the wordmark holds the matter, every grain glows evenly; the
   // additive pile-up on the strokes does the rest.
   brightness = mix(brightness, 0.55, params.titleMode * params.titleMode);
-  out.brightness = brightness;
 
   // Ember orange fades back to warm white as the grain cools.
   let hotness = clamp(heat * 1.15, 0.0, 1.0);
@@ -110,12 +111,18 @@ fn lifeTone(age: f32) -> f32 {
 
   let corner = quadCorner(vertexIndex);
   var offsetPx = corner * params.pointSize;
-  // Comets stretch along their flight — a long hot streak, not a dot.
+  out.streak = 0.0;
+  // Comets stretch along their flight. The stretch follows speed but
+  // saturates, and the light spreads over the length instead of stacking —
+  // a luminous filament at any speed, never a bar.
   if (comet > 0.02 && speed > 1e-4) {
     let dir = p.zw / speed;
-    let stretch = 1.0 + comet * min(speed * 30.0, 14.0);
+    let stretch = 1.0 + comet * 11.0 * speed / (speed + 0.35);
     offsetPx = (dir * corner.x * stretch + vec2f(-dir.y, dir.x) * corner.y) * params.pointSize;
+    out.streak = min(comet * 2.0, 1.0);
+    brightness *= inverseSqrt(stretch);
   }
+  out.brightness = brightness;
   let ndc = vec2f(pos.x * 2.0 - 1.0, 1.0 - pos.y * 2.0);
   // UV y grows downward, NDC y upward: flip the offset's y.
   out.position = vec4f(ndc + vec2f(offsetPx.x, -offsetPx.y) / params.viewport, 0.0, 1.0);
@@ -128,7 +135,9 @@ fn lifeTone(age: f32) -> f32 {
   if (d2 > 1.0) {
     discard;
   }
-  let falloff = (1.0 - d2) * (1.0 - d2);
+  var falloff = (1.0 - d2) * (1.0 - d2);
+  // Comet profile: bright head, breathing tail.
+  falloff *= mix(1.0, 0.35 + 0.65 * (in.pointCoord.x * 0.5 + 0.5), in.streak);
   // Intensity with the life-cycle tint; the present pass owns the grade.
   let a = params.baseAlpha * falloff * in.brightness;
   return vec4f(in.tint * a, a);

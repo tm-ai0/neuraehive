@@ -1,12 +1,18 @@
-// Optical-flow field from two consecutive luminance frames.
-// Output per texel: rg = smoothed flow velocity (field UV / s),
-// b = smoothed luminance (crystallization imprint), a = motion energy.
+// Wind field with memory, fed by the optical flow of two consecutive
+// luminance frames. Each frame the previous wind is carried along itself
+// (semi-Lagrangian advection), its eddies are sharpened back (vorticity
+// confinement), it dies slowly (~1.5 s), and the fresh camera flow is
+// injected non-linearly — a fast gesture commands the field, a slow drift
+// barely whispers. So a sweeping hand leaves a current that keeps carrying
+// and swirling after the hand is gone.
+// Output per texel: rg = wind velocity, b = smoothed luminance
+// (crystallization imprint), a = motion energy.
 import { fbmSimplex2d } from "@vgpu/wgsl-std/noise/simplex";
 
 struct FlowParams {
   texel: vec2f,
   hasCamera: f32, // 0 -> procedural imprint, no flow
-  smoothing: f32, // temporal lerp factor for the flow field
+  dt: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: FlowParams;
@@ -17,6 +23,18 @@ struct FlowParams {
 
 fn lumaAt(tex: texture_2d<f32>, uv: vec2f) -> f32 {
   return textureSampleLevel(tex, samp, uv, 0.0).r;
+}
+
+fn windAt(uv: vec2f) -> vec2f {
+  return textureSampleLevel(fieldPrev, samp, uv, 0.0).rg;
+}
+
+// Curl of the remembered wind, in texel-difference units.
+fn curlAt(uv: vec2f) -> f32 {
+  let dx = vec2f(params.texel.x, 0.0);
+  let dy = vec2f(0.0, params.texel.y);
+  return (windAt(uv + dx).y - windAt(uv - dx).y)
+    - (windAt(uv + dy).x - windAt(uv - dy).x);
 }
 
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -32,28 +50,54 @@ fn lumaAt(tex: texture_2d<f32>, uv: vec2f) -> f32 {
     return vec4f(0.0, 0.0, imprint, 0.0);
   }
 
-  let dx = params.texel.x;
-  let dy = params.texel.y;
-  let c = lumaAt(lumaCurr, uv);
-  let p = lumaAt(lumaPrev, uv);
+  // The current carries itself: what blows here came from slightly upwind.
+  let back = uv - prev.rg * params.dt * 2.2;
+  var wind = textureSampleLevel(fieldPrev, samp, back, 0.0).rg;
+
+  // Vorticity confinement: push wind toward the swirls the linear sampling
+  // keeps smearing out, so the wake rolls instead of just fading.
+  let dx = vec2f(params.texel.x, 0.0);
+  let dy = vec2f(0.0, params.texel.y);
+  let gradC = vec2f(
+    abs(curlAt(uv + dx)) - abs(curlAt(uv - dx)),
+    abs(curlAt(uv + dy)) - abs(curlAt(uv - dy)),
+  );
+  let n = gradC / (length(gradC) + 1e-4);
+  wind += vec2f(n.y, -n.x) * curlAt(uv) * 6.0 * params.dt;
+
+  // Slow death of the current: it keeps carrying grains for a second or two.
+  wind *= exp(-params.dt * 0.75);
 
   // One-point Lucas-Kanade: motion pushes along the brightness gradient,
   // proportional to the temporal difference. Never attracts.
-  let gx = lumaAt(lumaCurr, uv + vec2f(dx, 0.0)) - lumaAt(lumaCurr, uv - vec2f(dx, 0.0));
-  let gy = lumaAt(lumaCurr, uv + vec2f(0.0, dy)) - lumaAt(lumaCurr, uv - vec2f(0.0, dy));
-  let dt = c - p;
+  let tdx = params.texel.x;
+  let tdy = params.texel.y;
+  let c = lumaAt(lumaCurr, uv);
+  let p = lumaAt(lumaPrev, uv);
+  let gx = lumaAt(lumaCurr, uv + vec2f(tdx, 0.0)) - lumaAt(lumaCurr, uv - vec2f(tdx, 0.0));
+  let gy = lumaAt(lumaCurr, uv + vec2f(0.0, tdy)) - lumaAt(lumaCurr, uv - vec2f(0.0, tdy));
+  let dtL = c - p;
   let g2 = gx * gx + gy * gy;
   var v = vec2f(0.0);
   if (g2 > 1e-5) {
-    v = -dt * vec2f(gx, gy) / (g2 + 0.02);
+    v = -dtL * vec2f(gx, gy) / (g2 + 0.02);
   }
   let mag = length(v);
   if (mag > 1.5) {
     v *= 1.5 / mag;
   }
 
-  let flow = mix(prev.rg, v, params.smoothing);
+  // Non-linear injection: the write strength grows with the square of the
+  // gesture speed, so sensor noise and slow drifts barely mark the field
+  // while a fast sweep takes it over in a few frames.
+  let w = min(mag * mag * 22.0, 0.75);
+  wind = mix(wind, v * 2.2, w);
+  let wm = length(wind);
+  if (wm > 2.5) {
+    wind *= 2.5 / wm;
+  }
+
   let luma = mix(prev.b, c, 0.12);
-  let energy = mix(prev.a, min(abs(dt) * 6.0, 1.0), 0.25);
-  return vec4f(flow, luma, energy);
+  let energy = mix(prev.a, min(abs(dtL) * 6.0, 1.0), 0.25);
+  return vec4f(wind, luma, energy);
 }

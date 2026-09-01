@@ -17,6 +17,7 @@ export interface PanelState {
     tonalThreshold: number;
   };
   quality: { auto: boolean };
+  behavior: { titleReturn: boolean };
 }
 
 export interface PanelHooks {
@@ -310,6 +311,24 @@ export function createPanel(
     },
   ];
 
+  // Snapshot taken at creation, while the state still holds its defaults —
+  // Reset glides every def back to these values.
+  const initialValues = new Map<ControlDef, number>(
+    controls.map((def) => [def, def.get()])
+  );
+
+  // Chaos target ranges by def key, clamped to each def's min/max.
+  const CHAOS_RANGES: Record<string, [number, number]> = {
+    force: [0.6, 2.6],
+    viscosity: [0.8, 5.5],
+    turbulence: [0.3, 1.5],
+    trails: [0.7, 0.95],
+    breath: [0.3, 1.8],
+    filament: [0, 2],
+    comet: [0.4, 1.6],
+    ember: [0.4, 1.6],
+  };
+
   // ----- skeleton ----------------------------------------------------------
   const panel = document.createElement("section");
   panel.className = "cinerae-panel";
@@ -424,6 +443,11 @@ export function createPanel(
     () => state.tuning.windOverlay > 0.01,
     (next) => (state.tuning.windOverlay = next ? 0.85 : 0)
   );
+  const titleReturnSwitch = makeSwitch(
+    "retour du titre",
+    () => state.behavior.titleReturn,
+    (next) => (state.behavior.titleReturn = next)
+  );
   const autoSwitch = makeSwitch(
     "qualité auto",
     () => state.quality.auto,
@@ -439,6 +463,15 @@ export function createPanel(
   chaosButton.addEventListener("click", () => {
     hooks.onInteraction();
     hooks.onChaos();
+    const targets: { def: ControlDef; to: number }[] = [];
+    for (const def of controls) {
+      const range = CHAOS_RANGES[def.key];
+      if (!range) continue;
+      const lo = Math.max(def.min, range[0]);
+      const hi = Math.min(def.max, range[1]);
+      targets.push({ def, to: lo + Math.random() * (hi - lo) });
+    }
+    glide(targets);
   });
   const resetButton = document.createElement("button");
   resetButton.type = "button";
@@ -447,12 +480,71 @@ export function createPanel(
     hooks.onInteraction();
     hooks.onReset();
     renderMode();
+    // Every def glides home, in `controls` order: the composite defs
+    // (intensity, storm) write the same fields as force/viscosity/turbulence,
+    // and the canonical defs come later in the array, so they win.
+    glide(controls.map((def) => ({ def, to: initialValues.get(def)! })));
   });
   actions.append(chaosButton, resetButton);
 
   const slidersBox = document.createElement("div");
   slidersBox.className = "cinerae-sliders";
   panel.appendChild(slidersBox);
+
+  // ----- glide (Chaos / Reset made visible on the sliders) ------------------
+  // Cancelled by bumping the token — any user touch on a slider does so, so
+  // the animation never fights the user's hand.
+  let glideToken = 0;
+  let rowRefs: {
+    def: ControlDef;
+    input: HTMLInputElement;
+    readout: HTMLSpanElement;
+    row: HTMLLabelElement;
+  }[] = [];
+  const changedTimers = new Map<HTMLElement, number>();
+  const markChanged = (row: HTMLElement) => {
+    row.classList.add("changed");
+    const prev = changedTimers.get(row);
+    if (prev !== undefined) window.clearTimeout(prev);
+    changedTimers.set(
+      row,
+      window.setTimeout(() => {
+        row.classList.remove("changed");
+        changedTimers.delete(row);
+      }, 900)
+    );
+  };
+
+  function glide(targets: { def: ControlDef; to: number }[]) {
+    const token = ++glideToken;
+    const from = targets.map((t) => t.def.get());
+    const start = performance.now();
+    const DURATION = 450; // ms per slider
+    const STAGGER = 70; // ms between sliders, in `targets` order
+    const frame = () => {
+      if (token !== glideToken) return;
+      const now = performance.now();
+      let done = true;
+      targets.forEach((t, i) => {
+        const local = (now - start - i * STAGGER) / DURATION;
+        if (local < 1) done = false;
+        const c = Math.min(1, Math.max(0, local));
+        const eased = c * c * (3 - 2 * c);
+        t.def.set(from[i]! + (t.to - from[i]!) * eased);
+      });
+      // The state lives, the matter follows: refresh every visible row.
+      for (const ref of rowRefs) {
+        ref.input.value = String(ref.def.get());
+        const text = (ref.def.format ?? plain)(ref.def.get());
+        if (ref.readout.textContent !== text) {
+          ref.readout.textContent = text;
+          markChanged(ref.row);
+        }
+      }
+      if (!done) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
 
   // ----- rendering ---------------------------------------------------------
   function renderMode() {
@@ -463,11 +555,14 @@ export function createPanel(
     });
     mirrorSwitch.row.style.display = "";
     overlaySwitch.row.style.display = mode === "pro" ? "" : "none";
+    titleReturnSwitch.row.style.display = mode === "pro" ? "" : "none";
     overlaySwitch.sync();
+    titleReturnSwitch.sync();
     autoSwitch.sync();
     mirrorSwitch.sync();
 
     slidersBox.replaceChildren();
+    rowRefs = [];
     for (const def of controls) {
       if (!def.modes.includes(mode)) continue;
       const row = document.createElement("label");
@@ -486,12 +581,14 @@ export function createPanel(
         (readout.textContent = (def.format ?? plain)(def.get()));
       show();
       input.addEventListener("input", () => {
+        glideToken++;
         def.set(Number(input.value));
         show();
         hooks.onInteraction();
       });
       row.append(name, input, readout);
       slidersBox.appendChild(row);
+      rowRefs.push({ def, input, readout, row });
     }
   }
 
