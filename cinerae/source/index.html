@@ -444,6 +444,227 @@
         color: var(--ink-bright);
       }
 
+      /* ---- collapsible sections ---- */
+      .cinerae-section {
+        border-top: 1px solid var(--ink-faint);
+        margin-bottom: 0.35rem;
+      }
+      .cinerae-section-head {
+        appearance: none;
+        background: transparent;
+        border: none;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: var(--ink-dim);
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        font-size: 0.6rem;
+        padding: 0.55rem 0 0.45rem;
+        cursor: pointer;
+        transition-property: color;
+        transition-duration: 0.2s;
+      }
+      .cinerae-section-head:hover {
+        color: var(--ink);
+      }
+      .cinerae-section-caret {
+        width: 0;
+        height: 0;
+        border-left: 4px solid currentColor;
+        border-top: 3.5px solid transparent;
+        border-bottom: 3.5px solid transparent;
+        transition-property: rotate;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-section.open .cinerae-section-caret {
+        rotate: 90deg;
+      }
+      .cinerae-section-body {
+        padding-bottom: 0.45rem;
+      }
+
+      /* ---- selects, mini buttons, hints ---- */
+      .cinerae-select-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.55rem;
+        margin-bottom: 0.5rem;
+        color: rgba(232, 221, 204, 0.78);
+      }
+      .cinerae-select {
+        appearance: none;
+        background: rgba(232, 221, 204, 0.06);
+        border: 1px solid rgba(232, 221, 204, 0.25);
+        color: var(--ink);
+        font-family: inherit;
+        font-size: 0.64rem;
+        letter-spacing: 0.06em;
+        padding: 0.3rem 0.45rem;
+        max-width: 60%;
+        cursor: pointer;
+      }
+      .cinerae-select:focus {
+        outline: none;
+        border-color: rgba(232, 221, 204, 0.6);
+      }
+      .cinerae-select option {
+        background: #0b0906;
+        color: var(--ink);
+      }
+      .cinerae-mini-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-bottom: 0.5rem;
+        align-items: center;
+      }
+      .cinerae-mini {
+        appearance: none;
+        background: transparent;
+        border: 1px solid rgba(232, 221, 204, 0.3);
+        color: var(--ink);
+        padding: 0.3rem 0.6rem;
+        min-height: 28px;
+        font-size: 0.62rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition-property: background-color, border-color, color;
+        transition-duration: 0.2s;
+      }
+      .cinerae-mini:hover:not(:disabled) {
+        background: rgba(232, 221, 204, 0.08);
+        border-color: rgba(232, 221, 204, 0.7);
+      }
+      .cinerae-mini:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      .cinerae-mini.recording {
+        border-color: rgba(230, 96, 60, 0.8);
+        color: #e6845c;
+      }
+      .cinerae-hint {
+        color: var(--ink-dim);
+        font-size: 0.62rem;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.45rem;
+      }
+      .cinerae-binding {
+        justify-content: space-between;
+        color: rgba(232, 221, 204, 0.78);
+      }
+
+      /* ---- palette gradient editor ---- */
+      .cinerae-colors {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-bottom: 0.55rem;
+      }
+      .cinerae-colors input[type="color"] {
+        appearance: none;
+        width: 30px;
+        height: 26px;
+        padding: 0;
+        border: 1px solid rgba(232, 221, 204, 0.3);
+        background: transparent;
+        cursor: pointer;
+      }
+      .cinerae-colors input[type="color"]::-webkit-color-swatch-wrapper {
+        padding: 2px;
+      }
+      .cinerae-colors input[type="color"]::-webkit-color-swatch {
+        border: none;
+      }
+      .cinerae-color-label {
+        color: var(--ink-dim);
+        font-size: 0.62rem;
+        margin-left: 0.3rem;
+      }
+
+      /* ---- modulation ---- */
+      .cinerae-lfo-head {
+        color: var(--ink-dim);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-size: 0.58rem;
+        margin: 0.5rem 0 0.35rem;
+      }
+      .cinerae-link {
+        border-left: 2px solid rgba(232, 221, 204, 0.15);
+        padding-left: 0.55rem;
+        margin-bottom: 0.6rem;
+      }
+      .cinerae-link-selects {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-bottom: 0.4rem;
+      }
+      .cinerae-link-selects .cinerae-select {
+        flex: 1;
+        max-width: none;
+        min-width: 0;
+      }
+      .cinerae-link-arrow {
+        color: var(--ink-dim);
+      }
+
+      /* ---- modulation and MIDI row marks ---- */
+      .cinerae-mod-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--ink-bright);
+        margin-left: 0.4rem;
+        vertical-align: middle;
+        animation: cinerae-breathe 2.4s ease-in-out infinite;
+      }
+      @keyframes cinerae-breathe {
+        0%, 100% { opacity: 0.35; }
+        50% { opacity: 1; }
+      }
+      .cinerae-tag {
+        display: inline-block;
+        margin-left: 0.4rem;
+        padding: 0.05rem 0.3rem;
+        border: 1px solid rgba(232, 221, 204, 0.35);
+        color: var(--ink-dim);
+        font-size: 0.56rem;
+        letter-spacing: 0.08em;
+        vertical-align: middle;
+      }
+      .cinerae-row.learnable,
+      .cinerae-select-row.learnable {
+        outline: 1px dashed rgba(232, 221, 204, 0.25);
+        outline-offset: 2px;
+        cursor: pointer;
+      }
+      .cinerae-row.armed,
+      .cinerae-select-row.armed {
+        outline-color: rgba(232, 221, 204, 0.8);
+        background: rgba(232, 221, 204, 0.07);
+      }
+
+      /* ---- clean fullscreen: everything fades after a still moment ---- */
+      body.cinerae-idle {
+        cursor: none;
+      }
+      body.cinerae-idle .cinerae-panel,
+      body.cinerae-idle .cinerae-open {
+        opacity: 0;
+        pointer-events: none;
+        transition-property: opacity;
+        transition-duration: 0.8s;
+      }
+
       /* ---- mobile: bottom sheet ---- */
       @media (max-width: 720px), (pointer: coarse) and (max-width: 1024px) {
         .cinerae-panel {
