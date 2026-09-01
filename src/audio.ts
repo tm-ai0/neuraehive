@@ -1,10 +1,15 @@
 // Microphone analysis. Raw audio never leaves the page: one AnalyserNode
-// feeds six scalars per frame — bass, treble, level, transient, pitch,
-// tonality. Pitch + tonality drive the cymatic figures on sustained tones.
+// feeds eight scalars per frame — bass, low mids, mids, treble, level,
+// transient, pitch, tonality. Pitch + tonality drive the cymatic figures on
+// sustained tones; the four bands each own a visual register (v0.7.1d).
 
 export interface AudioFrame {
   /** Low band energy (~40-250 Hz), 0..1. */
   bass: number;
+  /** Low-mid energy (~250-700 Hz) — the body of most instruments, 0..1. */
+  lowMid: number;
+  /** Mid energy (~700-2000 Hz) — voices, leads, presence, 0..1. */
+  mid: number;
   /** High band energy (~2-10 kHz), 0..1. */
   treble: number;
   /** Overall loudness (RMS), 0..~1. */
@@ -164,6 +169,8 @@ export async function requestMicrophone(): Promise<MicSource> {
 
       return {
         bass: Math.min(1, band(40, 250) * 1.4),
+        lowMid: Math.min(1, band(250, 700) * 1.6),
+        mid: Math.min(1, band(700, 2000) * 1.8),
         treble: Math.min(1, band(2000, 10000) * 2.2),
         level,
         transient,

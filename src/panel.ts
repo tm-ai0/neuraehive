@@ -28,7 +28,7 @@ export interface PanelState {
     transientGain: number;
     tonalThreshold: number;
   };
-  quality: { auto: boolean };
+  quality: { auto: boolean; cap: number };
   behavior: {
     imprintReturn: boolean;
     presenceSense: number;
@@ -131,7 +131,26 @@ const SECTION_GROUPS: Partial<Record<SectionId, string[]>> = {
   particules: ["grains", "temps"],
   look: ["teinte", "degrade", "fond", "lumiere", "espace"],
   empreintes: ["forme", "reglages"],
-  aide: ["modes", "clavier", "gestes", "camext", "liens"],
+  aide: ["modes", "macros", "clavier", "gestes", "camext", "liens"],
+};
+
+// v0.7.1d — a macro is a journey, not a volume: from 0 to 1 each composed
+// curve travels through a designed arc with a summit. Piecewise smooth
+// interpolation through control points; every curve passes through the
+// component's default at the macro's home position.
+type Journey = [number, number][];
+const journey = (m: number, pts: Journey): number => {
+  if (m <= pts[0]![0]) return pts[0]![1];
+  for (let k = 1; k < pts.length; k++) {
+    const [x1, v1] = pts[k]!;
+    if (m <= x1) {
+      const [x0, v0] = pts[k - 1]!;
+      const u = (m - x0) / Math.max(1e-6, x1 - x0);
+      const e = u * u * (3 - 2 * u);
+      return v0 + (v1 - v0) * e;
+    }
+  }
+  return pts[pts.length - 1]![1];
 };
 
 const CHAOS_HISTORY_MAX = 8;
@@ -181,7 +200,67 @@ export function createPanel(
   const matOptions = () =>
     MATERIAL_KEYS.map((k, i) => ({ value: i, label: t(`mat.${k}`) }));
 
+  // ---- v0.7.1d: the three macro journeys, shown to people ------------------
+  // Each one drives four to six existing defs along composed curves. They
+  // are ordinary registry defs (captured by scenes, traversed by the
+  // crossfade, drawn by Chaos, modulation targets); their writes cascade
+  // through writeDef, and the component defs — written after them in
+  // registry order — always win when both are driven.
+  const macroValues: Record<string, number> = {
+    maree: 0.42,
+    eclipse: 0.35,
+    prisme: 0,
+  };
+  const macroTouch: Record<string, number> = {};
+  const MACRO_CURVES: Record<string, Record<string, Journey>> = {
+    // Marée — flux : from dead calm through a full tide to the storm.
+    maree: {
+      force: [[0, 0.45], [0.42, 1.2], [0.72, 2.6], [1, 2.0]],
+      viscosity: [[0, 5.2], [0.42, 2.2], [0.75, 1.2], [1, 0.8]],
+      turbulence: [[0, 0.08], [0.42, 0.55], [0.75, 0.85], [1, 1.8]],
+      trails: [[0, 0.86], [0.42, 0.9], [0.7, 0.95], [1, 0.88]],
+      breath: [[0, 0.3], [0.42, 1], [1, 2]],
+      fondReact: [[0, 0.5], [0.42, 1], [1, 1.9]],
+    },
+    // Éclipse — lumière : daylight, then the corona, then the night with a
+    // rim-lit silhouette.
+    eclipse: {
+      exposure: [[0, 2.15], [0.35, 1.6], [0.7, 1.25], [1, 0.6]],
+      halo: [[0, 0], [0.35, 0], [0.62, 0.85], [1, 0.3]],
+      fondVisible: [[0, 0.55], [0.35, 0.35], [1, 0.1]],
+      ashShare: [[0, 0.08], [0.35, 0.15], [1, 0.32]],
+      bodyMargin: [[0, 0.5], [0.35, 1], [1, 2]],
+    },
+    // Prisme — couleur : depth opens, the color follows the speed, the
+    // light facets and scintillates.
+    prisme: {
+      colorDriver: [[0, 0], [0.5, 1], [1, 1.85]],
+      depthAmount: [[0, 0], [0.5, 0.85], [1, 0.55]],
+      dofBlur: [[0, 0], [0.55, 0.3], [1, 0.7]],
+      focusLayer: [[0, 1], [0.55, 1.7], [1, 0.5]],
+      strobe: [[0, 0], [0.7, 0.06], [1, 0.32]],
+    },
+  };
+  const setMacro = (key: string, v: number) => {
+    macroValues[key] = v;
+    macroTouch[key] = performance.now();
+    const curves = MACRO_CURVES[key]!;
+    for (const [target, pts] of Object.entries(curves)) {
+      writeDef(target, journey(v, pts));
+    }
+    syncKeys(Object.keys(curves));
+  };
+  const macroDef = (key: string, chaos: [number, number]): ControlDef =>
+    def(key, "scenes", [], 0, 1, 0.005,
+      () => macroValues[key]!, (v) => setMacro(key, v),
+      { format: percent, chaos });
+
   const controls: ControlDef[] = [
+    // ---- the three macros first: on a preset or crossfade write, their
+    // cascade lands before the component defs' own values overwrite it ----
+    macroDef("maree", [0.1, 0.95]),
+    macroDef("eclipse", [0.05, 0.9]),
+    macroDef("prisme", [0, 0.9]),
     // ---- umbra macro: one slider that doses the body's push --------------
     def("umbra", "corps", [], 0, 1, 0.01, () => umbraValue, (v) => {
       umbraValue = v;
@@ -271,6 +350,11 @@ export function createPanel(
     def("danse", "musique", ["anima", "pro"], 0, 2, 0.05,
       () => state.tuning.danse, (v) => (state.tuning.danse = v),
       { format: (v) => percent(v / 2), chaos: [0.3, 1.8] }),
+    // v0.7.1d — how visibly each band of the sound registers: bass = mass,
+    // low mids = breadth, mids = color, treble = sparkle, accents = shock.
+    def("soundFx", "musique", ["anima", "pro"], 0, 2, 0.05,
+      () => state.tuning.soundFx, (v) => (state.tuning.soundFx = v),
+      { format: (v) => percent(v / 2), chaos: [0.5, 1.8] }),
     def("voiceEase", "musique", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.voiceEase, (v) => (state.tuning.voiceEase = v),
       { format: percent }),
@@ -287,8 +371,12 @@ export function createPanel(
       () => state.audio.silenceThreshold,
       (v) => (state.audio.silenceThreshold = v)),
     // ---- particules ------------------------------------------------------
-    def("count", "particules", ["anima", "pro"], 10_000, 400_000, 10_000,
+    def("count", "particules", ["anima", "pro"], 10_000, 1_000_000, 10_000,
       () => state.tuning.count, (v) => (state.tuning.count = v),
+      { format: thousands, group: "grains" }),
+    // v0.7.1d — the Pro ceiling auto quality may climb to, never beyond.
+    def("countCap", "particules", ["pro"], 400_000, 1_000_000, 50_000,
+      () => state.quality.cap, (v) => (state.quality.cap = v),
       { format: thousands, group: "grains" }),
     def("size", "particules", ["anima", "pro"], 0.8, 5, 0.1,
       () => state.tuning.pointSize, (v) => (state.tuning.pointSize = v),
@@ -601,6 +689,12 @@ export function createPanel(
     return b;
   });
 
+  // v0.7.1d — the three macro journeys, at the head of the panel in every
+  // mode: what a performer shows to people in thirty seconds.
+  const macroBox = document.createElement("div");
+  macroBox.className = "cinerae-macros";
+  panel.appendChild(macroBox);
+
   const sensorsBox = document.createElement("div");
   sensorsBox.className = "cinerae-sensors";
   panel.appendChild(sensorsBox);
@@ -678,6 +772,7 @@ export function createPanel(
 
   const chaos = () => {
     hooks.onInteraction();
+    chaosTimes.push(performance.now());
     // Remember where we stand: a lucky draw clicked past can come back.
     chaosHistory.push({
       values: controls
@@ -826,6 +921,16 @@ export function createPanel(
     readout: HTMLSpanElement;
     row: HTMLElement;
   }[] = [];
+
+  // Reflect a macro's cascade on its visible component rows mid-drag.
+  const syncKeys = (keys: string[]) => {
+    for (const ref of rowRefs) {
+      if (!keys.includes(ref.def.key)) continue;
+      ref.input.value = String(ref.def.get());
+      setFill(ref.input);
+      ref.readout.textContent = (ref.def.format ?? plain)(ref.def.get());
+    }
+  };
   const changedTimers = new Map<HTMLElement, number>();
   const markChanged = (row: HTMLElement) => {
     row.classList.add("changed");
@@ -1687,6 +1792,22 @@ export function createPanel(
       item("Umbra", t("aide.umbra"));
       item("Anima", t("aide.anima"));
       item("Pro", t("aide.pro"));
+    } else if (active === "macros") {
+      item(t("aide.macroTitle"), t("aide.macros"));
+      item(t("aide.pulseTitle"), t("aide.pulse"));
+      makeSwitch(
+        "sw.invites",
+        () => invitesOn,
+        (next) => {
+          invitesOn = next;
+          if (!next) stopInvite();
+          try {
+            localStorage.setItem(INVITE_STORE, next ? "on" : "off");
+          } catch {}
+        },
+        body,
+        "hint.invites"
+      );
     } else if (active === "clavier") {
       const keys: [string, string][] = [
         ["F", "aide.key.f"],
@@ -1714,6 +1835,118 @@ export function createPanel(
       body.appendChild(links);
     }
   }
+
+  // ----- macros: the three journeys, rendered in every mode -----------------
+  const macroRefs: Record<string, HTMLElement> = {};
+  function renderMacros() {
+    macroBox.replaceChildren();
+    for (const key of ["maree", "eclipse", "prisme"]) {
+      const def = controls.find((d) => d.key === key)!;
+      renderDefRow(def, macroBox);
+      const ref = rowRefs[rowRefs.length - 1]!;
+      ref.row.classList.add("cinerae-macro");
+      macroRefs[key] = ref.row;
+    }
+  }
+
+  // ----- invitations: the panel guides without speaking ---------------------
+  // A small analyzer of what the room is doing makes ONE slider pulse for a
+  // few seconds — the one whose movement would change the scene the most.
+  // Never two at once, never under the hand, never in Pro, long rests in
+  // between, honors prefers-reduced-motion, and one switch turns it off.
+  const INVITE_STORE = "cinerae-invites";
+  let invitesOn = (() => {
+    try {
+      return localStorage.getItem(INVITE_STORE) !== "off";
+    } catch {
+      return true;
+    }
+  })();
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  let pointerInside = false;
+  let inviteRow: HTMLElement | null = null;
+  let inviteTimer: number | undefined;
+  let inviteCooldownUntil = performance.now() + 60_000; // grace after boot
+  let lastPanelTouch = performance.now();
+  let bassOnlyS = 0;
+  let rotateIdx = 0;
+  const chaosTimes: number[] = [];
+
+  const stopInvite = () => {
+    inviteRow?.classList.remove("invited");
+    inviteRow = null;
+    if (inviteTimer !== undefined) {
+      window.clearTimeout(inviteTimer);
+      inviteTimer = undefined;
+    }
+  };
+  panel.addEventListener("pointerenter", () => {
+    pointerInside = true;
+    stopInvite();
+  });
+  panel.addEventListener("pointerleave", () => {
+    pointerInside = false;
+  });
+  panel.addEventListener("pointerdown", () => {
+    lastPanelTouch = performance.now();
+    stopInvite();
+  });
+
+  const startInvite = (key: string) => {
+    const row = macroRefs[key];
+    if (!row || !row.isConnected) return;
+    inviteRow = row;
+    row.classList.add("invited");
+    inviteTimer = window.setTimeout(stopInvite, 5400);
+    inviteCooldownUntil = performance.now() + 75_000;
+  };
+
+  const guide = (info: {
+    micOn: boolean;
+    silenceS: number;
+    bass: number;
+    mid: number;
+    treble: number;
+  }) => {
+    const now = performance.now();
+    // A stretch of bass with nothing above it: the music is one register.
+    if (info.micOn && info.bass > 0.25 && info.treble < 0.06 && info.mid < 0.08)
+      bassOnlyS += 1;
+    else bassOnlyS = 0;
+    if (!invitesOn || mode === "pro" || collapsed || pointerInside) return;
+    if (reducedMotion?.matches) return;
+    if (document.body.classList.contains("cinerae-idle")) return;
+    if (inviteRow || now < inviteCooldownUntil) return;
+    const tn = state.tuning;
+    let key: string | undefined;
+    const recentChaos = chaosTimes.filter((x) => now - x < 120_000);
+    if (recentChaos.length >= 3) {
+      // Chaos chained three times: the hand wants change — offer the
+      // journey it has visited least recently.
+      key = ["maree", "eclipse", "prisme"].sort(
+        (a, b) => (macroTouch[a] ?? 0) - (macroTouch[b] ?? 0)
+      )[0];
+      chaosTimes.length = 0;
+    } else if (
+      tn.exposure < 0.85 ||
+      tn.exposure > 2.3 ||
+      (tn.halo > 0.8 && tn.trailDecay > 0.93)
+    ) {
+      // The screen is nearly black or washing out: the light journey
+      // resolves both ends.
+      key = "eclipse";
+    } else if (bassOnlyS > 8) {
+      // Only bass reads: color and depth are the biggest untouched change.
+      key = "prisme";
+    } else if (info.micOn && info.silenceS > 45) {
+      // A long real silence: movement does not need music.
+      key = "maree";
+    } else if (now - lastPanelTouch > 300_000) {
+      key = ["maree", "eclipse", "prisme"][rotateIdx++ % 3];
+      lastPanelTouch = now; // one nudge, then the five minutes start over
+    }
+    if (key) startInvite(key);
+  };
 
   // ----- umbra body ---------------------------------------------------------
   function renderUmbra() {
@@ -1828,7 +2061,9 @@ export function createPanel(
     actions.style.display = minimal ? "none" : "";
     crystalBar.style.display = minimal ? "none" : "";
 
+    stopInvite();
     rowRefs = [];
+    renderMacros();
     renderUmbra();
 
     const visible: Partial<Record<SectionId, boolean>> = {
@@ -1928,6 +2163,9 @@ export function createPanel(
       collapsed = true;
       applyCollapsed();
     },
+    /** v0.7.1d — once a second, the orchestrator tells the panel what the
+     * room is doing; the panel may answer by pulsing one macro slider. */
+    guide,
   };
 }
 
