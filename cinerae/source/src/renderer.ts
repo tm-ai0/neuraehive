@@ -34,7 +34,9 @@ const FLOW_H = 108;
 const FIELD_FORMAT: GPUTextureFormat = "rgba16float";
 const WORKGROUP = 256;
 const BYTES_PER_PARTICLE = 32; // pos+vel, then heat/age/comet/spare
-export const MAX_PARTICLES = 400_000;
+// v0.7.1d — the reserve grows to a million finer grains; auto quality
+// climbs tier by tier and keeps the highest one this machine holds.
+export const MAX_PARTICLES = 1_000_000;
 
 export interface Tuning {
   force: number;
@@ -60,6 +62,7 @@ export interface Tuning {
   push: number; // v0.7.1b — the body shoves the dust: 0 = it drifts through me
   danse: number; // v0.7.1c — how much the music animates imprints and symmetry
   rawCam: number; // v0.7.1c — Pro-only raw camera view (transient, never saved)
+  soundFx: number; // v0.7.1d — how visibly each band of the sound registers
   // ---- look (all inert at their defaults: the historical render) ----------
   colorDriver: number; // 0 âge, 1 vitesse, 2 densité, 3 profondeur
   blendMode: number; // 0 additif, 1 écran, 2 tamisée, 3 dodge, 4 soustractif
@@ -99,8 +102,12 @@ export interface Tuning {
 
 export interface Dynamics {
   bass: number;
+  lowMid: number; // v0.7.1d — the breadth of shapes
+  mid: number; // v0.7.1d — color and cohesion
   treble: number;
   transient: number;
+  shockR: number; // v0.7.1d — shockwave ring radius (UV) from the imprint center
+  shockAmp: number; // v0.7.1d — shockwave strength, decays after each accent
   reactivity: number; // 1 = full camera coupling; the fond mode quiets it
   crystal: number;
   titleMode: number;
@@ -135,7 +142,8 @@ export const DEFAULT_TUNING: Tuning = {
   force: 1.2,
   viscosity: 2.2,
   turbulence: 0.55,
-  pointSize: 1.9,
+  // v0.7.1d — finer grains, more of them: the screen fills without mush.
+  pointSize: 1.55,
   baseAlpha: 0.11,
   trailDecay: 0.9,
   exposure: 1.6,
@@ -155,6 +163,7 @@ export const DEFAULT_TUNING: Tuning = {
   push: 1,
   danse: 1,
   rawCam: 0,
+  soundFx: 1.4,
   colorDriver: 0,
   blendMode: 0,
   halo: 0,
@@ -276,8 +285,12 @@ export async function createRenderer(
   const look: LookColors = defaultLookColors();
   const dynamics: Dynamics = {
     bass: 0,
+    lowMid: 0,
+    mid: 0,
     treble: 0,
     transient: 0,
+    shockR: 0,
+    shockAmp: 0,
     reactivity: 1,
     crystal: 0,
     titleMode: 0,
@@ -496,6 +509,11 @@ export async function createRenderer(
           bass: dynamics.bass,
           treble: dynamics.treble,
           transient: dynamics.transient,
+          // v0.7.1d — the sound reads on sight: mids gather the matter,
+          // accents ring out as a shockwave from the imprint's center.
+          mid: dynamics.mid * tuning.soundFx,
+          shockR: dynamics.shockR,
+          shockAmp: dynamics.shockAmp,
           gridCols,
           gridRows,
           count,
@@ -533,7 +551,9 @@ export async function createRenderer(
           elastic: tuning.elastic,
           margin: tuning.bodyMargin,
           fondReact: tuning.fondReact,
-          push: tuning.push,
+          // The bass weighs on the shove: the same gesture pushes harder
+          // when the low end swells.
+          push: tuning.push * (1 + dynamics.bass * 0.35 * tuning.soundFx),
           danceCos: dynamics.danceCos,
           danceSin: dynamics.danceSin,
           danceCx: imprintCloud.space === "uv" ? 0.5 : title.offset[0],
@@ -678,6 +698,12 @@ export async function createRenderer(
           corpsLight: [...look.corpsLight, 1],
           corpsShadow: [...look.corpsShadow, 1],
           hand: dynamics.hand,
+          // v0.7.1d — the sound reads on sight: treble sparkles a share of
+          // the grains, mids shift the palette, bass pumps the grain size.
+          time: time.time,
+          sparkle: Math.min(1.5, dynamics.treble * tuning.soundFx),
+          midTint: Math.min(1, dynamics.mid * tuning.soundFx),
+          bassPulse: Math.min(1.5, dynamics.bass * tuning.soundFx),
         },
         particles: buffers.read,
         field: fieldPrev,

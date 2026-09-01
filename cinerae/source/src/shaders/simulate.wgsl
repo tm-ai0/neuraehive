@@ -29,6 +29,9 @@ struct SimParams {
   bass: f32,
   treble: f32,
   transient: f32,
+  mid: f32,         // v0.7.1d — mids gather the matter onto its structures
+  shockR: f32,      // v0.7.1d — accent shockwave: ring radius from the center
+  shockAmp: f32,    // v0.7.1d — shockwave strength, decays over ~0.7 s
   gridCols: f32,
   gridRows: f32,
   count: f32,
@@ -436,7 +439,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // plays, so its free dust always keeps that streaked, combed look.
   let fondContours = select(0.0, 0.65, isFond && fondM > 6.5);
   let rest = (params.filament * restness + fondContours * calm * (1.0 - c2))
-    * (1.0 - flight) * (1.0 - presW);
+    * (1.0 - flight) * (1.0 - presW) * (1.0 + params.mid * 0.8);
   if (rest > 0.003) {
     let asp = params.gridCols / max(params.gridRows, 1.0);
     let q = vec2f(pos.x * asp, pos.y) * 2.3
@@ -454,10 +457,25 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // Fond structure: free dust condenses gently toward the pattern of its
   // material (raster, lattice, moiré, falling water). Quieted by the word,
   // a forming crystal or a held tone, like every other resting force.
+  // The mids gather: presence in the music pulls the matter onto its
+  // structures — cohesion you can see when a voice or a lead enters.
   if (isFond && fondM > 0.5 && fondM < 6.5) {
     let asp = params.gridCols / max(params.gridRows, 1.0);
     acc += fondStructure(fondM, pos, asp) * calm * (1.0 - c2) * (1.0 - tEff)
-      * (1.0 - min(cym, 1.0)) * (1.0 - flight) * 0.8;
+      * (1.0 - min(cym, 1.0)) * (1.0 - flight) * 0.8 * (1.0 + params.mid * 1.2);
+  }
+
+  // v0.7.1d — the shockwave: every strong accent rings a wave out of the
+  // imprint's center; the dust is thrown along the expanding front and
+  // settles behind it. Bold on purpose: a snare should be seen.
+  if (params.shockAmp > 0.003) {
+    let aspS = params.gridCols / max(params.gridRows, 1.0);
+    let dv = (pos - vec2f(params.danceCx, params.danceCy)) * vec2f(aspS, 1.0);
+    let rS = length(dv);
+    if (rS > 1e-4) {
+      let band = exp(-pow((rS - params.shockR) * 7.0, 2.0));
+      acc += dv / rS * band * params.shockAmp * calm * (1.0 - ash * 0.5) * 3.2;
+    }
   }
 
   // Fond eviction + obstacle: the world steps aside around the body. Free

@@ -45,6 +45,11 @@ struct RenderParams {
   corpsLight: vec4f, // body tint pair: what the camera light paints (rgb)
   corpsShadow: vec4f,
   hand: f32,         // hands envelope: fast small motion brightens and warms
+  // v0.7.1d — the sound reads on sight, band by band.
+  time: f32,         // sparkle re-roll clock
+  sparkle: f32,      // treble: a share of the grains flash like struck flint
+  midTint: f32,      // mids: the palette slides toward its bright end
+  bassPulse: f32,    // bass: the grain size itself breathes with the low end
 };
 
 struct VertexOut {
@@ -226,10 +231,15 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
     let dens = textureLoad(prevTrail, ttexel, 0).rgb;
     tDen = 1.0 - exp(-dot(dens, vec3f(0.5, 0.6, 0.35)) * 3.0);
   }
-  let t = mix(
-    pickDriver(dLo, tAge, tSpd, tDen, tLay),
-    pickDriver(dHi, tAge, tSpd, tDen, tLay),
-    params.colorDriver - floor(params.colorDriver),
+  // Mids slide every grain toward the bright end of the gradient: when a
+  // voice or a lead enters, the whole dust changes color.
+  let t = clamp(
+    mix(
+      pickDriver(dLo, tAge, tSpd, tDen, tLay),
+      pickDriver(dHi, tAge, tSpd, tDen, tLay),
+      params.colorDriver - floor(params.colorDriver),
+    ) + params.midTint * 0.32,
+    0.0, 1.0,
   );
   let hotness = clamp(heat * 1.15, 0.0, 1.0);
   var tint = mix(palette(t), vec3f(1.0, 0.42, 0.16), hotness);
@@ -245,6 +255,12 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   let handHere = params.hand * smoothstep(0.25, 0.65, fHere.a);
   tint = mix(tint, vec3f(1.0, 0.86, 0.62), handHere * 0.65);
   brightness *= 1.0 + handHere * 0.9;
+  // Treble sparkle: a small share of the grains flash briefly, re-rolled at
+  // ~22 Hz — hi-hats and cymbals shimmer across the whole field.
+  if (params.sparkle > 0.02) {
+    let tw = hash01(instanceIndex * 7919u + u32(params.time * 22.0) * 977u);
+    brightness *= 1.0 + step(1.0 - params.sparkle * 0.14, tw) * 2.2 * min(params.sparkle, 1.0);
+  }
   out.tint = tint;
 
   // Depth layers: far grains smaller and dimmer, near ones bigger; the
@@ -259,7 +275,9 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   let corner = quadCorner(vertexIndex);
   // The wordmark reads at a finer grain: full-size dust blurs the letters.
   let titleFine = mix(1.0, 0.68, params.titleMode);
+  // The bass is mass: the low end swells every grain a touch.
   let px = params.pointSize * sizeF * blurMul * titleFine
+    * (1.0 + params.bassPulse * 0.11)
     * mix(1.0, params.presenceSize, presMix);
   var offsetPx = corner * px;
   out.streak = 0.0;

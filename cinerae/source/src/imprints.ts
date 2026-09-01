@@ -81,8 +81,62 @@ export const IMPRINT_VARIANTS: Partial<Record<ImprintFamily, string[]>> = {
   camera: ["gelee", "silhouette"],
 };
 
+// v0.7.1d — every imprint lives by its nature: an idle breath of its own,
+// a sound deformation of its own, superposed. The orchestrator integrates
+// this state every frame from the audio bands; the generators only read it.
+// All fields are smooth in time, so the 7 Hz re-sampling morphs, never jumps.
+export interface ImprintLife {
+  /** Ever-advancing phase — waves travel on it, treble accelerates it. */
+  phase: number;
+  /** Integrated rotation angle — slow at rest, kicked by transients. */
+  spin: number;
+  /** 3D tilt of ring/attractor projections: breath + transient impulses. */
+  tilt: number;
+  /** Springy bass wind, ~-1..1 — the fern and the tree sway on it. */
+  wind: number;
+  /** Traveling phase of the gust rolling along a swaying shape. */
+  windPhase: number;
+  /** Smoothed low-mids 0..1 — the breadth of shapes. */
+  amp: number;
+  /** Smoothed mids 0..1 — Julia parameter, attractor depth. */
+  mid: number;
+  /** Smoothed treble 0..1 — harmonics drawn into the waves. */
+  hi: number;
+  /** Transient envelope 0..1, decays in ~0.3 s. */
+  kick: number;
+  /** Dragon fold 0.55..1 — 1 = fully folded; accents unfold it. */
+  fold: number;
+  /** Slow idle breath, sin of a ~20 s clock, -1..1. */
+  breath: number;
+  /** Chladni plate: current and next mode pair, sand mid-transition. */
+  chladni: { mA: number; nA: number; mB: number; nB: number; blend: number };
+}
+
+/** The life a lone sampling context carries: slow breath, no sound. */
+export function restingLife(time: number): ImprintLife {
+  return {
+    phase: time * 0.35,
+    spin: time * 0.12,
+    tilt: Math.sin(time * 0.21) * 0.3,
+    wind: Math.sin(time * 0.17) * 0.25,
+    windPhase: time * 0.5,
+    amp: 0,
+    mid: 0,
+    hi: 0,
+    kick: 0,
+    fold: 0.93 + Math.sin(time * 0.3) * 0.03,
+    breath: Math.sin(time * 0.3),
+    chladni: { mA: 3, nA: 5, mB: 3, nB: 5, blend: 0 },
+  };
+}
+
+export interface ImprintContext {
+  time: number;
+  screenAspect: number;
+  life?: ImprintLife;
+}
+
 const TAU = Math.PI * 2;
-const tri = () => Math.random() + Math.random() - 1; // triangular in [-1,1]
 
 // Deterministic per-index hash: animated imprints are re-sampled on a slow
 // cadence, so every index must keep the SAME point on the shape across
@@ -136,80 +190,105 @@ export function fondCloud(): ImprintCloud {
 }
 
 // ---- 2D formes (shape space, ordered along their parameter) ---------------
+// Deterministic per index (hash01, never Math.random): re-sampled at 7 Hz,
+// every index must keep the same point on the shape across re-samplings.
 
-type FlatShape = (count: number) => ImprintCloud;
+type FlatShape = (count: number, life: ImprintLife) => ImprintCloud;
 
-function cercle(count: number): ImprintCloud {
-  const c = makeCloud(count, "shape", { stagger: 0.5 });
+// The circle is really a ring in space: it turns slowly on itself and tips
+// over on the transients — a coin of dust spinning in the dark.
+function ring3D(count: number, life: ImprintLife, r0: number, r1: number, stagger: number): ImprintCloud {
+  const c = makeCloud(count, "shape", { stagger });
+  const yaw = life.spin * 0.55;
+  const tilt = 0.5 + life.breath * 0.25 + life.tilt;
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const ct = Math.cos(tilt);
   for (let i = 0; i < count; i++) {
-    const a = (i / count + Math.random() * 0.004) * TAU - Math.PI / 2;
-    put(c, i, Math.cos(a) * 0.5, Math.sin(a) * 0.5, Math.cos(a), Math.sin(a));
+    const a = (i / count + hash01(i) * 0.004) * TAU - Math.PI / 2;
+    const r = r0 === r1 ? r0 : Math.sqrt(r0 * r0 + (r1 * r1 - r0 * r0) * hash01(i * 7 + 3));
+    // In-plane point, rotate around the vertical axis, then tip the plane.
+    const x1 = Math.cos(a) * r * cy;
+    const y2 = Math.sin(a) * r * ct;
+    put(c, i, x1, y2, Math.cos(a) * (cy || 0.2), Math.sin(a) * (ct || 0.2));
   }
   return c;
 }
 
-function anneau(count: number): ImprintCloud {
-  const c = makeCloud(count, "shape", { stagger: 0.35 });
-  const r0 = 0.36;
-  const r1 = 0.5;
-  for (let i = 0; i < count; i++) {
-    const a = (i / count) * TAU - Math.PI / 2;
-    const r = Math.sqrt(r0 * r0 + (r1 * r1 - r0 * r0) * Math.random());
-    put(c, i, Math.cos(a) * r, Math.sin(a) * r, Math.cos(a), Math.sin(a));
-  }
-  return c;
-}
+const cercle: FlatShape = (count, life) => ring3D(count, life, 0.5, 0.5, 0.5);
+const anneau: FlatShape = (count, life) => ring3D(count, life, 0.36, 0.5, 0.35);
 
-function carre(count: number): ImprintCloud {
+// The square holds its posture and breathes by its edges: low mids bow them
+// outward, a hit pinches them back; a slow wobble keeps it off balance.
+function carre(count: number, life: ImprintLife): ImprintCloud {
   const c = makeCloud(count, "shape", { stagger: 0.5 });
+  const th = Math.sin(life.spin * 0.45) * 0.1;
+  const cr = Math.cos(th);
+  const sr = Math.sin(th);
+  const bow = life.breath * 0.02 + life.amp * 0.08 - life.kick * 0.05;
   for (let i = 0; i < count; i++) {
     const t = (i / count) * 4;
     const edge = Math.floor(t) % 4;
     const u = (t % 1) - 0.5;
+    const b = Math.cos(u * Math.PI) * bow;
     let x = 0;
     let y = 0;
     let nx = 0;
     let ny = 0;
-    if (edge === 0) { x = u; y = -0.5; ny = -1; }
-    else if (edge === 1) { x = 0.5; y = u; nx = 1; }
-    else if (edge === 2) { x = -u; y = 0.5; ny = 1; }
-    else { x = -0.5; y = -u; nx = -1; }
-    put(c, i, x, y, nx, ny);
+    if (edge === 0) { x = u; y = -0.5 - b; ny = -1; }
+    else if (edge === 1) { x = 0.5 + b; y = u; nx = 1; }
+    else if (edge === 2) { x = -u; y = 0.5 + b; ny = 1; }
+    else { x = -0.5 - b; y = -u; nx = -1; }
+    put(c, i, x * cr - y * sr, x * sr + y * cr, nx * cr - ny * sr, nx * sr + ny * cr);
   }
   return c;
 }
 
-function croix(count: number): ImprintCloud {
+// The cross pivots gently and its arms trade length on the low mids.
+function croix(count: number, life: ImprintLife): ImprintCloud {
   const c = makeCloud(count, "shape", { stagger: 0.25 });
+  const th = Math.sin(life.spin * 0.4) * 0.11;
+  const cr = Math.cos(th);
+  const sr = Math.sin(th);
+  const swellH = 1 + (life.breath * 0.04 + life.amp * 0.14) * Math.sin(life.phase * 0.9);
+  const swellV = 2 - swellH;
   for (let i = 0; i < count; i++) {
-    const along = Math.random() - 0.5;
-    const across = tri() * 0.085;
-    const a = Math.random() * TAU;
-    if (i % 2 === 0) put(c, i, along, across, Math.cos(a), Math.sin(a));
-    else put(c, i, across, along, Math.cos(a), Math.sin(a));
+    const along = hash01(i * 3 + 1) - 0.5;
+    const across = (hash01(i * 3 + 2) + hash01(i * 5 + 4) - 1) * 0.085;
+    const a = hash01(i * 7 + 5) * TAU;
+    const [x, y] = i % 2 === 0
+      ? [along * swellH, across]
+      : [across, along * swellV];
+    put(c, i, x * cr - y * sr, x * sr + y * cr, Math.cos(a), Math.sin(a));
   }
   return c;
 }
 
-function spirale(count: number): ImprintCloud {
+// The spiral winds and unwinds — low mids tighten the coil — while the whole
+// arm turns slowly on itself.
+function spirale(count: number, life: ImprintLife): ImprintCloud {
   const c = makeCloud(count, "shape", { stagger: 0.6 });
-  const turns = 3.25;
+  const turns = 3.25 + life.breath * 0.3 + life.amp * 0.9;
+  const rot = life.spin * 0.35;
   for (let i = 0; i < count; i++) {
-    const t = Math.sqrt((i + Math.random()) / count); // arc-length-ish density
-    const a = t * turns * TAU;
+    const t = Math.sqrt((i + hash01(i * 3 + 1)) / count); // arc-length-ish density
+    const a = t * turns * TAU + rot;
     const r = 0.5 * t;
     put(c, i, Math.cos(a) * r, Math.sin(a) * r, Math.cos(a), Math.sin(a));
   }
   return c;
 }
 
-function etoile(count: number): ImprintCloud {
+// The star flares: every accent throws its inner radius out, a brief blaze,
+// then it sharpens back to its points.
+function etoile(count: number, life: ImprintLife): ImprintCloud {
   const c = makeCloud(count, "shape", { stagger: 0.5 });
-  const R = 0.5;
-  const r = 0.2;
+  const R = 0.5 - life.kick * 0.04;
+  const r = Math.min(0.42, 0.2 * (1 + life.kick * 0.6 + life.breath * 0.1 + life.amp * 0.2));
+  const th = Math.sin(life.spin * 0.4) * 0.08;
   const verts: [number, number][] = [];
   for (let k = 0; k < 10; k++) {
-    const a = -Math.PI / 2 + (k * Math.PI) / 5;
+    const a = -Math.PI / 2 + (k * Math.PI) / 5 + th;
     const rad = k % 2 === 0 ? R : r;
     verts.push([Math.cos(a) * rad, Math.sin(a) * rad]);
   }
@@ -222,7 +301,7 @@ function etoile(count: number): ImprintCloud {
     lens.push(total);
   }
   for (let i = 0; i < count; i++) {
-    const s = ((i + Math.random()) / count) * total;
+    const s = ((i + hash01(i * 5 + 2)) / count) * total;
     let k = 0;
     while (k < 9 && lens[k]! < s) k++;
     const prev = k === 0 ? 0 : lens[k - 1]!;
@@ -300,11 +379,13 @@ function volumePoint(variant: string, i: number): [number, number, number] {
   ];
 }
 
-function volumeCloud(variant: string, time: number, spin: number): ImprintCloud {
+function volumeCloud(variant: string, life: ImprintLife, spin: number): ImprintCloud {
   const count = 6144;
   const c = makeCloud(count, "shape", { stagger: 0.3, coverage: 0.6 });
-  const ax = 0.5 + time * 0.21 * spin;
-  const ay = 0.7 + time * 0.34 * spin;
+  // The tumble rides the integrated spin: idle it matches the historical
+  // slow rotation, and every transient sends the volume rolling faster.
+  const ax = 0.5 + life.spin * 1.75 * spin + life.tilt * 0.5;
+  const ay = 0.7 + life.spin * 2.8 * spin;
   const cx = Math.cos(ax);
   const sx = Math.sin(ax);
   const cy = Math.cos(ay);
@@ -323,15 +404,18 @@ function volumeCloud(variant: string, time: number, spin: number): ImprintCloud 
 
 // ---- mathématiques --------------------------------------------------------
 
-function lissajousCloud(a: number, b: number, time: number): ImprintCloud {
+// The curve never stops tracing itself — the phase only advances, treble
+// hurries it — and the low mids stretch its horizontal reach.
+function lissajousCloud(a: number, b: number, life: ImprintLife): ImprintCloud {
   const count = 6144;
   const c = makeCloud(count, "shape", { stagger: 0.55, aspect: 1.24, coverage: 0.6 });
-  const delta = time * 0.07;
+  const delta = life.phase * 0.3;
+  const sx = 0.62 * (1 + (life.breath * 0.03 + life.amp * 0.1) * Math.sin(life.phase * 0.5));
   for (let i = 0; i < count; i++) {
     const t = ((i + hash01(i)) / count) * TAU;
-    const x = Math.sin(a * t + delta) * 0.62;
+    const x = Math.sin(a * t + delta) * sx;
     const y = Math.sin(b * t) * 0.5;
-    const tx = a * Math.cos(a * t + delta) * 0.62;
+    const tx = a * Math.cos(a * t + delta) * sx;
     const ty = b * Math.cos(b * t) * 0.5;
     const l = Math.hypot(tx, ty) || 1;
     put(c, i, x, y, ty / l, -tx / l);
@@ -339,48 +423,75 @@ function lissajousCloud(a: number, b: number, time: number): ImprintCloud {
   return c;
 }
 
-function attracteurCloud(): ImprintCloud {
-  const count = 8192;
-  const c = makeCloud(count, "shape", { stagger: 0.3, coverage: 0.62 });
-  // Peter de Jong, a set with a deep, veiled structure.
-  const a = -2.24;
-  const b = 0.43;
-  const cc = -0.65;
-  const d = -2.43;
+// De Jong veils, mounted on a turning pedestal: each point lifts a third
+// coordinate out of the same map, the whole sculpture rotates slowly and
+// tips on the hits, and the mids deepen the relief. The 2D orbit itself
+// never changes — chaos is too sensitive to morph — so every index keeps
+// its exact point across re-samplings.
+const DEJONG = { a: -2.24, b: 0.43, c: -0.65, d: -2.43 };
+let dejongRaw: Float32Array | undefined;
+function dejongOrbit(count: number): Float32Array {
+  if (dejongRaw && dejongRaw.length >= count * 2) return dejongRaw;
+  const raw = new Float32Array(count * 2);
   let x = 0.1;
   let y = 0.1;
   for (let i = 0; i < 24; i++) {
-    const nx = Math.sin(a * y) - Math.cos(b * x);
-    y = Math.sin(cc * x) - Math.cos(d * y);
+    const nx = Math.sin(DEJONG.a * y) - Math.cos(DEJONG.b * x);
+    y = Math.sin(DEJONG.c * x) - Math.cos(DEJONG.d * y);
     x = nx;
   }
-  const raw = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    const nx = Math.sin(DEJONG.a * y) - Math.cos(DEJONG.b * x);
+    y = Math.sin(DEJONG.c * x) - Math.cos(DEJONG.d * y);
+    x = nx;
+    raw[i * 2] = x;
+    raw[i * 2 + 1] = y;
+  }
+  dejongRaw = raw;
+  return raw;
+}
+
+function attracteurCloud(life: ImprintLife): ImprintCloud {
+  const count = 8192;
+  const c = makeCloud(count, "shape", { stagger: 0.3, coverage: 0.62 });
+  const raw = dejongOrbit(count);
+  const yaw = life.spin * 0.5;
+  const tilt = 0.35 + life.breath * 0.2 + life.tilt * 0.6;
+  const depth = (0.55 + life.mid * 0.9) * 0.3;
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const ct = Math.cos(tilt);
+  const st = Math.sin(tilt);
+  const pts = new Float32Array(count * 2);
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
   for (let i = 0; i < count; i++) {
-    const nx = Math.sin(a * y) - Math.cos(b * x);
-    y = Math.sin(cc * x) - Math.cos(d * y);
-    x = nx;
-    raw[i * 2] = x;
-    raw[i * 2 + 1] = y;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
+    const x = raw[i * 2]!;
+    const y = raw[i * 2 + 1]!;
+    const z = (Math.sin(DEJONG.c * x * 1.4) - Math.cos(DEJONG.d * y * 1.1)) * depth;
+    const x1 = x * cy + z * sy;
+    const z1 = -x * sy + z * cy;
+    const y2 = y * ct - z1 * st;
+    pts[i * 2] = x1;
+    pts[i * 2 + 1] = y2;
+    if (x1 < minX) minX = x1;
+    if (x1 > maxX) maxX = x1;
+    if (y2 < minY) minY = y2;
+    if (y2 > maxY) maxY = y2;
   }
   const unit = Math.max(1e-4, maxY - minY);
   c.aspect = (maxX - minX) / unit;
   const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
+  const cyc = (minY + maxY) / 2;
   for (let i = 0; i < count; i++) {
-    const an = Math.random() * TAU;
+    const an = hash01(i * 19 + 11) * TAU;
     put(
       c,
       i,
-      (raw[i * 2]! - cx) / unit,
-      (raw[i * 2 + 1]! - cy) / unit,
+      (pts[i * 2]! - cx) / unit,
+      (pts[i * 2 + 1]! - cyc) / unit,
       Math.cos(an) * 0.7,
       Math.sin(an) * 0.7
     );
@@ -388,92 +499,134 @@ function attracteurCloud(): ImprintCloud {
   return c;
 }
 
-function chladniCloud(): ImprintCloud {
+// A real plate: the mode pair follows the music's spectral balance, and a
+// change of mode is a transition of sand — every grain slides from the old
+// nodal lines to the new ones through the blended plate equation. Each index
+// descends from its own fixed seed onto the zero set (Newton steps), so the
+// figure morphs continuously as the blend advances.
+function chladniCloud(life: ImprintLife): ImprintCloud {
   const count = 8192;
   const c = makeCloud(count, "uv", { stagger: 0.25 });
-  const m = 3;
-  const n = 5;
   const pi = Math.PI;
-  const amp = (x: number, y: number) =>
-    Math.cos(n * pi * x) * Math.cos(m * pi * y) - Math.cos(m * pi * x) * Math.cos(n * pi * y);
-  let i = 0;
-  let guard = 0;
-  while (i < count && guard++ < count * 60) {
-    const x = Math.random();
-    const y = Math.random();
-    if (Math.abs(amp(x, y)) > 0.09) continue;
-    const e = 0.004;
-    const gx = amp(x + e, y) - amp(x - e, y);
-    const gy = amp(x, y + e) - amp(x, y - e);
+  const { mA, nA, mB, nB, blend } = life.chladni;
+  const w = Math.min(1, Math.max(0, blend));
+  const plate = (m: number, n: number, x: number, y: number): [number, number, number] => {
+    const cnx = Math.cos(n * pi * x);
+    const cmy = Math.cos(m * pi * y);
+    const cmx = Math.cos(m * pi * x);
+    const cny = Math.cos(n * pi * y);
+    return [
+      cnx * cmy - cmx * cny,
+      (-n * Math.sin(n * pi * x) * cmy + m * Math.sin(m * pi * x) * cny) * pi,
+      (-m * cnx * Math.sin(m * pi * y) + n * cmx * Math.sin(n * pi * y)) * pi,
+    ];
+  };
+  for (let i = 0; i < count; i++) {
+    let x = 0.03 + hash01(i * 2 + 1) * 0.94;
+    let y = 0.03 + hash01(i * 2 + 2) * 0.94;
+    let gx = 0;
+    let gy = 0;
+    for (let k = 0; k < 9; k++) {
+      const [aA, gxA, gyA] = plate(mA, nA, x, y);
+      const [aB, gxB, gyB] = plate(mB, nB, x, y);
+      const a = aA + (aB - aA) * w;
+      gx = gxA + (gxB - gxA) * w;
+      gy = gyA + (gyB - gyA) * w;
+      const g2 = gx * gx + gy * gy + 1e-5;
+      let sx = (a * gx) / g2;
+      let sy = (a * gy) / g2;
+      const sl = Math.hypot(sx, sy);
+      if (sl > 0.08) {
+        sx *= 0.08 / sl;
+        sy *= 0.08 / sl;
+      }
+      x = Math.min(0.985, Math.max(0.015, x - sx * 0.9));
+      y = Math.min(0.985, Math.max(0.015, y - sy * 0.9));
+    }
     const l = Math.hypot(gx, gy);
     if (l > 1e-4) put(c, i, x, y, (gx / l) * 0.3, (gy / l) * 0.3);
     else {
-      const a = Math.random() * TAU;
+      const a = hash01(i * 5 + 3) * TAU;
       put(c, i, x, y, Math.cos(a) * 0.3, Math.sin(a) * 0.3);
     }
-    i++;
   }
-  c.count = i;
   return c;
 }
 
-function arbreCloud(): ImprintCloud {
-  const count = 6144;
-  interface Seg { x0: number; y0: number; x1: number; y1: number; w: number }
-  const segs: Seg[] = [];
+// The tree structure grows once from a fixed seed (so re-samplings keep it),
+// then sways under the same bass wind as the fern — bending by height, with
+// a gust ripple traveling through the crown.
+interface TreeSeg { x0: number; y0: number; x1: number; y1: number; w: number }
+let treeSegs: TreeSeg[] | undefined;
+let treeCdf: number[] = [];
+let treeTotal = 0;
+let treeBox = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+function growTree() {
+  if (treeSegs) return;
+  const segs: TreeSeg[] = [];
+  let seed = 0x1234abcd;
+  const rnd = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
   const grow = (x: number, y: number, angle: number, len: number, depth: number) => {
     const x1 = x + Math.cos(angle) * len;
     const y1 = y + Math.sin(angle) * len;
     segs.push({ x0: x, y0: y, x1, y1, w: len * Math.sqrt(depth + 1) });
     if (depth <= 0) return;
-    const kids = depth > 4 ? 2 : Math.random() < 0.35 ? 3 : 2;
+    const kids = depth > 4 ? 2 : rnd() < 0.35 ? 3 : 2;
     for (let k = 0; k < kids; k++) {
-      const spread = 0.32 + Math.random() * 0.3;
+      const spread = 0.32 + rnd() * 0.3;
       const off = kids === 2 ? (k === 0 ? -spread : spread) : (k - 1) * spread;
-      grow(x1, y1, angle + off + (Math.random() - 0.5) * 0.12, len * (0.68 + Math.random() * 0.1), depth - 1);
+      grow(x1, y1, angle + off + (rnd() - 0.5) * 0.12, len * (0.68 + rnd() * 0.1), depth - 1);
     }
   };
   grow(0, 0.5, -Math.PI / 2, 0.3, 7);
-  const cdf: number[] = [];
-  let total = 0;
+  treeSegs = segs;
+  treeCdf = [];
+  treeTotal = 0;
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
   for (const s of segs) {
-    total += s.w;
-    cdf.push(total);
+    treeTotal += s.w;
+    treeCdf.push(treeTotal);
     minX = Math.min(minX, s.x0, s.x1);
     maxX = Math.max(maxX, s.x0, s.x1);
     minY = Math.min(minY, s.y0, s.y1);
     maxY = Math.max(maxY, s.y0, s.y1);
   }
-  const unit = Math.max(1e-4, maxY - minY);
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
+  treeBox = { minX, maxX, minY, maxY };
+}
+
+function arbreCloud(life: ImprintLife): ImprintCloud {
+  growTree();
+  const count = 6144;
+  const segs = treeSegs!;
+  const unit = Math.max(1e-4, treeBox.maxY - treeBox.minY);
+  const cx = (treeBox.minX + treeBox.maxX) / 2;
+  const cy = (treeBox.minY + treeBox.maxY) / 2;
   const c = makeCloud(count, "shape", {
     stagger: 0.55,
-    aspect: (maxX - minX) / unit,
+    aspect: (treeBox.maxX - treeBox.minX) / unit,
     coverage: 0.62,
   });
   // Ordered by creation (trunk first): the tree grows as it crystallizes.
   let seg = 0;
   for (let i = 0; i < count; i++) {
-    const s = ((i + Math.random()) / count) * total;
-    while (seg < segs.length - 1 && cdf[seg]! < s) seg++;
+    const s = ((i + hash01(i * 3 + 1)) / count) * treeTotal;
+    while (seg < segs.length - 1 && treeCdf[seg]! < s) seg++;
     const g = segs[seg]!;
-    const u = Math.random();
+    const u = hash01(i * 3 + 2);
     const dx = g.x1 - g.x0;
     const dy = g.y1 - g.y0;
     const l = Math.hypot(dx, dy) || 1;
-    put(
-      c,
-      i,
-      (g.x0 + dx * u - cx) / unit,
-      (g.y0 + dy * u - cy) / unit,
-      dy / l,
-      -dx / l
-    );
+    let px = (g.x0 + dx * u - cx) / unit;
+    const py = (g.y0 + dy * u - cy) / unit;
+    const h = Math.min(1, Math.max(0, 0.5 - py));
+    px += life.wind * (0.2 * h * h + 0.05 * h * Math.sin(h * 3.1 - life.windPhase));
+    put(c, i, px, py, dy / l, -dx / l);
   }
   return c;
 }
@@ -481,13 +634,15 @@ function arbreCloud(): ImprintCloud {
 // ---- fractales ------------------------------------------------------------
 
 // Julia set by inverse iteration: z <- ±sqrt(z - c), signs hashed per step.
-// The parameter c orbits slowly, so the set morphs forever — a living
-// fractal even before the music-driven dance transform touches it.
-function juliaCloud(time: number): ImprintCloud {
+// The parameter c orbits slowly — a living fractal — and the mids push it
+// off its circle, breaking the set into dust and gathering it back. The
+// whole set breathes and drifts in its own plane.
+function juliaCloud(time: number, life: ImprintLife): ImprintCloud {
   const count = 8192;
   const th = time * 0.045;
-  const cr = 0.7885 * Math.cos(th);
-  const ci = 0.7885 * Math.sin(th);
+  const R = 0.7885 * (0.965 + life.mid * 0.085);
+  const cr = R * Math.cos(th);
+  const ci = R * Math.sin(th);
   const raw = new Float32Array(count * 2);
   let minX = Infinity;
   let maxX = -Infinity;
@@ -525,13 +680,18 @@ function juliaCloud(time: number): ImprintCloud {
   });
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
+  // Breath and plane drift, applied after normalization so they read as the
+  // whole set inhaling and floating, not as a re-framing.
+  const s = 1 + life.breath * 0.04 + life.amp * 0.07;
+  const dx = Math.sin(time * 0.13) * 0.05;
+  const dy = Math.cos(time * 0.11) * 0.04;
   for (let i = 0; i < count; i++) {
     const an = hash01(i * 13 + 5) * TAU;
     put(
       c,
       i,
-      (raw[i * 2]! - cx) / unit,
-      (raw[i * 2 + 1]! - cy) / unit,
+      ((raw[i * 2]! - cx) / unit) * s + dx,
+      ((raw[i * 2 + 1]! - cy) / unit) * s + dy,
       Math.cos(an) * 0.6,
       Math.sin(an) * 0.6
     );
@@ -540,8 +700,10 @@ function juliaCloud(time: number): ImprintCloud {
 }
 
 // Barnsley fern: each point runs its own hashed IFS walk — deterministic per
-// index, so re-samplings keep every grain on its frond.
-function fougereCloud(): ImprintCloud {
+// index, so re-samplings keep every grain on its frond. The bass carries a
+// wind through it: the fronds bend by height, tips first, with a gust
+// ripple rolling up the stem.
+function fougereCloud(life: ImprintLife): ImprintCloud {
   const count = 8192;
   const raw = new Float32Array(count * 2);
   let minX = Infinity;
@@ -589,11 +751,14 @@ function fougereCloud(): ImprintCloud {
   for (let i = 0; i < count; i++) {
     const an = hash01(i * 17 + 7) * TAU;
     // Screen y grows downward: flip so the fern stands upright.
+    const px = (raw[i * 2]! - cx) / unit;
+    const py = -(raw[i * 2 + 1]! - cy) / unit;
+    const h = Math.min(1, Math.max(0, 0.5 - py)); // height above the root
     put(
       c,
       i,
-      (raw[i * 2]! - cx) / unit,
-      -(raw[i * 2 + 1]! - cy) / unit,
+      px + life.wind * (0.22 * h * h + 0.05 * h * Math.sin(h * 3.1 - life.windPhase)),
+      py,
       Math.cos(an) * 0.5,
       Math.sin(an) * 0.5
     );
@@ -602,34 +767,35 @@ function fougereCloud(): ImprintCloud {
 }
 
 // Heighway dragon: an ordered turtle walk along the curve, so the stagger
-// draws it stroke by stroke as it condenses.
-function dragonCloud(): ImprintCloud {
+// draws it stroke by stroke as it condenses. The turn angle is the fold:
+// at 1 every crease is a right angle — the true dragon — and every accent
+// slackens it, the curve unfolding for a beat before creasing back. The
+// position of each step is continuous in the fold, so the whole spine
+// rolls open and shut without a grain ever jumping.
+function dragonCloud(life: ImprintLife): ImprintCloud {
   const steps = 8192;
+  const theta = (Math.PI / 2) * Math.min(1, Math.max(0.55, life.fold));
   const xs = new Float32Array(steps + 1);
   const ys = new Float32Array(steps + 1);
   let x = 0;
   let y = 0;
-  let dx = 1;
-  let dy = 0;
+  let heading = 0;
   let minX = 0;
   let maxX = 0;
   let minY = 0;
   let maxY = 0;
   for (let k = 1; k <= steps; k++) {
-    x += dx;
-    y += dy;
+    x += Math.cos(heading);
+    y += Math.sin(heading);
     xs[k] = x;
     ys[k] = y;
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
-    // Turn direction of the dragon sequence at step k.
+    // Turn direction of the dragon sequence at step k, scaled by the fold.
     const left = (((k & -k) << 1) & k) === 0;
-    const ndx = left ? -dy : dy;
-    const ndy = left ? dx : -dx;
-    dx = ndx;
-    dy = ndy;
+    heading += left ? theta : -theta;
   }
   const count = 8192;
   const unit = Math.max(1e-4, maxY - minY);
@@ -664,18 +830,24 @@ function waveY(shape: ImprintSettings["wave"]["shape"], ph: number): number {
   return Math.sin(ph);
 }
 
-function ondesCloud(w: ImprintSettings["wave"], time: number): ImprintCloud {
+// The wave advances period by period, continuously — the phase never stops —
+// then the sound twists it: low mids swell the amplitude, mids warp the
+// local frequency, treble draws harmonics into the line.
+function ondesCloud(w: ImprintSettings["wave"], life: ImprintLife): ImprintCloud {
   const count = 8192;
   const c = makeCloud(count, "uv", { stagger: 0.45 });
   const waves = Math.max(1, Math.round(w.waves));
   const perWave = count / waves;
+  const ampG = 1 + life.amp * 0.8 + life.breath * 0.06;
   for (let i = 0; i < count; i++) {
     const k = Math.floor(i / perWave);
     const x = (i % perWave) / perWave + hash01(i) * 0.002;
     const yk = waves === 1 ? 0.5 : 0.18 + (0.64 * k) / (waves - 1);
-    const ph = x * w.freq * TAU + time * w.drift * 0.5 + k * 1.9;
+    let ph = x * w.freq * TAU + life.phase * (0.4 + w.drift * 0.6) + k * 1.9;
+    ph += life.mid * 1.5 * Math.sin(x * 3.1 * TAU * 0.5 + life.phase * 0.7 + k);
     const jitter = hash01(i * 7 + 1) + hash01(i * 7 + 2) - 1;
-    const y = yk + waveY(w.shape, ph) * w.amp + jitter * w.thickness;
+    let y = yk + waveY(w.shape, ph) * w.amp * ampG + jitter * w.thickness;
+    y += life.hi * 0.3 * w.amp * Math.sin(3 * ph + life.phase);
     put(c, i, x, y, 0, 0.28);
   }
   return c;
@@ -704,7 +876,7 @@ function multiCloud(p: ImprintSettings["multi"], screenAspect: number): ImprintC
         break;
     }
     placed.push({ x: cx, y: cy, s });
-    const shape = FORMES[pool[Math.floor(Math.random() * pool.length)]!]!(per);
+    const shape = FORMES[pool[Math.floor(Math.random() * pool.length)]!]!(per, restingLife(0));
     for (let j = 0; j < per && idx < total; j++, idx++) {
       const o = j * 4;
       put(
@@ -955,37 +1127,36 @@ export function silhouetteCloud(
 
 // ---- dispatcher for the synchronous families ------------------------------
 
+// v0.7.1d — every generated imprint lives: nothing on screen is ever still.
+// The multi seeds are laid out randomly (not index-stable), so multi keeps
+// only the global dance transform, like the sampled families (text, image).
 export function isAnimated(s: ImprintSettings): boolean {
-  return (
-    (s.family === "volume" && s.spin > 0.01) ||
-    (s.family === "ondes" && s.wave.drift > 0.01) ||
-    (s.family === "math" && s.variant === "lissajous") ||
-    (s.family === "fractale" && s.variant === "julia")
-  );
+  return ["volume", "forme", "math", "fractale", "ondes"].includes(s.family);
 }
 
 export function generateImprint(
   s: ImprintSettings,
-  ctx: { time: number; screenAspect: number }
+  ctx: ImprintContext
 ): ImprintCloud | null {
+  const life = ctx.life ?? restingLife(ctx.time);
   switch (s.family) {
     case "fond":
       return fondCloud();
     case "volume":
-      return volumeCloud(s.variant || "sphere", ctx.time, s.spin);
+      return volumeCloud(s.variant || "sphere", life, s.spin);
     case "forme":
-      return (FORMES[s.variant] ?? cercle)(4096);
+      return (FORMES[s.variant] ?? cercle)(4096, life);
     case "math":
-      if (s.variant === "attracteur") return attracteurCloud();
-      if (s.variant === "chladni") return chladniCloud();
-      if (s.variant === "arbre") return arbreCloud();
-      return lissajousCloud(Math.round(s.lissa.a), Math.round(s.lissa.b), ctx.time);
+      if (s.variant === "attracteur") return attracteurCloud(life);
+      if (s.variant === "chladni") return chladniCloud(life);
+      if (s.variant === "arbre") return arbreCloud(life);
+      return lissajousCloud(Math.round(s.lissa.a), Math.round(s.lissa.b), life);
     case "fractale":
-      if (s.variant === "fougere") return fougereCloud();
-      if (s.variant === "dragon") return dragonCloud();
-      return juliaCloud(ctx.time);
+      if (s.variant === "fougere") return fougereCloud(life);
+      if (s.variant === "dragon") return dragonCloud(life);
+      return juliaCloud(ctx.time, life);
     case "ondes":
-      return ondesCloud({ ...s.wave, shape: (s.variant as ImprintSettings["wave"]["shape"]) || s.wave.shape }, ctx.time);
+      return ondesCloud({ ...s.wave, shape: (s.variant as ImprintSettings["wave"]["shape"]) || s.wave.shape }, life);
     case "multi":
       return multiCloud(s.multi, ctx.screenAspect);
     default:

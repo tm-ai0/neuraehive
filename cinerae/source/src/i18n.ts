@@ -44,6 +44,22 @@ const DICT: Record<string, [string, string]> = {
   "sec.midi": ["midi", "midi"],
   "sec.aide": ["aide", "help"],
   // ---- controls: short, concrete, three words at most ----------------------
+  // v0.7.1d — the three macro journeys shown to people.
+  "ctl.maree": ["Marée", "Tide"],
+  "hint.maree": [
+    "un seul geste : du calme plat à la tempête",
+    "one gesture: from dead calm to the storm",
+  ],
+  "ctl.eclipse": ["Éclipse", "Eclipse"],
+  "hint.eclipse": [
+    "la lumière se voile : plein jour, couronne, nuit",
+    "the light veils over: daylight, corona, night",
+  ],
+  "ctl.prisme": ["Prisme", "Prism"],
+  "hint.prisme": [
+    "la couleur se disperse : profondeur, facettes, scintillement",
+    "color disperses: depth, facets, scintillation",
+  ],
   "ctl.umbra": ["frôler ◀▶ bousculer", "graze ◀▶ shove"],
   "hint.umbra": [
     "à gauche la poussière me traverse, à droite mon corps la laboure",
@@ -154,6 +170,11 @@ const DICT: Record<string, [string, string]> = {
     "les formes tournent, pompent et ondulent sur la musique",
     "shapes turn, pump and ripple with the music",
   ],
+  "ctl.soundFx": ["intensité son", "sound intensity"],
+  "hint.soundFx": [
+    "chaque bande se voit : masse, ampleur, couleur, scintillement, choc",
+    "every band shows: mass, breadth, color, sparkle, shock",
+  ],
   "ctl.voiceEase": ["voix", "voice"],
   "hint.voiceEase": [
     "parler relâche le portrait ; se taire le resserre",
@@ -181,8 +202,13 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.count": ["grains", "grains"],
   "hint.count": [
-    "toute la réserve, jusqu'à 400 000 — la qualité auto veille",
-    "the whole reserve, up to 400,000 — auto quality watches over it",
+    "toute la réserve, jusqu'au million — la qualité auto veille",
+    "the whole reserve, up to a million — auto quality watches over it",
+  ],
+  "ctl.countCap": ["plafond grains", "grain ceiling"],
+  "hint.countCap": [
+    "la qualité auto grimpe palier par palier, jamais au-delà",
+    "auto quality climbs tier by tier, never beyond this",
   ],
   "ctl.size": ["taille", "size"],
   "hint.size": ["du sable fin aux flocons", "from fine sand to flakes"],
@@ -395,6 +421,11 @@ const DICT: Record<string, [string, string]> = {
   "sw.randomImprint": ["aléatoire au calme", "random when calm"],
   "sw.lfoSync": ["sync attaques", "sync to attacks"],
   "sw.midiLearn": ["apprentissage", "learn"],
+  "sw.invites": ["invitations", "invitations"],
+  "hint.invites": [
+    "quand la pièce attend, un curseur pulse quelques secondes — une invitation",
+    "when the piece is waiting, one slider pulses for a few seconds — an invitation",
+  ],
   "sw.rawCam": ["caméra brute", "raw camera"],
   "hint.rawCam": [
     "l'image caméra sans effets, pour calibrer — Pro seulement, jamais en public",
@@ -457,6 +488,7 @@ const DICT: Record<string, [string, string]> = {
   "grp.espace": ["espace", "space"],
   "grp.reglages": ["réglages", "settings"],
   "grp.modes": ["modes", "modes"],
+  "grp.macros": ["macros", "macros"],
   "grp.clavier": ["clavier", "keys"],
   "grp.gestes": ["gestes", "touch"],
   "grp.camext": ["caméra", "camera"],
@@ -591,6 +623,16 @@ const DICT: Record<string, [string, string]> = {
   "aide.pro": [
     "tout, plus les scènes, le crossfade, la matrice et le MIDI",
     "everything, plus scenes, crossfade, the matrix and MIDI",
+  ],
+  "aide.macroTitle": ["macros", "macros"],
+  "aide.macros": [
+    "Trois voyages en tête du panneau : <b>Marée</b>, du calme plat à la tempête ; <b>Éclipse</b>, du plein jour à la nuit ; <b>Prisme</b>, la couleur dispersée en facettes. Chacun combine plusieurs réglages : 0 à 1 est un chemin, pas un volume.",
+    "Three journeys at the head of the panel: <b>Tide</b>, dead calm to storm; <b>Eclipse</b>, daylight to night; <b>Prism</b>, color dispersed into facets. Each drives several settings: 0 to 1 is a path, not a volume.",
+  ],
+  "aide.pulseTitle": ["pulsations", "pulses"],
+  "aide.pulse": [
+    "Quand la pièce attend — long silence, image sombre, rien touché — un seul curseur pulse quelques secondes : une invitation, jamais une consigne.",
+    "When the piece is waiting — long silence, dark image, nothing touched — one slider pulses for a few seconds: an invitation, never an instruction.",
   ],
   "aide.key.f": ["plein écran", "fullscreen"],
   "aide.key.c": ["chaos", "chaos"],

@@ -10,12 +10,14 @@ import {
   IMPRINT_VARIANTS,
   generateImprint,
   isAnimated,
+  restingLife,
   sampleImageCloud,
   sampleTextCloud,
   silhouetteCloud,
   titleCloud,
   type ImprintCloud,
   type ImprintFamily,
+  type ImprintLife,
   type ImprintSettings,
 } from "./imprints";
 import { capturePng, createRecorder, createStage } from "./capture";
@@ -38,7 +40,12 @@ const REFORM_TIME = 14; // s, idle -> word, slow
 const DISSOLVE_TIME = 1.3; // s, word -> matter
 const IDLE_DELAY = 40; // s of total stillness before the word returns
 const MOTION_STILL = 0.02; // camera motion below this counts as stillness
-const QUALITY_TIERS = [50_000, 120_000, 200_000, 400_000];
+// v0.7.1d — the invariant becomes "at least 400 000 grains, fps held":
+// auto quality climbs these tiers and keeps the highest one this machine
+// holds; the Pro grain ceiling caps the climb.
+const QUALITY_TIERS = [
+  50_000, 120_000, 200_000, 400_000, 550_000, 700_000, 850_000, 1_000_000,
+];
 
 // A whole body at 3 m barely dents the frame-wide motion mean, so gesture
 // detection also watches the moving AREA (fraction of texels that really
@@ -106,9 +113,10 @@ async function boot() {
 
   // ----- shared live state (read by the render loop every frame) -----------
   const audioState = { ...AUDIO_DEFAULTS };
-  // Auto quality is on for everyone: the piece opens at the full 400 k
-  // reserve and steps down on its own wherever the GPU cannot hold 60 fps.
-  const quality = { auto: true };
+  // Auto quality is on for everyone: the piece opens at 400 k and climbs
+  // tier by tier as long as the GPU holds the frame rate, up to the Pro
+  // grain ceiling; it steps down on its own wherever 60 fps breaks.
+  const quality = { auto: true, cap: 1_000_000 };
   // v0.7.1c — one presence sensitivity knob replaces threshold + delay.
   // At 0.5 it lands exactly on the validated defaults (0.0015, 8 s).
   const behavior = {
@@ -140,6 +148,21 @@ async function boot() {
   let dancePhase = 0;
   let dancePump = 0;
   let symAngle = 0;
+  // v0.7.1d — the imprint life, integrated every frame from the bands and
+  // read by the generators at each 7 Hz re-sampling. Every field is smooth.
+  const life: ImprintLife = restingLife(0);
+  let lifeTiltVel = 0;
+  let lifeWindVel = 0;
+  let lifeFoldVel = 0;
+  let prevTransient = 0;
+  // Chladni imprint: mode pair follows the music's spectral balance, with a
+  // sand transition (blend) between two plates.
+  let chlIdx = 4;
+  let chlPendIdx = -1;
+  let chlPendSince = 0;
+  // Accent shockwave: retriggered on each strong rising transient.
+  let shockT = Infinity;
+  let shockStrength = 0;
   let motionAvg = 0;
   let motionArea = 0;
   let windAuto = 1;
@@ -313,6 +336,7 @@ async function boot() {
     return {
       time: performance.now() / 1000,
       screenAspect: window.innerWidth / Math.max(1, window.innerHeight),
+      life,
     };
   }
 
@@ -500,9 +524,12 @@ async function boot() {
     mic?.dispose();
     mic = undefined;
     renderer.dynamics.bass = 0;
+    renderer.dynamics.lowMid = 0;
+    renderer.dynamics.mid = 0;
     renderer.dynamics.treble = 0;
     renderer.dynamics.transient = 0;
     renderer.dynamics.voice = 0;
+    renderer.dynamics.shockAmp = 0;
     cym = 0;
     sustain = 0;
     renderer.dynamics.cymatic = 0;
@@ -655,6 +682,8 @@ async function boot() {
   // ----- per-frame orchestration -------------------------------------------
   let last = performance.now();
   let panelSyncAcc = 0;
+  let guideAcc = 0;
+  let lastSoundAt = performance.now();
   const tick = () => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1);
@@ -681,16 +710,24 @@ async function boot() {
       (handTarget * presenceEnv - renderer.dynamics.hand) *
       (1 - Math.exp(-dt / 0.4));
 
-    // Audio analysis -> dynamics, with the Pro band gains applied.
+    // Audio analysis -> dynamics, with the Pro band gains applied. The two
+    // mid bands ride the mean of the bass/treble gains so the Anima
+    // "réactivité" macro scales the whole spectrum.
     if (mic) {
       const a = mic.update(dt);
+      const midGain = (audioState.bassGain + audioState.trebleGain) / 2;
       renderer.dynamics.bass = Math.min(1.5, a.bass * audioState.bassGain);
+      renderer.dynamics.lowMid = Math.min(1.5, a.lowMid * midGain);
+      renderer.dynamics.mid = Math.min(1.5, a.mid * midGain);
       renderer.dynamics.treble = Math.min(1.5, a.treble * audioState.trebleGain);
       renderer.dynamics.transient = Math.min(
         1.5,
         a.transient * audioState.transientGain
       );
-      if (a.level >= audioState.silenceThreshold) markActivity();
+      if (a.level >= audioState.silenceThreshold) {
+        markActivity();
+        lastSoundAt = now;
+      }
 
       // Voice envelope: speaking loosens the corps' grip in a quarter of a
       // second; going quiet lets it tighten back over a slow breath.
@@ -748,6 +785,8 @@ async function boot() {
     renderer.dynamics.reactivity = fond ? 0.3 : 1;
     if (fond) {
       renderer.dynamics.bass *= FOND_DAMP;
+      renderer.dynamics.lowMid *= FOND_DAMP;
+      renderer.dynamics.mid *= FOND_DAMP;
       renderer.dynamics.treble *= FOND_DAMP;
       renderer.dynamics.transient *= FOND_DAMP;
       renderer.dynamics.cymatic *= FOND_DAMP;
@@ -828,7 +867,8 @@ async function boot() {
         (d.bass * 0.09 * danse - dancePump) * (1 - Math.exp(-dt / 0.12));
       d.danceCos = Math.cos(danceAngle);
       d.danceSin = Math.sin(danceAngle);
-      d.danceScale = 1 + Math.sin((now / 1000) * 0.45) * 0.02 + dancePump;
+      d.danceScale = 1 + Math.sin((now / 1000) * 0.45) * 0.02 + dancePump
+        + life.amp * 0.05;
       d.danceWarp = 0.012 + d.treble * 0.05 * danse;
       d.danceTime = dancePhase;
       d.danceDriftX = Math.sin((now / 1000) * 0.11) * 0.012 * (1 + danse * 0.5);
@@ -836,6 +876,87 @@ async function boot() {
       // The radial fold turns with the same pulse: Transe rotates on the music.
       symAngle += dt * danse * (0.04 + d.bass * 0.45 + danceKick * 0.8);
       d.symSpin = symAngle;
+    }
+
+    // v0.7.1d — the imprint life: what each shape's own animation reads at
+    // its 7 Hz re-sampling. Idle, everything breathes on slow clocks; with
+    // music, each band feeds its register, scaled by "intensité son".
+    {
+      const d = renderer.dynamics;
+      const sfx = renderer.tuning.soundFx;
+      const tS = now / 1000;
+      life.breath = Math.sin(tS * 0.3);
+      life.kick = Math.max(
+        life.kick * Math.exp(-dt * 4),
+        Math.min(1, d.transient * 1.1 * sfx)
+      );
+      life.phase += dt * (0.35 + d.treble * 2.2 * sfx);
+      life.spin += dt * (0.12 + (d.bass * 0.22 + life.kick * 0.7) * sfx);
+      life.amp += (Math.min(1, d.lowMid * 1.2 * sfx) - life.amp) * (1 - Math.exp(-dt / 0.18));
+      life.mid += (Math.min(1, d.mid * 1.2 * sfx) - life.mid) * (1 - Math.exp(-dt / 0.25));
+      life.hi += (Math.min(1, d.treble * sfx) - life.hi) * (1 - Math.exp(-dt / 0.15));
+      // Tilt: a damped spring around the idle breath; each rising accent
+      // knocks it over, alternating sides so the ring really tips.
+      const rising = d.transient > 0.55 && prevTransient <= 0.55;
+      if (rising) {
+        lifeTiltVel += (Math.floor(life.spin * 7) % 2 === 0 ? 1 : -1)
+          * Math.min(1, d.transient) * 2.6 * sfx;
+      }
+      lifeTiltVel += ((life.breath * 0.35 - life.tilt) * 3 - lifeTiltVel * 2.2) * dt;
+      life.tilt += lifeTiltVel * dt;
+      // Wind: a springy sway fed by the bass, always at least a breeze.
+      const windTarget = life.breath * 0.18
+        + d.bass * sfx * (0.55 + 0.45 * Math.sin(tS * 0.7));
+      lifeWindVel += ((windTarget - life.wind) * 2.8 - lifeWindVel * 1.6) * dt;
+      life.wind += lifeWindVel * dt;
+      life.windPhase += dt * (0.5 + d.bass * 1.5 * sfx);
+      // Dragon fold: rests folded, unfolds on the accents, springs back.
+      if (rising) lifeFoldVel -= Math.min(1, d.transient) * 2.4 * sfx;
+      const foldRest = 0.93 + life.breath * 0.035;
+      lifeFoldVel += ((foldRest - life.fold) * 10 - lifeFoldVel * 4.5) * dt;
+      life.fold = Math.min(1, Math.max(0.55, life.fold + lifeFoldVel * dt));
+      // Chladni plate: the mode follows the spectral balance — a brighter
+      // spectrum climbs to a higher mode — through a sand transition.
+      const total = d.bass + d.lowMid + d.mid + d.treble;
+      if (mic && total > 0.08) {
+        const brightness = (d.treble * 1.6 + d.mid * 0.8) / (total + 0.15);
+        const target = Math.max(0, Math.min(CHLADNI_MODES.length - 1,
+          Math.floor(brightness * CHLADNI_MODES.length * 1.4)));
+        if (target !== chlIdx && life.chladni.blend === 0) {
+          if (target !== chlPendIdx) {
+            chlPendIdx = target;
+            chlPendSince = now;
+          } else if (now - chlPendSince > 600) {
+            chlIdx = target;
+            life.chladni.mB = CHLADNI_MODES[chlIdx]![0];
+            life.chladni.nB = CHLADNI_MODES[chlIdx]![1];
+            life.chladni.blend = 1e-4;
+            chlPendIdx = -1;
+          }
+        }
+      }
+      if (life.chladni.blend > 0) {
+        life.chladni.blend = Math.min(1, life.chladni.blend + dt / 1.4);
+        if (life.chladni.blend >= 1) {
+          life.chladni.mA = life.chladni.mB;
+          life.chladni.nA = life.chladni.nB;
+          life.chladni.blend = 0;
+        }
+      }
+      // Shockwave: each strong rising accent rings a wave out of the
+      // imprint's center; the front travels, the strength decays.
+      if (rising && d.transient > 0.6 && sfx > 0.01) {
+        shockT = 0;
+        shockStrength = Math.min(1, d.transient) * Math.min(1.5, sfx);
+      }
+      if (shockT < 1.6) {
+        shockT += dt;
+        d.shockR = shockT * 0.55;
+        d.shockAmp = shockStrength * Math.exp(-shockT * 2.4);
+      } else {
+        d.shockAmp = 0;
+      }
+      prevTransient = d.transient;
     }
     renderer.dynamics.windGain = Math.min(
       5,
@@ -894,9 +1015,16 @@ async function boot() {
       chaosT >= 0.55 && chaosT < 2.2
         ? Math.exp(-(chaosT - 0.55) * 2.6) : 0;
 
-    // Auto quality: step tiers down fast when slow, up cautiously when fast.
+    // Auto quality: step tiers down fast when slow, up cautiously when
+    // fast — never above the Pro grain ceiling.
     if (quality.auto) {
       const fps = renderer.fps;
+      if (QUALITY_TIERS[autoTier]! > quality.cap && autoTier > 0) {
+        // The ceiling moved below the current tier: step down right away.
+        autoTier--;
+        renderer.tuning.count = QUALITY_TIERS[autoTier]!;
+        updateStatus();
+      }
       if (fps > 1 && fps < 45) {
         slowSince ??= now;
         fastSince = undefined;
@@ -909,7 +1037,11 @@ async function boot() {
       } else if (fps > 57) {
         fastSince ??= now;
         slowSince = undefined;
-        if (now - fastSince > 8000 && autoTier < QUALITY_TIERS.length - 1) {
+        if (
+          now - fastSince > 8000 &&
+          autoTier < QUALITY_TIERS.length - 1 &&
+          QUALITY_TIERS[autoTier + 1]! <= quality.cap
+        ) {
           autoTier++;
           renderer.tuning.count = QUALITY_TIERS[autoTier]!;
           fastSince = now;
@@ -919,6 +1051,20 @@ async function boot() {
         slowSince = undefined;
         fastSince = undefined;
       }
+    }
+
+    // v0.7.1d — the panel guides without speaking: once a second it hears
+    // what the room is doing and may pulse one slider as an invitation.
+    guideAcc += dt;
+    if (guideAcc > 1) {
+      guideAcc = 0;
+      panel.guide({
+        micOn: Boolean(mic),
+        silenceS: (now - lastSoundAt) / 1000,
+        bass: renderer.dynamics.bass,
+        mid: renderer.dynamics.mid,
+        treble: renderer.dynamics.treble,
+      });
     }
 
     panel.setFps(renderer.fps);
