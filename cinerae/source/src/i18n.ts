@@ -27,19 +27,6 @@ export function setLang(next: Lang) {
   } catch {}
 }
 
-/** Verbal scale for Umbra and Anima readouts — words, not percents. */
-export function words(x: number): string {
-  const scale =
-    lang === "fr"
-      ? ["rien", "à peine", "un peu", "à demi", "beaucoup", "à fond"]
-      : ["none", "barely", "a little", "halfway", "a lot", "full"];
-  const i = Math.min(
-    scale.length - 1,
-    Math.max(0, Math.round(x * (scale.length - 1)))
-  );
-  return scale[i]!;
-}
-
 // [fr, en]
 const DICT: Record<string, [string, string]> = {
   // ---- modes ---------------------------------------------------------------
@@ -58,10 +45,15 @@ const DICT: Record<string, [string, string]> = {
   "sec.midi": ["midi", "midi"],
   "sec.aide": ["aide", "help"],
   // ---- controls: name the visible effect, never the source -----------------
-  "ctl.umbra": ["moi ◀▶ le monde", "me ◀▶ the world"],
+  "ctl.umbra": ["frôler ◀▶ bousculer", "graze ◀▶ shove"],
   "hint.umbra": [
-    "à gauche la poussière m'habille, à droite le monde reprend l'écran",
-    "left, the dust dresses me — right, the world takes the screen back",
+    "à gauche la poussière me traverse, à droite mon corps la laboure",
+    "left, the dust drifts through me — right, my body plows it",
+  ],
+  "ctl.push": ["mon corps pousse", "my body pushes"],
+  "hint.push": [
+    "mon bras repousse les grains devant lui, ils roulent en sillage derrière",
+    "my arm shoves the grains ahead of it — they roll off in a wake behind",
   ],
   "ctl.presenceShare": ["ma part de poussière", "my share of the dust"],
   "hint.presenceShare": [
@@ -443,8 +435,8 @@ const DICT: Record<string, [string, string]> = {
     "bindings are saved with scenes",
   ],
   "ui.freeText": ["texte libre…", "free text…"],
-  "ui.me": ["moi", "me"],
-  "ui.world": ["le monde", "the world"],
+  "ui.pushL": ["frôler", "graze"],
+  "ui.pushR": ["bousculer", "shove"],
   "ui.langSwitch": ["Switch to English", "Passer en français"],
   "ui.openPanel": ["Ouvrir les réglages", "Open the settings"],
   "ui.closePanel": ["Replier les réglages", "Collapse the settings"],
@@ -455,9 +447,25 @@ const DICT: Record<string, [string, string]> = {
   "ui.crystal": ["cristal", "crystal"],
   // ---- hints for rows without a def ---------------------------------------
   "hint.teinte": [
-    "une teinte : la couleur de la poussière — toucher pour voir son nom",
-    "a tint: the color of the dust — touch to see its name",
+    "une teinte : la couleur de la poussière, de son fond à sa lumière",
+    "a tint: the dust's color, from its ground to its light",
   ],
+  // ---- sub-tab groups ------------------------------------------------------
+  "grp.corps": ["le corps", "the body"],
+  "grp.tenue": ["la tenue", "the hold"],
+  "grp.teinte": ["teintes", "tints"],
+  "grp.degrade": ["dégradé", "gradient"],
+  "grp.matiere": ["matière", "matter"],
+  "grp.lumiere": ["lumière", "light"],
+  "grp.espace": ["espace", "space"],
+  "grp.vie": ["vie", "life"],
+  "grp.forme": ["forme", "shape"],
+  "grp.reglages": ["réglages", "settings"],
+  "grp.modes": ["modes", "modes"],
+  "grp.clavier": ["clavier", "keys"],
+  "grp.gestes": ["gestes", "touch"],
+  "grp.camext": ["caméra", "camera"],
+  "grp.liens": ["liens", "links"],
   "hint.scenes": [
     "une scène change tout : matière, temps, teinte",
     "a scene changes everything: matter, time, tint",
@@ -566,27 +574,38 @@ const DICT: Record<string, [string, string]> = {
     "drop the image — everything stays local",
   ],
   // ---- aide ----------------------------------------------------------------
-  "aide.modesTitle": ["les trois modes", "the three modes"],
-  "aide.modes": [
-    "<b>Umbra</b> — un seul curseur : moi ou le monde. <b>Anima</b> — cinq questions : qui je suis, mon geste, ma voix, le temps, le look. <b>Pro</b> — tout, plus les scènes, le crossfade, la matrice et le MIDI.",
-    "<b>Umbra</b> — one slider: me or the world. <b>Anima</b> — five questions: who I am, my gesture, my voice, time, the look. <b>Pro</b> — everything, plus scenes, crossfade, the matrix and MIDI.",
+  "aide.umbra": [
+    "un seul curseur, du frôlement à la bousculade, et les teintes",
+    "one slider, from a graze to a shove, plus the tints",
   ],
-  "aide.keysTitle": ["clavier", "keyboard"],
-  "aide.keys": [
-    "<b>F</b> plein écran · <b>C</b> chaos · <b>R</b> reset · <b>P</b> image · <b>V</b> vidéo · <b>Espace</b> gèle le temps · <b>Échap</b> replie le panneau",
-    "<b>F</b> fullscreen · <b>C</b> chaos · <b>R</b> reset · <b>P</b> image · <b>V</b> video · <b>Space</b> freezes time · <b>Esc</b> folds the panel",
+  "aide.anima": [
+    "cinq questions : qui je suis, mon geste, ma voix, le temps, le look",
+    "five questions: who I am, my gesture, my voice, time, the look",
   ],
+  "aide.pro": [
+    "tout, plus les scènes, le crossfade, la matrice et le MIDI",
+    "everything, plus scenes, crossfade, the matrix and MIDI",
+  ],
+  "aide.key.f": ["plein écran", "fullscreen"],
+  "aide.key.c": ["chaos", "chaos"],
+  "aide.key.r": ["reset", "reset"],
+  "aide.key.p": ["image PNG", "PNG image"],
+  "aide.key.v": ["vidéo webm", "webm video"],
+  "aide.key.space": ["gèle le temps", "freezes time"],
+  "aide.key.esc": ["replie le panneau", "folds the panel"],
+  "aide.kspace": ["Espace", "Space"],
+  "aide.kesc": ["Échap", "Esc"],
   "aide.touchTitle": ["tablette", "tablet"],
   "aide.touch": [
     "Toucher l'écran sème de la poussière sous le doigt ; glisser souffle un vent. Toucher le nom d'un curseur le fait se démontrer deux secondes.",
     "Touching the screen seeds dust under your finger; dragging blows a wind. Tap a slider's name and it demos itself for two seconds.",
   ],
-  "aide.ndiTitle": ["caméra externe (NDI, capture, OBS)", "external camera (NDI, capture, OBS)"],
+  "aide.ndiTitle": ["NDI, capture, OBS", "NDI, capture, OBS"],
   "aide.ndi": [
     "Une caméra NDI ou un flux OBS peut jouer ici : installer <a href=\"https://ndi.video/tools/\" target=\"_blank\" rel=\"noopener\">NDI Tools</a> (Windows), lancer l'outil <b>Webcam Input</b>, choisir la source — elle apparaît alors comme une webcam que la pièce peut ouvrir. Une carte de capture HDMI se présente déjà comme une webcam, rien à faire.",
     "An NDI camera or an OBS feed can play here: install <a href=\"https://ndi.video/tools/\" target=\"_blank\" rel=\"noopener\">NDI Tools</a> (Windows), run the <b>Webcam Input</b> tool, pick the source — it then shows up as a webcam the piece can open. An HDMI capture card already shows up as a webcam, nothing to do.",
   ],
-  "aide.expLink": ["la page experiments", "the experiments page"],
+  "aide.linktree": ["Linktree — Thomas Maury", "Linktree — Thomas Maury"],
 };
 
 export function t(key: string): string {
