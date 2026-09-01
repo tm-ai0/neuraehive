@@ -1,6 +1,6 @@
 // Particle simulation. Position/velocity live in screen-UV space [0,1]^2;
 // each particle carries a second vec4: heat (ember glow), age (life cycle,
-// wraps at 1), comet (torn-off flight), spare.
+// wraps at 1), comet (torn-off flight), body-layer packing (lum+edge).
 //
 // Life cycle: born ember on a strong audio transient (orange, brief), cools
 // to warm white, ages into ash (darker, slower, sediments toward the edges),
@@ -9,6 +9,14 @@
 // zero level-set of a slow drifting noise field (iron-filings filaments),
 // combed every so often by a global gust. A dominant sustained tone aligns
 // the dust on Chladni figures; a very fast camera gesture tears comets off.
+//
+// v0.7.1 — two layers, one reserve. While someone stands in the frame a
+// share of the population becomes the CORPS layer (the person, dressed in a
+// chosen matter); the rest stays the FOND layer (dense free dust) which is
+// evicted from the body, runs at 0.6x time, and returns when the person
+// leaves — matter is conserved, grains only change allegiance. Materials
+// are fractional: the fractional part stochastically mixes two adjacent
+// materials across the population, so a crossfade never jumps.
 import { simplex3d } from "@vgpu/wgsl-std/noise/simplex";
 
 struct SimParams {
@@ -45,9 +53,16 @@ struct SimParams {
   stagger: f32,         // 0 = all points engage together, ->1 = ordered build
   depthAmount: f32,     // parallax layer separation, 0 = off
   presence: f32,        // someone-in-frame envelope 0..1 (0 = historical render)
-  presenceMode: f32,    // trame: 0 bruit, 1 dithering, 2 lignes, 3 moiré, 4 points, 5 contours
-  presenceShare: f32,   // share of the population serving the portrait
-  presenceHold: f32,    // 0 = free dust, 1 = rigid portrait
+  bodyMat: f32,         // corps material 0..7, fractional = stochastic blend
+  bodyMatB: f32,        // crossfade partner material of the corps
+  fondMat: f32,         // fond material 0..7, fractional = stochastic blend
+  fondMatB: f32,        // crossfade partner material of the fond
+  matBlend: f32,        // 0 = A only .. 1 = B only, stochastic per grain
+  share: f32,           // resting bias: share of grains serving the corps
+  hold: f32,            // serrage — effective grip (voice already relaxed it)
+  elastic: f32,         // how far the portrait yields under a gesture
+  margin: f32,          // shadow margin: fond eviction strength around the body
+  fondReact: f32,       // how much the fond feels the gesture wind
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -120,6 +135,56 @@ fn ashWeight(age: f32) -> f32 {
     * (1.0 - smoothstep(0.965, 1.0, age));
 }
 
+// Fractional material -> the whole material this grain serves. The
+// fractional part converts a share of the population to the next material,
+// so any authored value reads as a continuous visual blend. The crossfade
+// blends its two endpoint materials directly instead (never sweeping
+// through the ladder in between): matBlend stochastically hands grains
+// from the A material to the B material.
+fn matOf(valueA: f32, valueB: f32, i: u32) -> f32 {
+  let v = select(valueA, valueB, hash01(i * 97u + 3u) < params.matBlend);
+  let lo = floor(v);
+  return lo + select(0.0, 1.0, hash01(i * 53u + 17u) < v - lo);
+}
+
+// Fond structure: a gentle spring pulling free dust toward the pattern of
+// its material. Fumée (0) and encre (2) are formless here — their identity
+// lives in the render; contours (7) rides the filament field instead.
+fn fondStructure(mat: f32, pos: vec2f, asp: f32) -> vec2f {
+  let pa = vec2f(pos.x * asp, pos.y);
+  if (mat > 0.5 && mat < 1.5) {
+    // liquide: everything slides slowly down, swaying like falling water
+    return vec2f(sin(pos.y * 4.5 + params.time * 0.23) * 0.05, 0.16);
+  } else if (mat > 2.5 && mat < 3.5) {
+    // points: condense on a rotated dot lattice
+    let pr = vec2f(pa.x * 0.9659 - pa.y * 0.2588, pa.x * 0.2588 + pa.y * 0.9659) * 26.0;
+    let d = fract(pr) - vec2f(0.5);
+    let back = vec2f(-d.x * 0.9659 + d.y * 0.2588, -d.x * 0.2588 - d.y * 0.9659);
+    return back * 3.2;
+  } else if (mat > 3.5 && mat < 4.5) {
+    // dither: a finer, denser lattice — a woven veil of dust
+    let d = fract(pa * 48.0) - vec2f(0.5);
+    return -d * 2.6;
+  } else if (mat > 4.5 && mat < 5.5) {
+    // lignes: settle on a horizontal raster
+    let dy = (round(pos.y * 34.0) - pos.y * 34.0) / 34.0;
+    return vec2f(0.0, dy * 90.0);
+  } else if (mat > 5.5 && mat < 6.5) {
+    // moiré: two slightly rotated line systems interfering
+    let d1f = pa.x * 0.2955 + pa.y * 0.9553;
+    let d2f = pa.y * 0.9553 - pa.x * 0.2955;
+    let p1 = (round(d1f * 24.0) - d1f * 24.0) / 24.0;
+    let p2 = (round(d2f * 24.0) - d2f * 24.0) / 24.0;
+    let pull = select(
+      vec2f(0.2955, 0.9553) * p1,
+      vec2f(-0.2955, 0.9553) * p2,
+      abs(p2) < abs(p1),
+    );
+    return pull * 70.0;
+  }
+  return vec2f(0.0);
+}
+
 @compute @workgroup_size(256)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let i = id.x;
@@ -171,27 +236,49 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let tEff = clamp((title - params.stagger * rank) / unstag, 0.0, 1.0);
   let ero = params.imprintShape * smoothstep(0.05, 0.28, f.a);
 
-  // ---- présence ------------------------------------------------------------
+  // ---- corps layer ----------------------------------------------------------
   // Continuous portrait: the mirrored camera luminance places the grains
-  // through a procedural screen (trame) evaluated at each grain's home cell —
-  // the person reads as dust from the first second, never as video. The whole
+  // through the chosen material, evaluated at each grain's home cell — the
+  // person reads as dust from the first second, never as video. The whole
   // block is inert while the presence envelope is 0 (empty room, no camera,
-  // fond imprint) or while the elasticity sits at "poussière libre".
-  var presW = 0.0;
-  var presLum = 0.0;
-  if (params.presence > 0.003 && params.presenceHold > 0.001
-      && hash01(i * 41u + 9u) < params.presenceShare) {
+  // fond imprint) or while the serrage sits at "poussière libre".
+  var presW = 0.0;     // corps membership weight
+  var presLum = 0.0;   // camera light under this grain (bichromie driver)
+  var presEdge = 0.0;  // silhouette-edge weight (the body reads by its edges)
+  var corpsMat = 0.0;
+  let isCorpsHash = hash01(i * 41u + 9u) < params.share;
+  if (params.presence > 0.003 && params.hold > 0.001 && isCorpsHash) {
+    corpsMat = matOf(params.bodyMat, params.bodyMatB, i);
     let hp = homeOf(i);
     let lp = smoothstep(0.06, 0.9, textureSampleLevel(field, fieldSamp, hp, 0.0).b);
     let pAsp = params.gridCols / max(params.gridRows, 1.0);
     let pa = vec2f(hp.x * pAsp, hp.y);
-    let mode = params.presenceMode;
+    // Luminance gradient at the home cell: the outline of the body. Every
+    // material uses it — the edge carries the reading of the silhouette.
+    let dims = vec2f(textureDimensions(field, 0));
+    let ex = vec2f(1.0 / dims.x, 0.0);
+    let ey = vec2f(0.0, 1.0 / dims.y);
+    let gx = textureSampleLevel(field, fieldSamp, hp + ex, 0.0).b
+      - textureSampleLevel(field, fieldSamp, hp - ex, 0.0).b;
+    let gy = textureSampleLevel(field, fieldSamp, hp + ey, 0.0).b
+      - textureSampleLevel(field, fieldSamp, hp - ey, 0.0).b;
+    let edge = clamp(length(vec2f(gx, gy)) * 10.0, 0.0, 1.0);
     var on = false;
-    if (mode < 0.5) {
-      // bruit: static stochastic threshold, density follows the light
-      on = hash01(i * 13u + 7u) < lp;
-    } else if (mode < 1.5) {
-      // dithering ordonné: Bayer 4x4 over the home cells
+    if (corpsMat < 0.5) {
+      // fumée: stochastic gathering where the light is — loose, smoky
+      on = hash01(i * 13u + 7u) < lp * 0.92 + edge * 0.3;
+    } else if (corpsMat < 1.5) {
+      // liquide: same gathering, the behavior below makes it pour
+      on = hash01(i * 13u + 7u) < lp * 0.9 + edge * 0.4;
+    } else if (corpsMat < 2.5) {
+      // encre: saturated outline, diluted wash inside
+      on = hash01(i * 13u + 7u) < clamp(edge * 1.6 + lp * 0.30, 0.0, 1.0);
+    } else if (corpsMat < 3.5) {
+      // points: rotated dot screen, dot area follows the light
+      let pr = vec2f(pa.x * 0.9659 - pa.y * 0.2588, pa.x * 0.2588 + pa.y * 0.9659) * 34.0;
+      on = length(fract(pr) - vec2f(0.5)) < 0.62 * sqrt(lp);
+    } else if (corpsMat < 4.5) {
+      // dither ordonné: Bayer 4x4 over the home cells
       let col = i % u32(params.gridCols);
       let row = i / u32(params.gridCols);
       var m = array<f32, 16>(
@@ -199,36 +286,30 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
         3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0,
       );
       on = lp > (m[(row % 4u) * 4u + (col % 4u)] + 0.5) / 16.0;
-    } else if (mode < 2.5) {
-      // lignes: horizontal raster whose thickness follows the light — capped
-      // so the raster stays visible even in full light.
+    } else if (corpsMat < 5.5) {
+      // lignes: horizontal raster whose thickness follows the light
       on = abs(fract(hp.y * 44.0) - 0.5) * 2.0 < lp * 0.8;
-    } else if (mode < 3.5) {
+    } else if (corpsMat < 6.5) {
       // moiré: two slightly rotated line systems interfering
       let d1 = pa.x * 0.2955 + pa.y * 0.9553;
       let d2 = pa.y * 0.9553 - pa.x * 0.2955;
       on = abs(fract(d1 * 30.0) - 0.5) * 2.0 < lp * 0.62
         || abs(fract(d2 * 30.0) - 0.5) * 2.0 < lp * 0.62;
-    } else if (mode < 4.5) {
-      // trame de points: rotated dot screen, dot area follows the light
-      let pr = vec2f(pa.x * 0.9659 - pa.y * 0.2588, pa.x * 0.2588 + pa.y * 0.9659) * 34.0;
-      on = length(fract(pr) - vec2f(0.5)) < 0.62 * sqrt(lp);
     } else {
-      // contours: the luminance gradient draws the outlines of the body
-      let dims = vec2f(textureDimensions(field, 0));
-      let ex = vec2f(1.0 / dims.x, 0.0);
-      let ey = vec2f(0.0, 1.0 / dims.y);
-      let gx = textureSampleLevel(field, fieldSamp, hp + ex, 0.0).b
-        - textureSampleLevel(field, fieldSamp, hp - ex, 0.0).b;
-      let gy = textureSampleLevel(field, fieldSamp, hp + ey, 0.0).b
-        - textureSampleLevel(field, fieldSamp, hp - ey, 0.0).b;
-      on = hash01(i * 31u + 5u) < clamp(length(vec2f(gx, gy)) * 14.0 + lp * 0.08, 0.0, 1.0);
+      // contours: the luminance gradient alone draws the outlines
+      on = hash01(i * 31u + 5u) < clamp(edge * 1.4 + lp * 0.08, 0.0, 1.0);
     }
     if (on) {
       presW = params.presence;
       presLum = lp;
+      presEdge = edge;
     }
   }
+  let isFond = presW < 0.001;
+  let fondM = matOf(params.fondMat, params.fondMatB, i);
+  // Two tempos: while someone is there the fond breathes at 0.6x — the
+  // world steps back — while the corps answers instantly.
+  let tempo = select(1.0, mix(1.0, 0.6, params.presence), isFond);
 
   // ---- life cycle ----------------------------------------------------------
   // Aging, with a per-particle tempo so the population never pulses in sync.
@@ -283,8 +364,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let windDir = 1.0 - params.chaosAspire * 3.5;
   let ashWind = 1.0 - ash * 0.75 * (1.0 - min(f.a * 2.5, 1.0));
   let wind = f.rg * 1.6 * windDir;
+  let windReact = select(1.0, params.fondReact, isFond);
   let couple = params.force * (0.6 + params.bass * 1.6) * calm * ashWind
-    * min(flowSpeed * 6.0, 1.0) * 2.5 * layerF;
+    * min(flowSpeed * 6.0, 1.0) * 2.5 * layerF * tempo * windReact;
   var acc = (wind - vel) * couple;
   acc += (vec2f(0.5) - pos) * params.chaosAspire * 1.8;
 
@@ -304,19 +386,22 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 
   // Treble feeds fine turbulence; the chaos burst multiplies it hard. Rest
   // and a held tone both quiet it so structure can emerge from the fur.
-  // While someone stands in the frame the ambient weather steps back so the
-  // portrait reads: held grains ignore most turbulence, and even the free
-  // dust calms down instead of veiling the body with filaments.
+  // A held corps grain sheds most turbulence — except the fumée, which
+  // keeps swirling inside the silhouette; the fond only slows its tempo.
+  let matTurbCut = select(0.85, 0.35, corpsMat < 0.5);
   let turb = params.turbulence * (0.35 + params.treble * 2.0)
     * (1.0 + params.chaosBurst * 5.0) * calm
     * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75)
-    * (1.0 - presW * 0.85) * (1.0 - params.presence * 0.55);
+    * (1.0 - presW * matTurbCut) * tempo;
   acc += curlNoise(pos, params.time, params.gridCols / max(params.gridRows, 1.0)) * turb * layerF;
 
   // Resting filaments: condense on the zero level-set of a slow drifting
   // noise (iron filings on a wandering magnet) and slide gently along it.
-  let rest = params.filament * restness * (1.0 - flight) * (1.0 - presW)
-    * (1.0 - params.presence * 0.75);
+  // The contours fond material rides the same field even while the room
+  // plays, so its free dust always keeps that streaked, combed look.
+  let fondContours = select(0.0, 0.65, isFond && fondM > 6.5);
+  let rest = (params.filament * restness + fondContours * calm * (1.0 - c2))
+    * (1.0 - flight) * (1.0 - presW);
   if (rest > 0.003) {
     let asp = params.gridCols / max(params.gridRows, 1.0);
     let q = vec2f(pos.x * asp, pos.y) * 2.3
@@ -331,8 +416,39 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     acc += (-n0 * grad * 3.2 + vec2f(grad.y, -grad.x) * 0.5) / gl * rest;
   }
 
+  // Fond structure: free dust condenses gently toward the pattern of its
+  // material (raster, lattice, moiré, falling water). Quieted by the word,
+  // a forming crystal or a held tone, like every other resting force.
+  if (isFond && fondM > 0.5 && fondM < 6.5) {
+    let asp = params.gridCols / max(params.gridRows, 1.0);
+    acc += fondStructure(fondM, pos, asp) * calm * (1.0 - c2) * (1.0 - tEff)
+      * (1.0 - min(cym, 1.0)) * (1.0 - flight) * 0.8;
+  }
+
+  // Fond eviction: the world steps aside around the body. Free dust caught
+  // on the silhouette is pushed toward the dark, leaving a shadow margin
+  // that draws the person in negative — and hands the grains to the edges.
+  if (isFond && params.presence > 0.003 && params.margin > 0.001) {
+    let lpP = smoothstep(0.05, 0.75, f.b);
+    if (lpP > 0.02) {
+      let dims = vec2f(textureDimensions(field, 0));
+      let ex = vec2f(1.0 / dims.x, 0.0);
+      let ey = vec2f(0.0, 1.0 / dims.y);
+      let gx = textureSampleLevel(field, fieldSamp, pos + ex, 0.0).b
+        - textureSampleLevel(field, fieldSamp, pos - ex, 0.0).b;
+      let gy = textureSampleLevel(field, fieldSamp, pos + ey, 0.0).b
+        - textureSampleLevel(field, fieldSamp, pos - ey, 0.0).b;
+      let g = vec2f(gx, gy);
+      let gl = length(g);
+      if (gl > 1e-4) {
+        // Push down the luminance gradient — out of the light, into shadow.
+        acc += -g / gl * lpP * params.presence * params.margin * 1.6;
+      }
+    }
+  }
+
   // The resting gust: everything bends the same way, then it dies down.
-  acc += params.gust * calm * (1.0 - ash * 0.7) * layerF;
+  acc += params.gust * calm * (1.0 - ash * 0.7) * layerF * tempo;
 
   // Cymatics: a dominant sustained tone aligns the dust on the nodal lines
   // of a Chladni figure; the pattern follows the detected pitch.
@@ -382,16 +498,31 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold;
   }
 
-  // Presence spring: the portrait gathers on the body. A moving limb writes
-  // motion energy, the portrait yields there and the freed grains scatter
-  // around the gesture before coming back — the elasticity says how far.
+  // Corps spring: the portrait gathers on the body. A moving limb writes
+  // motion energy, the portrait yields there — the élastique says how far —
+  // and the freed grains scatter around the gesture before coming back.
+  // Each material grips its own way: fumée is aspirated loosely and keeps
+  // swirling, liquide is held sideways but pours, encre pins its outline
+  // hard and lets the wash inside breathe, the screens hold everything.
   var presDrag = 0.0;
   if (presW > 0.001) {
-    let ph = params.presenceHold;
-    let give = smoothstep(0.06, 0.30, f.a) * (1.0 - ph * 0.7);
-    let pull = presW * ph * (1.0 - give) * (1.0 - flight);
+    let ph = params.hold;
+    let give = smoothstep(0.06, 0.30, f.a) * clamp(params.elastic, 0.0, 1.0);
+    var stiff = 1.0;
+    if (corpsMat < 0.5) {
+      stiff = 0.4; // fumée
+    } else if (corpsMat < 1.5) {
+      stiff = 0.75; // liquide
+    } else if (corpsMat < 2.5) {
+      stiff = mix(0.3, 1.5, smoothstep(0.1, 0.6, presEdge)); // encre
+    }
+    let pull = presW * ph * stiff * (1.0 - give) * (1.0 - flight);
     acc += (homeOf(i) - pos) * pull * (10.0 + 30.0 * ph);
     presDrag = pull * (4.0 + 22.0 * ph);
+    if (corpsMat > 0.5 && corpsMat < 1.5) {
+      // liquide: gravity pours it down the body, sideways motion is damped
+      acc += vec2f(-vel.x * 5.0, 0.5) * presW;
+    }
   }
 
   vel += acc * dt;
@@ -406,7 +537,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     vel *= maxSpeed / speed;
   }
 
-  pos += vel * sdt;
+  pos += vel * sdt * tempo;
   // Wrap over the extended domain, so leaving and re-entering both happen
   // out of frame — unless the word holds the matter. A comet that flies out
   // lands as fresh ash where it re-enters.
@@ -426,10 +557,12 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
 
   dst[i * 2u] = vec4f(pos, vel);
-  // Spare channel = presence: 0 for free grains, else the trame luminance
-  // packed into [0.02, 1] so the render pass lights and tints the portrait.
-  dst[i * 2u + 1u] = vec4f(
-    heat, age, comet,
-    select(0.0, 0.02 + presLum * 0.98, presW > 0.001),
-  );
+  // Spare channel: 0 for fond grains, else the corps packing — 1 + light
+  // (0..255) + edge (0..255)*256, both exact in f32 — so the render pass
+  // can light the portrait and draw the body by its edges.
+  var pack = 0.0;
+  if (presW > 0.001) {
+    pack = 1.0 + floor(presLum * 255.0) + floor(presEdge * 255.0) * 256.0;
+  }
+  dst[i * 2u + 1u] = vec4f(heat, age, comet, pack);
 }

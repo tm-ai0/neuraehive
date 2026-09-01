@@ -4,6 +4,11 @@
 // image, the halo blooms it, the memory bed and the camera ghost add their
 // veils. Every extra path is inert at its default value, so the default
 // render stays the historical one.
+//
+// v0.7.1 — fusion and symmetry are continuous: a fractional blendMode mixes
+// the two adjacent tone curves (and eases into the paper world), and a
+// fractional symMode/symN blends two folds by sampling both. The crossfade,
+// the matrix and MIDI can traverse every look without a jump.
 struct PresentParams {
   texel: vec2f,
   exposure: f32,
@@ -14,9 +19,9 @@ struct PresentParams {
   bg: vec3f,        // background (paper color in subtractive mode)
   grade: vec3f,     // final multiplicative tint
   ink: vec3f,       // ink color of the subtractive mode
-  blendMode: f32,   // 0 additif, 1 écran, 2 tamisée, 3 dodge, 4 soustractif
-  symMode: f32,     // 0 none, 1 mirror H, 2 mirror V, 3 quadrants, 4 radial
-  symN: f32,        // radial branch count
+  blendMode: f32,   // 0 additif, 1 écran, 2 tamisée, 3 dodge, 4 soustractif — fractional
+  symMode: f32,     // 0 none, 1 mirror H, 2 mirror V, 3 quadrants, 4 radial — fractional
+  symN: f32,        // radial branch count, fractional
   halo: f32,        // soft bloom amount
   paperGrain: f32,  // static paper-grain amount
   strobe: f32,      // discreet strobe on transients
@@ -44,9 +49,8 @@ fn paperNoise(uv: vec2f) -> f32 {
   return h1 * 0.6 + h2 * 0.4;
 }
 
-// Symmetry fold: where this pixel reads the trail from.
-fn foldUv(uv: vec2f) -> vec2f {
-  let mode = params.symMode;
+// Symmetry fold for one whole mode: where this pixel reads the trail from.
+fn foldUv(uv: vec2f, mode: f32, n: f32) -> vec2f {
   var s = uv;
   if (mode < 0.5) {
     return s;
@@ -66,7 +70,7 @@ fn foldUv(uv: vec2f) -> vec2f {
   let aspect = params.texel.y / max(params.texel.x, 1e-6);
   let p = (s - vec2f(0.5)) * vec2f(aspect, 1.0);
   let r = length(p);
-  let sector = 6.2831853 / max(params.symN, 2.0);
+  let sector = 6.2831853 / max(n, 2.0);
   var a = atan2(p.y, p.x);
   a = a - sector * floor(a / sector);
   a = min(a, sector - a);
@@ -74,8 +78,31 @@ fn foldUv(uv: vec2f) -> vec2f {
   return q / vec2f(aspect, 1.0) + vec2f(0.5);
 }
 
+// One tone curve, whole mode. Fractional modes mix two of these.
+fn toneOf(mode: i32, xe: vec3f) -> vec3f {
+  if (mode <= 0) {
+    return vec3f(1.0) - exp(-xe);                    // additif
+  } else if (mode == 1) {
+    return xe / (vec3f(1.0) + xe);                   // écran, soft shoulders
+  } else if (mode == 2) {
+    let t = vec3f(1.0) - exp(-xe);
+    return t * t * (vec3f(3.0) - 2.0 * t);           // lumière tamisée
+  } else if (mode == 3) {
+    return min(xe / max(vec3f(1.0) - xe * 0.6, vec3f(0.05)), vec3f(1.35)); // dodge
+  }
+  return vec3f(1.0) - exp(-xe);                      // soustractif: paper below
+}
+
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let suv = foldUv(uv);
+  // Two folds, blended: fractional symmetry is a mix of the two nearest
+  // whole folds. When mode and branch count are whole, fMix is 0 and only
+  // the first fold is sampled — the historical path.
+  let suvA = foldUv(uv, floor(params.symMode), floor(params.symN));
+  let suvB = foldUv(uv, ceil(params.symMode), ceil(params.symN));
+  let fMix = max(
+    params.symMode - floor(params.symMode),
+    params.symN - floor(params.symN),
+  );
   let center = uv - vec2f(0.5);
   let dir = center * params.fringe * 14.0 * params.texel * 60.0;
 
@@ -84,24 +111,31 @@ fn foldUv(uv: vec2f) -> vec2f {
   // color now (ember orange lives in its rgb), so shift channels, not luma.
   let wr = 1.0 + (0.5 - params.fringeTint) * 1.1;
   let wb = 1.0 + (params.fringeTint - 0.5) * 1.1;
-  let base = textureSampleLevel(trail, samp, suv, 0.0).rgb;
-  let rShift = textureSampleLevel(trail, samp, suv + dir, 0.0).r;
-  let bShift = textureSampleLevel(trail, samp, suv - dir, 0.0).b;
+  var base = textureSampleLevel(trail, samp, suvA, 0.0).rgb;
+  var rShift = textureSampleLevel(trail, samp, suvA + dir, 0.0).r;
+  var bShift = textureSampleLevel(trail, samp, suvA - dir, 0.0).b;
+  if (fMix > 0.001) {
+    base = mix(base, textureSampleLevel(trail, samp, suvB, 0.0).rgb, fMix);
+    rShift = mix(rShift, textureSampleLevel(trail, samp, suvB + dir, 0.0).r, fMix);
+    bShift = mix(bShift, textureSampleLevel(trail, samp, suvB - dir, 0.0).b, fMix);
+  }
   let r = base.r + (rShift - base.r) * wr;
   let b = base.b + (bShift - base.b) * wb;
   var hdr = vec3f(max(r, 0.0), base.g, max(b, 0.0));
 
   // Soft halo: a wide cross of taps blooms the HDR trail before the grade.
+  // The bloom reads the first fold only — at a 9-texel radius the second
+  // fold's contribution is indistinguishable, and the taps stay cheap.
   if (params.halo > 0.001) {
     let rad = params.texel * 9.0;
-    var bloom = textureSampleLevel(trail, samp, suv + vec2f(rad.x, 0.0), 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv - vec2f(rad.x, 0.0), 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv + vec2f(0.0, rad.y), 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv - vec2f(0.0, rad.y), 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv + rad * 0.7, 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv - rad * 0.7, 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv + vec2f(rad.x, -rad.y) * 0.7, 0.0).rgb;
-    bloom += textureSampleLevel(trail, samp, suv - vec2f(rad.x, -rad.y) * 0.7, 0.0).rgb;
+    var bloom = textureSampleLevel(trail, samp, suvA + vec2f(rad.x, 0.0), 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA - vec2f(rad.x, 0.0), 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA + vec2f(0.0, rad.y), 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA - vec2f(0.0, rad.y), 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA + rad * 0.7, 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA - rad * 0.7, 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA + vec2f(rad.x, -rad.y) * 0.7, 0.0).rgb;
+    bloom += textureSampleLevel(trail, samp, suvA - vec2f(rad.x, -rad.y) * 0.7, 0.0).rgb;
     hdr += bloom * 0.125 * params.halo * 1.6;
   }
 
@@ -109,52 +143,50 @@ fn foldUv(uv: vec2f) -> vec2f {
   let exposure = params.exposure * (1.0 + params.strobe * params.fringe * 2.2);
   let xe = hdr * exposure;
 
-  // Fusion of the accumulated light: the tone curve is the blend.
-  var tone: vec3f;
-  let mode = params.blendMode;
-  if (mode < 0.5) {
-    tone = vec3f(1.0) - exp(-xe);                    // additif
-  } else if (mode < 1.5) {
-    tone = xe / (vec3f(1.0) + xe);                   // écran, soft shoulders
-  } else if (mode < 2.5) {
-    let t = vec3f(1.0) - exp(-xe);
-    tone = t * t * (vec3f(3.0) - 2.0 * t);           // lumière tamisée
-  } else if (mode < 3.5) {
-    tone = min(xe / max(vec3f(1.0) - xe * 0.6, vec3f(0.05)), vec3f(1.35)); // dodge
-  } else {
-    tone = vec3f(1.0) - exp(-xe);                    // soustractif: paper below
-  }
+  // Fusion of the accumulated light: the tone curve is the blend. A
+  // fractional mode mixes the two adjacent curves — fully continuous.
+  let bLo = i32(clamp(floor(params.blendMode), 0.0, 4.0));
+  let bHi = i32(clamp(ceil(params.blendMode), 0.0, 4.0));
+  let tone = mix(
+    toneOf(bLo, xe),
+    toneOf(bHi, xe),
+    params.blendMode - floor(params.blendMode),
+  );
+  // How deep into the paper world we are (blendMode 3 -> 4 eases into it).
+  let paperW = clamp(params.blendMode - 3.0, 0.0, 1.0);
 
-  let mem = textureSampleLevel(memoryTex, samp, suv, 0.0).r * params.memoryGain;
-  let ghost = textureSampleLevel(field, samp, suv, 0.0).b * params.ghost;
-
-  var color: vec3f;
-  if (mode >= 3.5) {
-    // Paper: light dust becomes dark ink on the background sheet.
-    let lum = clamp(dot(tone, vec3f(0.35, 0.45, 0.2)), 0.0, 1.0);
-    color = mix(params.bg, params.ink, lum);
-    color *= 1.0 - mem * 0.3;
-    color *= 1.0 - ghost * 0.25;
-  } else {
-    color = params.bg + tone * params.grade;
-    // Cendre mémoire: a faint ash bed where people have moved.
-    color += params.grade * mem * 0.16;
-    // Camera ghost (Pro): a barely-there luminance veil behind the dust.
-    color += params.grade * ghost * 0.2;
+  var mem = textureSampleLevel(memoryTex, samp, suvA, 0.0).r;
+  var ghost = textureSampleLevel(field, samp, suvA, 0.0).b;
+  if (fMix > 0.001) {
+    mem = mix(mem, textureSampleLevel(memoryTex, samp, suvB, 0.0).r, fMix);
+    ghost = mix(ghost, textureSampleLevel(field, samp, suvB, 0.0).b, fMix);
   }
+  mem *= params.memoryGain;
+  ghost *= params.ghost;
+
+  // Paper: light dust becomes dark ink on the background sheet.
+  let lum = clamp(dot(tone, vec3f(0.35, 0.45, 0.2)), 0.0, 1.0);
+  var paperColor = mix(params.bg, params.ink, lum);
+  paperColor *= 1.0 - mem * 0.3;
+  paperColor *= 1.0 - ghost * 0.25;
+
+  var lightColor = params.bg + tone * params.grade;
+  // Cendre mémoire: a faint ash bed where people have moved.
+  lightColor += params.grade * mem * 0.16;
+  // Camera ghost (Pro): a barely-there luminance veil behind the dust.
+  lightColor += params.grade * ghost * 0.2;
+
+  var color = mix(lightColor, paperColor, paperW);
 
   // Wind-field overlay: motion becomes slow veils in the grade's own tint,
   // direction smeared along the flow itself so currents read as strokes.
   if (params.overlay > 0.001) {
-    let v = textureSampleLevel(field, samp, suv, 0.0).rg;
-    let v2 = textureSampleLevel(field, samp, suv - v * 0.05, 0.0).rg;
+    let v = textureSampleLevel(field, samp, suvA, 0.0).rg;
+    let v2 = textureSampleLevel(field, samp, suvA - v * 0.05, 0.0).rg;
     let mag = (length(v) + length(v2)) * 0.5;
     let veil = min(mag * 2.4, 1.0) * params.overlay;
-    if (mode >= 3.5) {
-      color *= 1.0 - veil * 0.2;
-    } else {
-      color += vec3f(1.0, 0.86, 0.68) * veil * 0.22;
-    }
+    color *= 1.0 - veil * 0.2 * paperW;
+    color += vec3f(1.0, 0.86, 0.68) * veil * 0.22 * (1.0 - paperW);
   }
 
   // Paper grain: a static multiplicative tooth, dosable, both modes.

@@ -12,10 +12,23 @@ export interface ParamRef {
   min: number;
   max: number;
   step: number;
-  /** Categorical value: the crossfade switches it at mid-course. */
+  /** Categorical value: rendered as a select. The crossfade still morphs it
+   * continuously — fractional values blend in the render. */
   discrete?: boolean;
   /** Writing it reshapes the imprint cloud (resampled on a slow cadence). */
   imprint?: boolean;
+  /** Chaos may draw this parameter, inside this range (clamped to min/max).
+   * Every setting, present or future, declares its chaos reach here — the
+   * registry is the only gate. */
+  chaos?: [number, number];
+  /** Chaos rounds its draw to a whole value (materials, symmetries). */
+  chaosSnap?: boolean;
+  /** Derived or transport value (macro, crossfade): never captured in a
+   * preset, never a chaos target. */
+  transient?: boolean;
+  /** Internal plumbing (crossfade material pair): registered so every
+   * engine can write it, but never shown and never a modulation target. */
+  hidden?: boolean;
   get(): number;
   set(v: number): void;
 }

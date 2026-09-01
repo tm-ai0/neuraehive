@@ -4,8 +4,15 @@
 // background, comets stretch along their flight and burn bright. Crystallized
 // grains take their brightness from the camera luminance imprint. The palette
 // gradient can recolor each grain along a chosen driver (age, speed, local
-// density, parallax depth); three depth layers scale the grains and a cheap
-// depth-of-field blows the out-of-focus layers into soft discs.
+// density, parallax depth — fractional drivers blend two of them); three
+// depth layers scale the grains and a cheap depth-of-field blows the
+// out-of-focus layers into soft discs.
+//
+// v0.7.1 — the corps layer carries its own light/shadow tint pair and reads
+// by its edges (bright outline, translucent wash inside; the encre material
+// inverts that into saturated ink edges over a diluted grey). The fond layer
+// is dimmed to its "visible" level while someone is there, darkens further
+// inside the body's shadow margin, and sits in the far parallax layer.
 struct RenderParams {
   viewport: vec2f,   // target size in px
   pointSize: f32,    // grain diameter in px
@@ -24,12 +31,20 @@ struct RenderParams {
   stop3: vec4f,
   stop4: vec4f,
   stopCount: f32,
-  colorDriver: f32,  // 0 âge, 1 vitesse, 2 densité, 3 profondeur
+  colorDriver: f32,  // 0 âge, 1 vitesse, 2 densité, 3 profondeur (fractional)
   depthAmount: f32,  // parallax layer separation, 0 = off
-  focusLayer: f32,   // 0 far, 1 mid, 2 near
+  focusLayer: f32,   // 0 far .. 2 near, continuous
   dofBlur: f32,      // out-of-focus blur amount
   presence: f32,     // someone-in-frame envelope 0..1
-  presenceSize: f32, // point-size multiplier of portrait grains
+  presenceSize: f32, // point-size multiplier of corps grains
+  bodyMat: f32,      // corps material (fractional, same hash as simulate)
+  bodyMatB: f32,     // crossfade partner material of the corps
+  matBlend: f32,     // 0 = A only .. 1 = B only, stochastic per grain
+  corpsComp: f32,    // emission compensation for the slow presence trail
+  fondVisible: f32,  // fond brightness while someone is there (0.35 default)
+  corpsLight: vec4f, // body tint pair: what the camera light paints (rgb)
+  corpsShadow: vec4f,
+  hand: f32,         // hands envelope: fast small motion brightens and warms
 };
 
 struct VertexOut {
@@ -44,6 +59,7 @@ struct VertexOut {
 @group(0) @binding(1) var<storage, read> particles: array<vec4f>;
 @group(0) @binding(2) var field: texture_2d<f32>;
 @group(0) @binding(3) var prevTrail: texture_2d<f32>;
+@group(0) @binding(4) var fieldSamp: sampler;
 
 fn pcg(v: u32) -> u32 {
   let state = v * 747796405u + 2891336453u;
@@ -95,6 +111,15 @@ fn palette(t: f32) -> vec3f {
   return mix(stops[i].rgb, stops[i + 1u].rgb, f);
 }
 
+// One color-driver value. Pure blend inputs so a fractional driver can mix
+// two of them and the crossfade never jumps.
+fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
+  if (d <= 0) { return tAge; }
+  if (d == 1) { return tSpd; }
+  if (d == 2) { return tDen; }
+  return tLay;
+}
+
 @vertex fn vs_main(
   @builtin(vertex_index) vertexIndex: u32,
   @builtin(instance_index) instanceIndex: u32,
@@ -116,13 +141,32 @@ fn palette(t: f32) -> vec3f {
   let heat = extra.x;
   let age = extra.y;
   let comet = extra.z;
-  // Presence: the simulation packs the trame luminance of a held grain into
-  // the spare channel — 0 means this grain plays no part in the portrait.
-  let presMix = select(0.0, params.presence, extra.w > 0.001);
-  let presLum = clamp((extra.w - 0.02) / 0.98, 0.0, 1.0);
+  // Corps packing from the simulation: 0 = fond grain, else 1 + light
+  // (0..255) + edge (0..255)*256.
+  let isCorps = extra.w >= 0.999;
+  let packed = max(extra.w - 1.0, 0.0);
+  let presEdge = floor(packed / 256.0) / 255.0;
+  let presLum = (packed - floor(packed / 256.0) * 256.0) / 255.0;
+  let presMix = select(0.0, params.presence, isCorps);
+  // Same stochastic material split as the simulation (same hashes).
+  let matV = select(
+    params.bodyMat,
+    params.bodyMatB,
+    hash01(instanceIndex * 97u + 3u) < params.matBlend,
+  );
+  let matFrac = matV - floor(matV);
+  let corpsMat = floor(matV)
+    + select(0.0, 1.0, hash01(instanceIndex * 53u + 17u) < matFrac);
 
   // Parallax layer of this grain: 0 far, 1 mid, 2 near (same as simulate).
-  let layer = f32(instanceIndex % 3u);
+  // Two tempos, two depths: while someone is there the fond recedes to the
+  // far layer and the corps steps to the near one.
+  let baseLayer = f32(instanceIndex % 3u);
+  let layer = select(
+    mix(baseLayer, 0.0, params.presence),
+    mix(baseLayer, 2.0, presMix),
+    isCorps,
+  );
 
   // Crystallized grains inherit the luminance imprint at their home cell;
   // dark cells go out, bright cells stay lit -> the frozen image emerges.
@@ -130,6 +174,9 @@ fn palette(t: f32) -> vec3f {
   let dims = vec2f(textureDimensions(field, 0));
   let texel = vec2u(clamp(home, vec2f(0.0), vec2f(0.9995)) * dims);
   let imprint = textureLoad(field, texel, 0).b;
+  // Field under the grain's own position (linear, so the body's shadow
+  // margin and the hand energy read smooth, never as texel stairs).
+  let fHere = textureSampleLevel(field, fieldSamp, pos, 0.0);
   let fluid = 0.55 + min(speed * 9.0, 1.4);
   let frozen = 0.10 + imprint * 1.2;
   // Shape imprints glow evenly (the additive pile-up on the strokes does the
@@ -143,30 +190,62 @@ fn palette(t: f32) -> vec3f {
   // While the imprint holds the matter, every grain glows evenly; the
   // additive pile-up on the strokes does the rest.
   brightness = mix(brightness, params.imprintGlow, params.titleMode * params.titleMode);
-  // Presence portrait: a held grain glows with the light it stands on, so
-  // the bichromie lumière/ombre reads even on a plain white palette. The
-  // free dust steps back while someone is there — the matter gathers on them.
-  brightness = mix(brightness, 0.30 + presLum * 1.15, presMix);
-  let heldFlag = select(0.0, 1.0, extra.w > 0.001);
-  brightness *= 1.0 - params.presence * 0.4 * (1.0 - heldFlag);
+  // Corps: lit by the camera light it stands on, and read by its edges —
+  // bright outline, translucent wash inside.
+  let edgeW = smoothstep(0.08, 0.5, presEdge);
+  var corpsB = (0.30 + presLum * 1.15) * mix(0.55, 1.45, edgeW);
+  if (corpsMat >= 1.5 && corpsMat < 2.5) {
+    // encre: the outline is dense ink, the inside a diluted wash
+    corpsB = (0.35 + presLum * 0.55) * mix(0.4, 1.7, edgeW);
+  }
+  brightness = mix(brightness, corpsB, presMix);
+  // The slow presence trail accumulates: inside the body's light, every
+  // grain's emission is compensated by the decay ratio (same weight as the
+  // fade pass) so the standing portrait reads at dust brightness — only
+  // the wake of a movement lingers.
+  let bodyW = params.presence * smoothstep(0.10, 0.55, fHere.b);
+  brightness *= mix(1.0, params.corpsComp, bodyW);
+  // The fond steps back while someone is there — down to its "visible"
+  // level — and darkens further inside the body's shadow margin.
+  if (!isCorps) {
+    brightness *= mix(1.0, params.fondVisible, params.presence);
+    let inBody = smoothstep(0.12, 0.6, fHere.b);
+    brightness *= 1.0 - params.presence * inBody * 0.85;
+  }
 
-  // Palette color along the chosen driver; ember orange burns over it.
-  var t = age;
-  if (params.colorDriver > 2.5) {
-    t = layer * 0.5;
-  } else if (params.colorDriver > 1.5) {
+  // Palette color along the chosen driver (fractional = blend of two).
+  let tAge = age;
+  let tSpd = clamp(speed * 9.0, 0.0, 1.0);
+  let tLay = layer * 0.5;
+  var tDen = 0.0;
+  let dLo = i32(clamp(floor(params.colorDriver), 0.0, 3.0));
+  let dHi = i32(clamp(ceil(params.colorDriver), 0.0, 3.0));
+  if (dLo == 2 || dHi == 2) {
     let tdims = vec2f(textureDimensions(prevTrail, 0));
     let ttexel = vec2u(clamp(pos, vec2f(0.0), vec2f(0.9995)) * tdims);
     let dens = textureLoad(prevTrail, ttexel, 0).rgb;
-    t = 1.0 - exp(-dot(dens, vec3f(0.5, 0.6, 0.35)) * 3.0);
-  } else if (params.colorDriver > 0.5) {
-    t = clamp(speed * 9.0, 0.0, 1.0);
+    tDen = 1.0 - exp(-dot(dens, vec3f(0.5, 0.6, 0.35)) * 3.0);
   }
-  // The portrait hooks the driver to the camera light: shadow reads the low
-  // end of the palette gradient, light the high end — bichromie lumière/ombre.
-  t = mix(t, presLum, presMix);
+  let t = mix(
+    pickDriver(dLo, tAge, tSpd, tDen, tLay),
+    pickDriver(dHi, tAge, tSpd, tDen, tLay),
+    params.colorDriver - floor(params.colorDriver),
+  );
   let hotness = clamp(heat * 1.15, 0.0, 1.0);
-  out.tint = mix(palette(t), vec3f(1.0, 0.42, 0.16), hotness);
+  var tint = mix(palette(t), vec3f(1.0, 0.42, 0.16), hotness);
+  // Corps bichromie: its own light/shadow pair, driven by the camera light.
+  // The encre material paints its outline with the shadow ink instead.
+  var corpsTint = mix(params.corpsShadow.rgb, params.corpsLight.rgb, presLum);
+  if (corpsMat >= 1.5 && corpsMat < 2.5) {
+    corpsTint = mix(params.corpsLight.rgb, params.corpsShadow.rgb, edgeW);
+  }
+  tint = mix(tint, corpsTint, presMix);
+  // Hands: fast, small motion reads brighter and warmer — a micro-budget
+  // spotlight that follows whatever the hands are doing.
+  let handHere = params.hand * smoothstep(0.25, 0.65, fHere.a);
+  tint = mix(tint, vec3f(1.0, 0.86, 0.62), handHere * 0.65);
+  brightness *= 1.0 + handHere * 0.9;
+  out.tint = tint;
 
   // Depth layers: far grains smaller and dimmer, near ones bigger; the
   // out-of-focus layers spread into soft low-alpha discs (cheap bokeh).

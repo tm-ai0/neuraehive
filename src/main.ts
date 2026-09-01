@@ -19,6 +19,7 @@ import {
   type ImprintSettings,
 } from "./imprints";
 import { capturePng, createRecorder, createStage } from "./capture";
+import { t } from "./i18n";
 import { applyPalette, PALETTES } from "./look";
 import { createMidi, type Midi } from "./midi";
 import { createModMatrix, type ModMatrix, type ParamRef } from "./modmatrix";
@@ -104,7 +105,9 @@ async function boot() {
 
   // ----- shared live state (read by the render loop every frame) -----------
   const audioState = { ...AUDIO_DEFAULTS };
-  const quality = { auto: window.matchMedia("(pointer: coarse)").matches };
+  // Auto quality is on for everyone: the piece opens at the full 400 k
+  // reserve and steps down on its own wherever the GPU cannot hold 60 fps.
+  const quality = { auto: true };
   const behavior = {
     imprintReturn: true,
     silenceDelay: 2,
@@ -132,6 +135,7 @@ async function boot() {
   let windAuto = 1;
   let presenceEnv = 0;
   let presenceSeen = -Infinity;
+  let handTarget = 0;
   const cameraMoving = () =>
     motionAvg > MOTION_STILL || motionArea > MOTION_AREA_PLAY;
   let chaosStart = -Infinity;
@@ -245,12 +249,16 @@ async function boot() {
       },
       onCapturePng() {
         void capturePng(canvas).then((ok) => {
-          if (!ok) panel.setStatus("capture impossible");
+          if (!ok) panel.setStatus(t("st.captureFail"));
         });
       },
       onToggleRecord: () => recorder.toggle(),
       onFullscreen() {
         void stage.toggleFullscreen();
+      },
+      onLang() {
+        applyLanguage();
+        updateStatus();
       },
       getPresets: () => presets,
       getMod: () => mod,
@@ -332,14 +340,14 @@ async function boot() {
       renderer.setImprint(titleImprint, "shape");
     } else if (family === "camera" && variant === "silhouette") {
       if (!cameraSource) {
-        panel.setStatus("caméra inactive — silhouette indisponible");
+        panel.setStatus(t("st.camInactive"));
         panel.refresh();
         return;
       }
       const luma = await renderer.readLuma();
       const cloud = silhouetteCloud(luma.data, luma.width, luma.height);
       if (!cloud) {
-        panel.setStatus("silhouette introuvable — rien devant la caméra ?");
+        panel.setStatus(t("st.noSilhouette"));
         panel.refresh();
         return;
       }
@@ -355,7 +363,7 @@ async function boot() {
     } else if (family === "texte") {
       const cloud = textImprint ?? (await sampleTextCloud(s.text));
       if (!cloud) {
-        panel.setStatus("texte vide — rien à cristalliser");
+        panel.setStatus(t("st.emptyText"));
         panel.refresh();
         return;
       }
@@ -365,7 +373,7 @@ async function boot() {
       renderer.setImprint(cloud, "shape");
     } else if (family === "image") {
       if (!imageImprint) {
-        panel.setStatus("déposer une image sur la scène, ou passer par image…");
+        panel.setStatus(t("st.dropImage"));
         panel.refresh();
         return;
       }
@@ -389,14 +397,14 @@ async function boot() {
     try {
       const cloud = await sampleImageCloud(file);
       if (!cloud) {
-        panel.setStatus("image sans matière exploitable");
+        panel.setStatus(t("st.badImage"));
         return;
       }
       imageImprint = cloud;
       await applyImprint("image", "");
     } catch (error) {
       console.warn("[cinerae] import image:", error);
-      panel.setStatus("image illisible");
+      panel.setStatus(t("st.unreadableImage"));
     }
   }
 
@@ -428,14 +436,23 @@ async function boot() {
   });
 
   const updateStatus = () => {
-    const cam = cameraSource ? "caméra active" : "sans caméra";
-    const audio = mic ? "micro actif" : "sans micro";
+    const cam = cameraSource ? t("st.camOn") : t("st.camOff");
+    const audio = mic ? t("st.micOn") : t("st.micOff");
     const auto = quality.auto
       ? ` · auto ${Math.round(renderer.tuning.count / 1000)} k`
       : "";
     panel.setStatus(`${cam} · ${audio}${auto}`);
     panel.setSensors(Boolean(cameraSource), Boolean(mic));
   };
+
+  // Every visible word outside the panel follows the language too.
+  const applyLanguage = () => {
+    document.getElementById("overlay-text")!.textContent = t("overlay.intro");
+    document.getElementById("start-full")!.textContent = t("overlay.startFull");
+    document.getElementById("start-audio")!.textContent = t("overlay.startAudio");
+    document.getElementById("drop-hint")!.textContent = t("overlay.drop");
+  };
+  applyLanguage();
 
   // ----- sensors (each start is triggered by an explicit click) ------------
   async function startCamera() {
@@ -445,7 +462,7 @@ async function boot() {
       renderer.attachCamera(cameraSource);
     } catch (error) {
       console.warn("[cinerae] caméra refusée ou indisponible:", error);
-      panel.setStatus("caméra refusée — mode audio seul");
+      panel.setStatus(t("st.camRefused"));
     }
     updateStatus();
   }
@@ -464,7 +481,7 @@ async function boot() {
       mic = await requestMicrophone();
     } catch (error) {
       console.warn("[cinerae] micro refusé ou indisponible:", error);
-      panel.setStatus("micro refusé — matière libre, non réactive");
+      panel.setStatus(t("st.micRefused"));
     }
     updateStatus();
   }
@@ -474,6 +491,7 @@ async function boot() {
     renderer.dynamics.bass = 0;
     renderer.dynamics.treble = 0;
     renderer.dynamics.transient = 0;
+    renderer.dynamics.voice = 0;
     cym = 0;
     sustain = 0;
     renderer.dynamics.cymatic = 0;
@@ -530,7 +548,49 @@ async function boot() {
   };
   canvas.addEventListener("pointerup", endTouch);
   canvas.addEventListener("pointercancel", endTouch);
-  window.addEventListener("keydown", markActivity);
+
+  // ----- keyboard shortcuts (documented in the panel's help) ---------------
+  let timeBefore = 1;
+  window.addEventListener("keydown", (event) => {
+    markActivity();
+    const el = event.target as HTMLElement | null;
+    if (el && ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) return;
+    if (phase !== "live") return;
+    switch (event.key.toLowerCase()) {
+      case "f":
+        void stage.toggleFullscreen();
+        break;
+      case "c":
+        panel.chaos();
+        break;
+      case "r":
+        panel.reset();
+        break;
+      case "p":
+        void capturePng(canvas).then((ok) => {
+          if (!ok) panel.setStatus(t("st.captureFail"));
+        });
+        break;
+      case "v":
+        recorder.toggle();
+        break;
+      case " ": {
+        event.preventDefault();
+        const now = renderer.tuning.timeScale;
+        if (Math.abs(now) < 0.02) {
+          panel.writeDef("timeScale", timeBefore || 1);
+        } else {
+          timeBefore = now;
+          panel.writeDef("timeScale", 0);
+        }
+        panel.refresh();
+        break;
+      }
+      case "escape":
+        panel.toggleCollapsed();
+        break;
+    }
+  });
 
   // ----- camera motion probe -----------------------------------------------
   // Feeds the stillness gate (idle return, recrystallization) and the
@@ -547,6 +607,14 @@ async function boot() {
         // Presence watches its own, lower threshold: a standing person's
         // breath and sway keep the portrait alive without counting as play.
         if (area > behavior.presenceThreshold) presenceSeen = performance.now();
+        // Hands: fast movement over a small area. A whole body sweeps wide
+        // and slow, a standing sway is smaller still — a hand is in between
+        // and quick, with high energy per moving texel.
+        const speedPer = avg / Math.max(area, 1e-4);
+        handTarget =
+          Math.max(0, Math.min(1, (area - 0.004) / 0.006)) *
+          Math.max(0, Math.min(1, (0.06 - area) / 0.04)) *
+          Math.min(1, speedPer / 0.45);
         if (cameraMoving()) {
           markActivity();
           const desired = Math.min(
@@ -561,7 +629,9 @@ async function boot() {
           document.documentElement.dataset.cinerae =
             `m=${motionAvg.toFixed(4)} a=${motionArea.toFixed(4)} ` +
             `g=${windAuto.toFixed(2)} c=${crystal.toFixed(2)} ` +
-            `s=${silenceTime.toFixed(1)} p=${presenceEnv.toFixed(2)}`;
+            `s=${silenceTime.toFixed(1)} p=${presenceEnv.toFixed(2)} ` +
+            `h=${renderer.dynamics.hand.toFixed(2)} ` +
+            `v=${renderer.dynamics.voice.toFixed(2)}`;
         }
       })
       .catch(() => undefined)
@@ -590,6 +660,11 @@ async function boot() {
     presenceEnv += ((present ? 1 : 0) - presenceEnv) * (1 - Math.exp(-dt / presTau));
     renderer.dynamics.presence =
       presenceEnv * (1 - renderer.dynamics.titleMode) * (1 - crystal);
+    // Hands ride the presence: fast small motion warms and brightens where
+    // it happens, and fades out in under a second when the hands rest.
+    renderer.dynamics.hand +=
+      (handTarget * presenceEnv - renderer.dynamics.hand) *
+      (1 - Math.exp(-dt / 0.4));
 
     // Audio analysis -> dynamics, with the Pro band gains applied.
     if (mic) {
@@ -601,6 +676,16 @@ async function boot() {
         a.transient * audioState.transientGain
       );
       if (a.level >= audioState.silenceThreshold) markActivity();
+
+      // Voice envelope: speaking loosens the corps' grip in a quarter of a
+      // second; going quiet lets it tighten back over a slow breath.
+      const voiceT = Math.min(
+        1,
+        Math.max(0, (a.level - audioState.silenceThreshold) * 12)
+      );
+      const vTau = voiceT > renderer.dynamics.voice ? 0.25 : 1.2;
+      renderer.dynamics.voice +=
+        (voiceT - renderer.dynamics.voice) * (1 - Math.exp(-dt / vTau));
 
       // A real silence is quiet AND still: a body sweeping through the frame
       // or a finger on the dust counts as playing, and playing always
