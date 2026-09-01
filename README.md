@@ -83,14 +83,22 @@ Reset ramène le titre.
   mais une **traînée vers la vitesse du vent local** (poussière dans l'air) :
   une main qui balaie emporte la matière derrière elle avec un léger retard,
   et le courant continue de porter une à deux secondes après le passage.
-  Toggle miroir dans le panneau.
+  Un **gain adaptatif** égalise le ressenti entre une main à 40 cm et une
+  personne entière à 2–3 m : la fraction de l'image réellement en mouvement
+  (statistique d'aire, robuste à la distance) module l'injection — petite
+  silhouette lointaine boostée jusqu'à ×4, main proche laissée à ×1 — avec
+  un retour lent vers la neutralité quand la scène se vide. Multiplicateur
+  manuel « gain du geste » en Pro. Toggle miroir dans le panneau.
 - **Aucun bord n'est perceptible** : la simulation vit sur un domaine étendu
   de ±8,5 % hors champ ; sortie et ré-entrée se font hors écran, et le lit de
   cendre se dépose à cheval sur le bord, principalement hors cadre.
-- Le micro pilote l'état de la matière : silence prolongé → cristallisation
-  vers l'empreinte choisie (le titre par défaut ; l'empreinte de luminance
-  caméra reste disponible via « caméra · image gelée ») ; le son la fait
-  fondre. Basses →
+- Le micro pilote l'état de la matière : un vrai silence prolongé **sans
+  geste caméra ni toucher** → cristallisation vers l'empreinte choisie (le
+  titre par défaut ; l'empreinte de luminance caméra reste disponible via
+  « caméra · image gelée ») ; le son la fait fondre, un geste remet le
+  compte à rebours à zéro sans faire fondre la forme (seule l'érosion
+  locale agit pendant le jeu). La durée de silence requise est réglable en
+  Pro (défaut 2 s). Basses →
   pression du vent, aigus → turbulence, transitoires → frange spectrale RGB
   (teinte réglable) + secousse. L'analyseur coupe son plancher de bruit à
   −72 dB pour qu'un silence réel lise zéro. Couper le micro relâche le
@@ -140,10 +148,11 @@ auto), **Curieux** (+ force, viscosité, turbulence, trainées, seuil de
 silence, teinte de la frange, braises, cymatique, respiration), **Pro**
 (+ taille des grains, nombre exact de particules, exposition, gains
 basses/aigus/transitoires, part de cendre, cycle de la matière,
-sédimentation, filaments, seuil tonal, comètes, overlay du champ de vent en
-voiles chauds, interrupteur **« retour du titre »** — actif par défaut, il
-autorise la recomposition du wordmark après 40 s de vrai silence sans geste
-caméra ; coupé, le titre ne revient jamais tout seul). Plus : toggles
+sédimentation, filaments, seuil tonal, comètes, gain du geste, durée du
+silence, overlay du champ de vent en voiles chauds, interrupteur
+**« retour de l'empreinte »** — actif par défaut, il autorise la
+recristallisation au silence et la recomposition complète après 40 s
+d'immobilité ; coupé, la matière ne revient jamais toute seule). Plus : toggles
 caméra/micro/miroir, **Chaos** (aspiration du vent inversé ~0,7 s + burst de
 turbulence décroissant, et tirage de nouvelles valeurs pour les curseurs
 matière — force, viscosité, turbulence, trainées, respiration, filaments,

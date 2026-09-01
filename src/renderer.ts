@@ -54,6 +54,7 @@ export interface Tuning {
   lifeSeconds: number; // full life-cycle duration
   sediment: number; // peripheral drift of ash
   cometGain: number; // camera-tear sensitivity
+  gestureGain: number; // manual multiplier over the adaptive gesture gain
 }
 
 export interface Dynamics {
@@ -74,6 +75,7 @@ export interface Dynamics {
   cymatic: number; // sustained-tone envelope 0..1
   cymM: number; // Chladni mode numbers
   cymN: number;
+  windGain: number; // effective gesture gain fed to the flow injection
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -96,6 +98,7 @@ export const DEFAULT_TUNING: Tuning = {
   lifeSeconds: 45,
   sediment: 0.6,
   cometGain: 1,
+  gestureGain: 1,
 };
 
 interface CameraInput {
@@ -194,6 +197,7 @@ export async function createRenderer(
     cymatic: 0,
     cymM: 1,
     cymN: 2,
+    windGain: 1,
   };
 
   let camera: CameraInput | undefined;
@@ -349,6 +353,7 @@ export async function createRenderer(
           texel: [1 / FLOW_W, 1 / FLOW_H],
           hasCamera,
           dt,
+          gain: dynamics.windGain,
         },
         lumaCurr,
         lumaPrev,
@@ -477,8 +482,11 @@ export async function createRenderer(
       for (let i = 0; i < data.length; i++) data[i] = decodeF16(half[i * 4 + 2]!);
       return { data, width: FLOW_W, height: FLOW_H };
     },
-    /** Average optical-flow motion energy, ~0 when the scene is still. */
-    async readMotion(): Promise<number> {
+    /** Motion statistics from the flow field's energy channel. `avg` is the
+     * frame-wide mean (~0 when still); `area` is the fraction of samples
+     * that really move — a small figure far from the camera barely dents
+     * the mean but still owns a clear moving area. */
+    async readMotion(): Promise<{ avg: number; area: number }> {
       const source = fieldTargets[1 - fieldIndex]!;
       const bytes = await source.read();
       const half = new Uint16Array(
@@ -488,12 +496,15 @@ export async function createRenderer(
       );
       let sum = 0;
       let n = 0;
+      let moving = 0;
       // Alpha channel = motion energy; sample sparsely.
       for (let i = 3; i < half.length; i += 4 * 37) {
-        sum += decodeF16(half[i]!);
+        const e = decodeF16(half[i]!);
+        sum += e;
+        if (e > 0.12) moving++;
         n++;
       }
-      return n ? sum / n : 0;
+      return n ? { avg: sum / n, area: moving / n } : { avg: 0, area: 0 };
     },
     dispose() {
       disposed = true;
