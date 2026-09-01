@@ -3,6 +3,7 @@
 // Mobile (coarse pointer / narrow): bottom sheet with a large handle.
 // Every control writes straight into live state read by the render loop —
 // no rebuild, no debounce, no latency.
+import { IMPRINT_VARIANTS, type ImprintFamily, type ImprintSettings } from "./imprints";
 import type { Tuning } from "./renderer";
 
 export type PanelMode = "simple" | "curieux" | "pro";
@@ -18,6 +19,7 @@ export interface PanelState {
   };
   quality: { auto: boolean };
   behavior: { titleReturn: boolean };
+  imprint: ImprintSettings;
 }
 
 export interface PanelHooks {
@@ -25,6 +27,10 @@ export interface PanelHooks {
   onChaos(): void;
   onReset(): void;
   onInteraction(): void;
+  onImprintSelect(family: ImprintFamily, variant: string): void;
+  onImprintText(text: string): void;
+  onImprintFile(file: File): void;
+  onImprintParams(): void;
 }
 
 interface ControlDef {
@@ -35,6 +41,10 @@ interface ControlDef {
   step: number;
   modes: PanelMode[];
   format?: (v: number) => string;
+  /** Extra gate on top of modes (imprint family params). */
+  visible?: () => boolean;
+  /** Notify the imprint engine after a set (regenerates the cloud). */
+  imprint?: boolean;
   get(): number;
   set(v: number): void;
 }
@@ -309,6 +319,133 @@ export function createPanel(
       get: () => state.tuning.cometGain,
       set: (v) => (state.tuning.cometGain = v),
     },
+    // ---- paramètres fins des empreintes (pro, gated by family) ------------
+    {
+      key: "waveFreq",
+      label: "onde · fréquence",
+      min: 0.5,
+      max: 8,
+      step: 0.1,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "ondes",
+      imprint: true,
+      get: () => state.imprint.wave.freq,
+      set: (v) => (state.imprint.wave.freq = v),
+    },
+    {
+      key: "waveAmp",
+      label: "onde · amplitude",
+      min: 0.02,
+      max: 0.25,
+      step: 0.005,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "ondes",
+      imprint: true,
+      get: () => state.imprint.wave.amp,
+      set: (v) => (state.imprint.wave.amp = v),
+    },
+    {
+      key: "waveThick",
+      label: "onde · épaisseur",
+      min: 0.001,
+      max: 0.02,
+      step: 0.001,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "ondes",
+      imprint: true,
+      get: () => state.imprint.wave.thickness,
+      set: (v) => (state.imprint.wave.thickness = v),
+    },
+    {
+      key: "waveCount",
+      label: "onde · nombre",
+      min: 1,
+      max: 7,
+      step: 1,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "ondes",
+      imprint: true,
+      format: (v) => String(Math.round(v)),
+      get: () => state.imprint.wave.waves,
+      set: (v) => (state.imprint.wave.waves = v),
+    },
+    {
+      key: "waveDrift",
+      label: "onde · dérive de phase",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "ondes",
+      imprint: true,
+      get: () => state.imprint.wave.drift,
+      set: (v) => (state.imprint.wave.drift = v),
+    },
+    {
+      key: "multiN",
+      label: "multi · nombre",
+      min: 2,
+      max: 9,
+      step: 1,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "multi",
+      imprint: true,
+      format: (v) => String(Math.round(v)),
+      get: () => state.imprint.multi.n,
+      set: (v) => (state.imprint.multi.n = v),
+    },
+    {
+      key: "multiSize",
+      label: "multi · taille",
+      min: 0.08,
+      max: 0.4,
+      step: 0.01,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "multi",
+      imprint: true,
+      get: () => state.imprint.multi.size,
+      set: (v) => (state.imprint.multi.size = v),
+    },
+    {
+      key: "spin",
+      label: "volume · rotation",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      modes: ["pro"],
+      visible: () => state.imprint.family === "volume",
+      imprint: true,
+      get: () => state.imprint.spin,
+      set: (v) => (state.imprint.spin = v),
+    },
+    {
+      key: "lissaA",
+      label: "lissajous · a",
+      min: 1,
+      max: 7,
+      step: 1,
+      modes: ["pro"],
+      visible: () =>
+        state.imprint.family === "math" && state.imprint.variant === "lissajous",
+      imprint: true,
+      format: (v) => String(Math.round(v)),
+      get: () => state.imprint.lissa.a,
+      set: (v) => (state.imprint.lissa.a = v),
+    },
+    {
+      key: "lissaB",
+      label: "lissajous · b",
+      min: 1,
+      max: 7,
+      step: 1,
+      modes: ["pro"],
+      visible: () =>
+        state.imprint.family === "math" && state.imprint.variant === "lissajous",
+      imprint: true,
+      format: (v) => String(Math.round(v)),
+      get: () => state.imprint.lissa.b,
+      set: (v) => (state.imprint.lissa.b = v),
+    },
   ];
 
   // Snapshot taken at creation, while the state still holds its defaults —
@@ -401,7 +538,8 @@ export function createPanel(
   const makeSwitch = (
     label: string,
     get: () => boolean,
-    toggle: (next: boolean) => void
+    toggle: (next: boolean) => void,
+    parent: HTMLElement = sensorsBox
   ) => {
     const row = document.createElement("button");
     row.type = "button";
@@ -419,7 +557,7 @@ export function createPanel(
       toggle(!get());
       sync();
     });
-    sensorsBox.appendChild(row);
+    parent.appendChild(row);
     return { row, sync };
   };
 
@@ -486,6 +624,167 @@ export function createPanel(
     glide(controls.map((def) => ({ def, to: initialValues.get(def)! })));
   });
   actions.append(chaosButton, resetButton);
+
+  // ----- empreintes ---------------------------------------------------------
+  // Non-initié: a short curated choice. Curieux: the families, free text,
+  // multi and random. Pro: everything plus the image import.
+  const imprintBox = document.createElement("div");
+  imprintBox.className = "cinerae-imprints";
+  panel.appendChild(imprintBox);
+
+  const imprintTitle = document.createElement("div");
+  imprintTitle.className = "cinerae-imprints-title";
+  imprintTitle.textContent = "empreintes";
+  imprintBox.appendChild(imprintTitle);
+
+  const familyChips = document.createElement("div");
+  familyChips.className = "cinerae-chips";
+  imprintBox.appendChild(familyChips);
+
+  const variantChips = document.createElement("div");
+  variantChips.className = "cinerae-chips";
+  imprintBox.appendChild(variantChips);
+
+  const textRow = document.createElement("div");
+  textRow.className = "cinerae-text-row";
+  const textInput = document.createElement("input");
+  textInput.type = "text";
+  textInput.maxLength = 24;
+  textInput.placeholder = "texte libre…";
+  textInput.setAttribute("aria-label", "Texte de l'empreinte");
+  textInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") hooks.onImprintText(textInput.value);
+  });
+  textInput.addEventListener("change", () => hooks.onImprintText(textInput.value));
+  textRow.appendChild(textInput);
+  imprintBox.appendChild(textRow);
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/svg+xml,image/png,image/jpeg";
+  fileInput.style.display = "none";
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (file) hooks.onImprintFile(file);
+    fileInput.value = "";
+  });
+  imprintBox.appendChild(fileInput);
+
+  const randomSwitchBox = document.createElement("div");
+  imprintBox.appendChild(randomSwitchBox);
+  const randomSwitch = makeSwitch(
+    "aléatoire au long silence",
+    () => state.imprint.random,
+    (next) => {
+      state.imprint.random = next;
+      hooks.onImprintParams();
+    },
+    randomSwitchBox
+  );
+
+  const FAMILY_LABELS: [ImprintFamily, string][] = [
+    ["titre", "titre"],
+    ["fond", "fond"],
+    ["volume", "volumes"],
+    ["forme", "formes"],
+    ["math", "math"],
+    ["ondes", "ondes"],
+    ["texte", "texte"],
+    ["camera", "caméra"],
+    ["multi", "multi"],
+  ];
+  const VARIANT_LABELS: Record<string, string> = {
+    sphere: "sphère",
+    cube: "cube",
+    cone: "cône",
+    tore: "tore",
+    cercle: "cercle",
+    anneau: "anneau",
+    carre: "carré",
+    croix: "croix",
+    spirale: "spirale",
+    etoile: "étoile",
+    lissajous: "lissajous",
+    attracteur: "attracteur",
+    chladni: "chladni",
+    arbre: "arbre",
+    sinus: "sinus",
+    triangle: "triangle",
+    melange: "mélange",
+    gelee: "image gelée",
+    silhouette: "silhouette",
+  };
+  const SIMPLE_CHOICES: { label: string; family: ImprintFamily; variant: string }[] = [
+    { label: "titre", family: "titre", variant: "" },
+    { label: "fond", family: "fond", variant: "" },
+    { label: "sphère", family: "volume", variant: "sphere" },
+    { label: "étoile", family: "forme", variant: "etoile" },
+    { label: "spirale", family: "forme", variant: "spirale" },
+    { label: "ondes", family: "ondes", variant: "sinus" },
+  ];
+
+  const makeChip = (
+    parent: HTMLElement,
+    label: string,
+    active: boolean,
+    onPick: () => void
+  ) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "cinerae-chip";
+    chip.classList.toggle("active", active);
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      hooks.onInteraction();
+      onPick();
+    });
+    parent.appendChild(chip);
+  };
+
+  function renderImprints() {
+    familyChips.replaceChildren();
+    variantChips.replaceChildren();
+    const sel = state.imprint;
+    if (mode === "simple") {
+      for (const choice of SIMPLE_CHOICES) {
+        makeChip(
+          familyChips,
+          choice.label,
+          sel.family === choice.family &&
+            (choice.variant === "" || sel.variant === choice.variant),
+          () => hooks.onImprintSelect(choice.family, choice.variant)
+        );
+      }
+      variantChips.style.display = "none";
+      textRow.style.display = "none";
+      randomSwitchBox.style.display = "none";
+      return;
+    }
+    for (const [family, label] of FAMILY_LABELS) {
+      makeChip(familyChips, label, sel.family === family, () =>
+        hooks.onImprintSelect(family, IMPRINT_VARIANTS[family]?.[0] ?? "")
+      );
+    }
+    if (mode === "pro") {
+      makeChip(familyChips, "image…", sel.family === "image", () =>
+        fileInput.click()
+      );
+    }
+    const variants = IMPRINT_VARIANTS[sel.family];
+    variantChips.style.display = variants ? "" : "none";
+    if (variants) {
+      for (const v of variants) {
+        makeChip(variantChips, VARIANT_LABELS[v] ?? v, sel.variant === v, () =>
+          hooks.onImprintSelect(sel.family, v)
+        );
+      }
+    }
+    textRow.style.display = sel.family === "texte" ? "" : "none";
+    textInput.value = sel.text;
+    randomSwitchBox.style.display = "";
+    randomSwitch.sync();
+  }
 
   const slidersBox = document.createElement("div");
   slidersBox.className = "cinerae-sliders";
@@ -561,10 +860,13 @@ export function createPanel(
     autoSwitch.sync();
     mirrorSwitch.sync();
 
+    renderImprints();
+
     slidersBox.replaceChildren();
     rowRefs = [];
     for (const def of controls) {
       if (!def.modes.includes(mode)) continue;
+      if (def.visible && !def.visible()) continue;
       const row = document.createElement("label");
       row.className = "cinerae-row";
       const name = document.createElement("span");
@@ -585,6 +887,7 @@ export function createPanel(
         def.set(Number(input.value));
         show();
         hooks.onInteraction();
+        if (def.imprint) hooks.onImprintParams();
       });
       row.append(name, input, readout);
       slidersBox.appendChild(row);

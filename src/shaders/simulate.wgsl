@@ -41,6 +41,8 @@ struct SimParams {
   ashLevel: f32,        // age where dust turns to ash (~0.97 - ash share)
   sediment: f32,        // peripheral drift strength for ash
   cometGain: f32,       // camera-tear sensitivity
+  imprintShape: f32,    // 1 = crystal targets the imprint cloud, 0 = home cells
+  stagger: f32,         // 0 = all points engage together, ->1 = ordered build
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -149,6 +151,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let f = textureSampleLevel(field, fieldSamp, pos, 0.0);
   let flowSpeed = length(f.rg);
 
+  // Imprint engagement: target rank can stagger the build (a text
+  // crystallizes letter by letter, a curve draws itself), and local camera
+  // motion erases a held shape exactly where a person passes through it.
+  let rank = f32(i % u32(max(params.titleCount, 1.0))) / max(params.titleCount, 1.0);
+  let unstag = max(1.0 - params.stagger, 0.05);
+  let tEff = clamp((title - params.stagger * rank) / unstag, 0.0, 1.0);
+  let ero = params.imprintShape * smoothstep(0.05, 0.28, f.a);
+
   // ---- life cycle ----------------------------------------------------------
   // Aging, with a per-particle tempo so the population never pulses in sync.
   age = fract(age + dt * params.lifeRate * (0.7 + 0.6 * hash01(i * 9u + 3u)));
@@ -216,7 +226,8 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       + flowSpeed * 2.5 + f.a * 2.0 + params.chaosBurst,
     0.0, 1.0
   );
-  let c = params.crystal * (1.0 - title);
+  let cRaw = params.crystal * (1.0 - title);
+  let c = clamp((cRaw - params.stagger * rank) / unstag, 0.0, 1.0);
   let c2 = c * c;
   let restness = (1.0 - act) * calm * (1.0 - c2) * (1.0 - min(cym, 1.0));
 
@@ -284,19 +295,22 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     }
   }
 
-  // Crystallization: silence pulls each grain slowly to its home cell.
-  // The wordmark takes precedence over the camera imprint.
-  acc += (homeOf(i) - pos) * c2 * 14.0;
-  let t2 = title * title;
-  if (title > 0.001) {
-    acc += (titleTargetOf(i) - pos) * t2 * 30.0;
+  // Crystallization: silence pulls each grain slowly to the selected
+  // imprint — or, in camera mode, to its home cell showing the frozen
+  // luminance image. A body walking through the form frees it locally.
+  let hold = 1.0 - ero;
+  let ctarget = select(homeOf(i), titleTargetOf(i), params.imprintShape > 0.5);
+  acc += (ctarget - pos) * c2 * 14.0 * hold;
+  let t2 = tEff * tEff;
+  if (tEff > 0.001) {
+    acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold;
   }
 
   vel += acc * dt;
   // Viscosity damps motion; ash, a forming crystal, a held tone or the word
   // damp it much harder. Comets fly nearly free.
   let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
-    + ash * 4.0 + min(cym, 1.0) * 4.0 + c2 * 22.0 + t2 * 26.0;
+    + ash * 4.0 + min(cym, 1.0) * 4.0 + (c2 * 22.0 + t2 * 26.0) * hold;
   vel *= exp(-dt * drag);
   let maxSpeed = 0.9 + flight * 0.9;
   let speed = length(vel);

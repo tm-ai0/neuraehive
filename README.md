@@ -36,6 +36,42 @@ premier signe de vie. Pendant que le mot prend, il apaise le vent, la
 turbulence et les transitoires (facteur « calm » dans le shader), et fait
 fondre l'empreinte caméra.
 
+## Les empreintes (v0.5)
+
+Le mécanisme du titre est généralisé en une **bibliothèque d'empreintes** :
+un seul buffer de cibles GPU (16 384 points max, vec4 = position + normale),
+rempli par un échantillonnage CPU une fois par sélection — une empreinte ne
+coûte rien à l'image une fois échantillonnée. Le titre n'est plus qu'une
+empreinte parmi d'autres (celle par défaut). Chaque empreinte se comporte
+comme le titre : **le silence y cristallise la matière** (enveloppe cristal
+redirigée vers les cibles de la forme), le son la fait fondre, le geste
+l'érode, et **une personne qui traverse la forme l'efface là où elle passe**
+(l'énergie de mouvement locale coupe la tenue du grain, le vent l'emporte ;
+le silence reconstruit ensuite).
+
+Familles : **fond simple** (aucune empreinte, cristallisation coupée,
+réactivité caméra/son réduite à ~25 % — veille d'installation) ; **volumes
+3D** en rotation lente (sphère filaire, cube, cône, tore — ré-échantillonnés
+à ~7 Hz avec un hash déterministe par indice, sans quoi les cibles sautent
+et la forme s'effondre en blob) ; **formes 2D** (cercle, anneau, carré,
+croix, spirale, étoile) ; **math** (Lissajous animé, attracteur de De Jong,
+Chladni figée plein écran, arbre récursif) ; **ondes** (sinus / triangle /
+carré adouci / superposition, fréquence, amplitude, épaisseur, nombre,
+dérive de phase — paramètres exposés proprement pour la matrice de
+modulation et le MIDI à venir) ; **texte libre** en Ephesis (même recette
+typo que le titre, points triés par x → cristallisation **lettre à
+lettre** via l'échelonnement par rang dans le shader) ; **image importée**
+(SVG/PNG/JPG par bouton ou glisser-déposer, masque alpha×luminance avec
+auto-inversion sombre-sur-clair, tout reste local) ; **caméra** — « image
+gelée » (le comportement historique : le silence fige l'image de luminance
+en grille) et « silhouette » (l'empreinte de luminance est relue du GPU,
+pondérée contour + remplissage ; la personne recule, la forme reste) ;
+**multi** (2 à 9 formes semées aléatoirement, tailles variées) ; et un mode
+**aléatoire au long silence** (nouvelle empreinte toutes les ~24 s de
+silence continu, transition par glissement des cibles — un morphing, jamais
+une coupure). Chaos tire aussi une empreinte au hasard une fois sur deux ;
+Reset ramène le titre.
+
 ## Le concept
 
 - La caméra n'est **jamais affichée**. Un champ de flux optique 192×108
@@ -52,7 +88,9 @@ fondre l'empreinte caméra.
   de ±8,5 % hors champ ; sortie et ré-entrée se font hors écran, et le lit de
   cendre se dépose à cheval sur le bord, principalement hors cadre.
 - Le micro pilote l'état de la matière : silence prolongé → cristallisation
-  vers l'empreinte de luminance caméra ; le son la fait fondre. Basses →
+  vers l'empreinte choisie (le titre par défaut ; l'empreinte de luminance
+  caméra reste disponible via « caméra · image gelée ») ; le son la fait
+  fondre. Basses →
   pression du vent, aigus → turbulence, transitoires → frange spectrale RGB
   (teinte réglable) + secousse. L'analyseur coupe son plancher de bruit à
   −72 dB pour qu'un silence réel lise zéro. Couper le micro relâche le
@@ -86,6 +124,14 @@ fondre l'empreinte caméra.
 - Capteurs **uniquement sur geste explicite** (boutons d'intro ou toggles du
   panneau). Caméra refusée → mode audio seul (empreinte procédurale). Micro
   refusé → matière libre.
+
+Le panneau porte une section **empreintes** compacte : Non-initié voit six
+chips soignées (titre, fond, sphère, étoile, spirale, ondes) ; Curieux voit
+les familles, les variantes, le texte libre, le multi et l'interrupteur
+aléatoire ; Pro ajoute l'import d'image et les paramètres fins par famille
+(onde : fréquence/amplitude/épaisseur/nombre/dérive ; multi :
+nombre/taille ; volume : rotation ; lissajous : a/b), qui n'apparaissent
+que quand la famille est active.
 
 ## Panneau (repliable ; bottom-sheet sur mobile)
 
@@ -139,7 +185,34 @@ Maintenir le doigt sur la scène émet de la poussière sous le doigt.
 
 ## État / vérifié · non vérifié
 
-Vérifié sur cette machine (session v0.4, fenêtre Edge Beta, caméra
+Vérifié sur cette machine (session v0.5, Edge via l'extension, caméra
+synthétique — figure debout + blob balayable — et micro synthétique
+silencieux avec oscillateur commandable) : le silence cristallise le titre
+par l'enveloppe cristal (nouveau comportement par défaut) ; sphère filaire
+et tore en rotation continue après le correctif du hash déterministe par
+indice ; étoile, attracteur de De Jong, Chladni figée, arbre récursif,
+trois sinus dérivants, multi 4 formes — tous nets au rendu avec leur duvet
+de poussière ; texte « poussière » cristallisé lettre à lettre (capture à
+mi-course : « pouss » net, « ière » en nuage) ; image PNG importée par le
+sélecteur programmatique (croissant alpha) devenue masque ; silhouette
+figée qui reste après le départ de la personne, miroir cohérent ; image
+gelée = pointillisme de luminance v0.4 conservé ; traversée de la
+silhouette qui emporte l'étoile tenue puis reformation complète au silence ;
+aléatoire au long silence (deux tirages observés à 24 s d'écart, morphing
+par glissement) ; Chaos qui tire une empreinte une fois sur deux (observé) ;
+Reset qui ramène le titre ; aucune erreur console ; 61-69 fps constants à
+200 k et 62 fps à 400 k grains (plafond vsync de l'écran, la charge n'est
+pas le facteur limitant).
+
+Non vérifié en v0.5, à tester à la main : le glisser-déposer réel d'un
+fichier depuis l'explorateur (le chemin File → masque est vérifié, pas les
+événements drag du vrai OS) ; la silhouette et l'effacement au passage avec
+une vraie personne devant la vraie caméra ; les variantes non capturées
+(cube, cône, cercle/anneau/carré/croix isolées, triangle/carré/mélange des
+ondes, Lissajous à l'écran) qui partagent leurs générateurs avec des
+variantes vérifiées ; le panneau empreintes sur mobile réel.
+
+Hérité de v0.4 (session Edge Beta, caméra synthétique, fenêtre Edge Beta, caméra
 synthétique injectée — blob lumineux balayant un canvas capturé en
 `captureStream`) : le geste emporte la poussière — champ mesuré par lecture
 GPU : zéro exact au repos sur caméra statique (aucune auto-excitation),
