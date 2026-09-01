@@ -13,6 +13,7 @@ struct FlowParams {
   texel: vec2f,
   hasCamera: f32, // 0 -> procedural imprint, no flow
   dt: f32,
+  gain: f32, // adaptive gesture gain: a distant body counts like a close hand
 };
 
 @group(0) @binding(0) var<uniform> params: FlowParams;
@@ -82,10 +83,15 @@ fn curlAt(uv: vec2f) -> f32 {
   if (g2 > 1e-5) {
     v = -dtL * vec2f(gx, gy) / (g2 + 0.02);
   }
-  let mag = length(v);
-  if (mag > 1.5) {
-    v *= 1.5 / mag;
+  let magRaw = length(v);
+  if (magRaw > 1.5) {
+    v *= 1.5 / magRaw;
   }
+  // A whole person at 3 m writes a much fainter flow than a hand at 40 cm:
+  // the adaptive gain rescales the gesture before the quadratic injection,
+  // so the felt intensity stays comparable at both distances.
+  v *= params.gain;
+  let mag = length(v);
 
   // Non-linear injection: the write strength grows with the square of the
   // gesture speed, so sensor noise and slow drifts barely mark the field

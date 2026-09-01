@@ -34,6 +34,17 @@ const IDLE_DELAY = 40; // s of total stillness before the word returns
 const MOTION_STILL = 0.02; // camera motion below this counts as stillness
 const QUALITY_TIERS = [50_000, 120_000, 200_000, 400_000];
 
+// A whole body at 3 m barely dents the frame-wide motion mean, so gesture
+// detection also watches the moving AREA (fraction of texels that really
+// move). The adaptive gesture gain grows as that area shrinks — a distant
+// figure gets boosted toward what a hand at arm's length feels like — and
+// drifts slowly home when the frame goes quiet.
+const MOTION_AREA_PLAY = 0.003; // above this share of the frame, someone plays
+const WIND_AREA_REF = 0.09; // moving area of a full sweep at arm's length
+const WIND_AUTO_MAX = 4;
+const MOTION_PROBE_MS = 250;
+const DEBUG = new URLSearchParams(location.search).has("debug");
+
 const AUDIO_DEFAULTS = {
   silenceThreshold: 0.02,
   bassGain: 1,
@@ -89,7 +100,7 @@ async function boot() {
   // ----- shared live state (read by the render loop every frame) -----------
   const audioState = { ...AUDIO_DEFAULTS };
   const quality = { auto: window.matchMedia("(pointer: coarse)").matches };
-  const behavior = { titleReturn: true };
+  const behavior = { imprintReturn: true, silenceDelay: 2 };
   const imprintSettings: ImprintSettings = structuredClone(
     DEFAULT_IMPRINT_SETTINGS
   );
@@ -107,6 +118,10 @@ async function boot() {
   let silenceTime = 0;
   let lastActivity = performance.now();
   let motionAvg = 0;
+  let motionArea = 0;
+  let windAuto = 1;
+  const cameraMoving = () =>
+    motionAvg > MOTION_STILL || motionArea > MOTION_AREA_PLAY;
   let chaosStart = -Infinity;
   let gustStart = -Infinity;
   let gustNext = performance.now() + (10 + Math.random() * 10) * 1000;
@@ -157,7 +172,7 @@ async function boot() {
         crystal = 0;
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
         renderer.tuning.windOverlay = DEFAULT_TUNING.windOverlay;
-        behavior.titleReturn = true;
+        behavior.imprintReturn = true;
         Object.assign(
           imprintSettings,
           structuredClone(DEFAULT_IMPRINT_SETTINGS)
@@ -339,6 +354,8 @@ async function boot() {
     cameraSource?.dispose();
     cameraSource = undefined;
     motionAvg = 0;
+    motionArea = 0;
+    windAuto = 1;
     updateStatus();
   }
   async function startMic() {
@@ -415,22 +432,40 @@ async function boot() {
   canvas.addEventListener("pointercancel", endTouch);
   window.addEventListener("keydown", markActivity);
 
-  // ----- camera stillness probe (drives the idle return of the title) ------
+  // ----- camera motion probe -----------------------------------------------
+  // Feeds the stillness gate (idle return, recrystallization) and the
+  // adaptive gesture gain, so it runs fast enough to catch a single sweep.
   let probing = false;
   window.setInterval(() => {
     if (!cameraSource || probing) return;
     probing = true;
     renderer
       .readMotion()
-      .then((m) => {
-        motionAvg = m;
-        if (m > MOTION_STILL) markActivity();
+      .then(({ avg, area }) => {
+        motionAvg = avg;
+        motionArea = area;
+        if (cameraMoving()) {
+          markActivity();
+          const desired = Math.min(
+            WIND_AUTO_MAX,
+            Math.max(1, Math.sqrt(WIND_AREA_REF / Math.max(area, 1e-4)))
+          );
+          windAuto += (desired - windAuto) * 0.12;
+        } else {
+          windAuto += (1 - windAuto) * 0.004;
+        }
+        if (DEBUG) {
+          document.documentElement.dataset.cinerae =
+            `m=${motionAvg.toFixed(4)} a=${motionArea.toFixed(4)} ` +
+            `g=${windAuto.toFixed(2)} c=${crystal.toFixed(2)} ` +
+            `s=${silenceTime.toFixed(1)}`;
+        }
       })
       .catch(() => undefined)
       .finally(() => {
         probing = false;
       });
-  }, 1000);
+  }, MOTION_PROBE_MS);
 
   // ----- per-frame orchestration -------------------------------------------
   let last = performance.now();
@@ -450,9 +485,16 @@ async function boot() {
       );
       if (a.level >= audioState.silenceThreshold) markActivity();
 
-      if (a.level < audioState.silenceThreshold) {
+      // A real silence is quiet AND still: a body sweeping through the frame
+      // or a finger on the dust counts as playing, and playing always
+      // restarts the countdown — the matter never recrystallizes mid-gesture.
+      const playing =
+        (cameraSource !== undefined && cameraMoving()) ||
+        renderer.dynamics.touchStrength > 0;
+      if (a.level < audioState.silenceThreshold && !playing) {
         silenceTime += dt;
-        if (silenceTime > 2) crystal = Math.min(1, crystal + dt / 8);
+        if (behavior.imprintReturn && silenceTime > behavior.silenceDelay)
+          crystal = Math.min(1, crystal + dt / 8);
         // Random mode: each long silence draws a new imprint; the held
         // matter simply glides to the new targets — a morphing, not a cut.
         if (imprintSettings.random && silenceTime > randomNext) {
@@ -465,10 +507,15 @@ async function boot() {
             picks[(Math.random() * picks.length) | 0]!;
           void applyImprint(family, variant, { silent: true });
         }
-      } else {
+      } else if (a.level >= audioState.silenceThreshold) {
         silenceTime = 0;
         randomNext = RANDOM_SILENCE_DELAY;
         crystal = Math.max(0, crystal - dt * (0.4 + a.level * 5));
+      } else {
+        // Silent but gesturing: the held form only erodes where the body
+        // passes (in the shader); globally it neither builds nor melts.
+        silenceTime = 0;
+        randomNext = RANDOM_SILENCE_DELAY;
       }
 
       // Cymatics: a held tonal sound (note, drone, sung voice) builds the
@@ -523,14 +570,18 @@ async function boot() {
     // The camera imprint melts while the wordmark takes the matter over.
     crystal = Math.max(0, crystal - dt * renderer.dynamics.titleMode * 0.6);
     renderer.dynamics.crystal = crystal;
+    renderer.dynamics.windGain = Math.min(
+      5,
+      windAuto * renderer.tuning.gestureGain
+    );
 
     // Title envelope: intro formation, dissolution, idle re-formation.
     if (phase === "live") {
       const idleFor = (now - lastActivity) / 1000;
       if (
-        behavior.titleReturn &&
+        behavior.imprintReturn &&
         renderer.imprintCount > 0 &&
-        motionAvg <= MOTION_STILL &&
+        !cameraMoving() &&
         idleFor > IDLE_DELAY &&
         titleTarget === 0
       ) {

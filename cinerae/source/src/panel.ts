@@ -18,7 +18,7 @@ export interface PanelState {
     tonalThreshold: number;
   };
   quality: { auto: boolean };
-  behavior: { titleReturn: boolean };
+  behavior: { imprintReturn: boolean; silenceDelay: number };
   imprint: ImprintSettings;
 }
 
@@ -319,6 +319,28 @@ export function createPanel(
       get: () => state.tuning.cometGain,
       set: (v) => (state.tuning.cometGain = v),
     },
+    {
+      key: "gesture",
+      label: "gain du geste",
+      min: 0.3,
+      max: 3,
+      step: 0.05,
+      modes: ["pro"],
+      format: (v) => `×${plain(v)}`,
+      get: () => state.tuning.gestureGain,
+      set: (v) => (state.tuning.gestureGain = v),
+    },
+    {
+      key: "silenceDelay",
+      label: "durée du silence",
+      min: 0.5,
+      max: 15,
+      step: 0.5,
+      modes: ["pro"],
+      format: (v) => `${plain(v)} s`,
+      get: () => state.behavior.silenceDelay,
+      set: (v) => (state.behavior.silenceDelay = v),
+    },
     // ---- paramètres fins des empreintes (pro, gated by family) ------------
     {
       key: "waveFreq",
@@ -581,10 +603,10 @@ export function createPanel(
     () => state.tuning.windOverlay > 0.01,
     (next) => (state.tuning.windOverlay = next ? 0.85 : 0)
   );
-  const titleReturnSwitch = makeSwitch(
-    "retour du titre",
-    () => state.behavior.titleReturn,
-    (next) => (state.behavior.titleReturn = next)
+  const imprintReturnSwitch = makeSwitch(
+    "retour de l'empreinte",
+    () => state.behavior.imprintReturn,
+    (next) => (state.behavior.imprintReturn = next)
   );
   const autoSwitch = makeSwitch(
     "qualité auto",
@@ -854,9 +876,9 @@ export function createPanel(
     });
     mirrorSwitch.row.style.display = "";
     overlaySwitch.row.style.display = mode === "pro" ? "" : "none";
-    titleReturnSwitch.row.style.display = mode === "pro" ? "" : "none";
+    imprintReturnSwitch.row.style.display = mode === "pro" ? "" : "none";
     overlaySwitch.sync();
-    titleReturnSwitch.sync();
+    imprintReturnSwitch.sync();
     autoSwitch.sync();
     mirrorSwitch.sync();
 
