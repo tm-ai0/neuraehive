@@ -43,6 +43,7 @@ struct SimParams {
   cometGain: f32,       // camera-tear sensitivity
   imprintShape: f32,    // 1 = crystal targets the imprint cloud, 0 = home cells
   stagger: f32,         // 0 = all points engage together, ->1 = ordered build
+  depthAmount: f32,     // parallax layer separation, 0 = off
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -127,8 +128,15 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   var heat = src[i * 2u + 1u].x;
   var age = src[i * 2u + 1u].y;
   var comet = src[i * 2u + 1u].z;
-  let dt = params.dt;
+  // Signed dt rewinds only the advection; forces, damping and probabilities
+  // integrate on |dt| so a reversed time stays numerically stable.
+  let sdt = params.dt;
+  let dt = abs(params.dt);
   let title = params.titleMode;
+
+  // Parallax layer: far grains feel the weather less, near ones more.
+  let layer = f32(i % 3u);
+  let layerF = mix(1.0, mix(0.55, 1.6, layer * 0.5), params.depthAmount);
 
   // Touch emission: a small share of the population respawns under the finger
   // every frame, streaming outward as fresh dust.
@@ -213,7 +221,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let ashWind = 1.0 - ash * 0.75 * (1.0 - min(f.a * 2.5, 1.0));
   let wind = f.rg * 1.6 * windDir;
   let couple = params.force * (0.6 + params.bass * 1.6) * calm * ashWind
-    * min(flowSpeed * 6.0, 1.0) * 2.5;
+    * min(flowSpeed * 6.0, 1.0) * 2.5 * layerF;
   var acc = (wind - vel) * couple;
   acc += (vec2f(0.5) - pos) * params.chaosAspire * 1.8;
 
@@ -236,7 +244,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let turb = params.turbulence * (0.35 + params.treble * 2.0)
     * (1.0 + params.chaosBurst * 5.0) * calm
     * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75);
-  acc += curlNoise(pos, params.time, params.gridCols / max(params.gridRows, 1.0)) * turb;
+  acc += curlNoise(pos, params.time, params.gridCols / max(params.gridRows, 1.0)) * turb * layerF;
 
   // Resting filaments: condense on the zero level-set of a slow drifting
   // noise (iron filings on a wandering magnet) and slide gently along it.
@@ -256,7 +264,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
 
   // The resting gust: everything bends the same way, then it dies down.
-  acc += params.gust * calm * (1.0 - ash * 0.7);
+  acc += params.gust * calm * (1.0 - ash * 0.7) * layerF;
 
   // Cymatics: a dominant sustained tone aligns the dust on the nodal lines
   // of a Chladni figure; the pattern follows the detected pitch.
@@ -318,7 +326,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     vel *= maxSpeed / speed;
   }
 
-  pos += vel * dt;
+  pos += vel * sdt;
   // Wrap over the extended domain, so leaving and re-entering both happen
   // out of frame — unless the word holds the matter. A comet that flies out
   // lands as fresh ash where it re-enters.

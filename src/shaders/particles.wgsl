@@ -2,7 +2,10 @@
 // trail target. Warm-white monochrome as a rule; the life cycle bends it:
 // fresh embers glow orange and cool to white, ash grains dim toward the
 // background, comets stretch along their flight and burn bright. Crystallized
-// grains take their brightness from the camera luminance imprint.
+// grains take their brightness from the camera luminance imprint. The palette
+// gradient can recolor each grain along a chosen driver (age, speed, local
+// density, parallax depth); three depth layers scale the grains and a cheap
+// depth-of-field blows the out-of-focus layers into soft discs.
 struct RenderParams {
   viewport: vec2f,   // target size in px
   pointSize: f32,    // grain diameter in px
@@ -15,6 +18,16 @@ struct RenderParams {
   ashLevel: f32,     // must match the simulation's life-cycle threshold
   imprintShape: f32, // 1 = crystal holds a shape imprint, 0 = camera image
   imprintGlow: f32,  // even glow of a held grain, tuned to the point count
+  stop0: vec4f,      // palette gradient, evenly spaced stops (rgb)
+  stop1: vec4f,
+  stop2: vec4f,
+  stop3: vec4f,
+  stop4: vec4f,
+  stopCount: f32,
+  colorDriver: f32,  // 0 âge, 1 vitesse, 2 densité, 3 profondeur
+  depthAmount: f32,  // parallax layer separation, 0 = off
+  focusLayer: f32,   // 0 far, 1 mid, 2 near
+  dofBlur: f32,      // out-of-focus blur amount
 };
 
 struct VertexOut {
@@ -28,6 +41,7 @@ struct VertexOut {
 @group(0) @binding(0) var<uniform> params: RenderParams;
 @group(0) @binding(1) var<storage, read> particles: array<vec4f>;
 @group(0) @binding(2) var field: texture_2d<f32>;
+@group(0) @binding(3) var prevTrail: texture_2d<f32>;
 
 fn pcg(v: u32) -> u32 {
   let state = v * 747796405u + 2891336453u;
@@ -68,6 +82,17 @@ fn lifeTone(age: f32) -> f32 {
   return mix(1.0, 0.16, fall * (1.0 - rise));
 }
 
+// Evenly spaced gradient sample. With the default two white stops this is
+// exactly the historical warm-white grain.
+fn palette(t: f32) -> vec3f {
+  var stops = array<vec4f, 5>(params.stop0, params.stop1, params.stop2, params.stop3, params.stop4);
+  let n = clamp(params.stopCount, 2.0, 5.0);
+  let x = clamp(t, 0.0, 1.0) * (n - 1.0);
+  let i = u32(min(x, n - 2.0));
+  let f = clamp(x - f32(i), 0.0, 1.0);
+  return mix(stops[i].rgb, stops[i + 1u].rgb, f);
+}
+
 @vertex fn vs_main(
   @builtin(vertex_index) vertexIndex: u32,
   @builtin(instance_index) instanceIndex: u32,
@@ -90,6 +115,9 @@ fn lifeTone(age: f32) -> f32 {
   let age = extra.y;
   let comet = extra.z;
 
+  // Parallax layer of this grain: 0 far, 1 mid, 2 near (same as simulate).
+  let layer = f32(instanceIndex % 3u);
+
   // Crystallized grains inherit the luminance imprint at their home cell;
   // dark cells go out, bright cells stay lit -> the frozen image emerges.
   let home = homeOf(instanceIndex);
@@ -110,12 +138,33 @@ fn lifeTone(age: f32) -> f32 {
   // additive pile-up on the strokes does the rest.
   brightness = mix(brightness, params.imprintGlow, params.titleMode * params.titleMode);
 
-  // Ember orange fades back to warm white as the grain cools.
+  // Palette color along the chosen driver; ember orange burns over it.
+  var t = age;
+  if (params.colorDriver > 2.5) {
+    t = layer * 0.5;
+  } else if (params.colorDriver > 1.5) {
+    let tdims = vec2f(textureDimensions(prevTrail, 0));
+    let ttexel = vec2u(clamp(pos, vec2f(0.0), vec2f(0.9995)) * tdims);
+    let dens = textureLoad(prevTrail, ttexel, 0).rgb;
+    t = 1.0 - exp(-dot(dens, vec3f(0.5, 0.6, 0.35)) * 3.0);
+  } else if (params.colorDriver > 0.5) {
+    t = clamp(speed * 9.0, 0.0, 1.0);
+  }
   let hotness = clamp(heat * 1.15, 0.0, 1.0);
-  out.tint = mix(vec3f(1.0), vec3f(1.0, 0.42, 0.16), hotness);
+  out.tint = mix(palette(t), vec3f(1.0, 0.42, 0.16), hotness);
+
+  // Depth layers: far grains smaller and dimmer, near ones bigger; the
+  // out-of-focus layers spread into soft low-alpha discs (cheap bokeh).
+  let layerSize = mix(0.62, 1.5, layer * 0.5);
+  let sizeF = mix(1.0, layerSize, params.depthAmount);
+  brightness *= mix(1.0, mix(0.8, 1.15, layer * 0.5), params.depthAmount);
+  let blur = params.dofBlur * abs(layer - params.focusLayer);
+  let blurMul = 1.0 + blur * 2.2;
+  brightness /= blurMul * blurMul;
 
   let corner = quadCorner(vertexIndex);
-  var offsetPx = corner * params.pointSize;
+  let px = params.pointSize * sizeF * blurMul;
+  var offsetPx = corner * px;
   out.streak = 0.0;
   // Comets stretch along their flight. The stretch follows speed but
   // saturates, and the light spreads over the length instead of stacking —
@@ -123,7 +172,7 @@ fn lifeTone(age: f32) -> f32 {
   if (comet > 0.02 && speed > 1e-4) {
     let dir = p.zw / speed;
     let stretch = 1.0 + comet * 11.0 * speed / (speed + 0.35);
-    offsetPx = (dir * corner.x * stretch + vec2f(-dir.y, dir.x) * corner.y) * params.pointSize;
+    offsetPx = (dir * corner.x * stretch + vec2f(-dir.y, dir.x) * corner.y) * px;
     out.streak = min(comet * 2.0, 1.0);
     brightness *= inverseSqrt(stretch);
   }

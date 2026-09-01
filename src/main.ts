@@ -18,7 +18,12 @@ import {
   type ImprintFamily,
   type ImprintSettings,
 } from "./imprints";
+import { capturePng, createRecorder, createStage } from "./capture";
+import { applyPalette, PALETTES } from "./look";
+import { createMidi, type Midi } from "./midi";
+import { createModMatrix, type ModMatrix, type ParamRef } from "./modmatrix";
 import { createPanel } from "./panel";
+import { createPresets, type Presets } from "./presets";
 import { createRenderer, DEFAULT_TUNING, type Renderer } from "./renderer";
 import { sampleWordmark } from "./wordmark";
 
@@ -141,6 +146,24 @@ async function boot() {
     lastActivity = performance.now();
   };
 
+  // ----- engines (created after the panel; hooks close over these) ---------
+  let mod: ModMatrix | undefined;
+  let midi: Midi | undefined;
+  let presets: Presets | undefined;
+  let modImprintDirty = false;
+  const dirtyKeys = new Set<string>();
+  const recorder = createRecorder(canvas);
+  const stage = createStage();
+
+  // Every authored write (preset, crossfade, MIDI) goes through here so the
+  // modulation centers follow the hand and the panel rows stay in sync.
+  const writeParam = (def: ParamRef, value: number) => {
+    def.set(value);
+    mod?.onAuthored(def.key, value);
+    if (def.imprint) modImprintDirty = true;
+    dirtyKeys.add(def.key);
+  };
+
   // ----- panel --------------------------------------------------------------
   const panel = createPanel(
     document.body,
@@ -150,6 +173,7 @@ async function boot() {
       quality,
       behavior,
       imprint: imprintSettings,
+      colors: renderer.look,
     },
     {
       onSensor(kind, enabled) {
@@ -173,6 +197,7 @@ async function boot() {
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
         renderer.tuning.windOverlay = DEFAULT_TUNING.windOverlay;
         behavior.imprintReturn = true;
+        applyPalette(renderer.look, PALETTES[0]!);
         Object.assign(
           imprintSettings,
           structuredClone(DEFAULT_IMPRINT_SETTINGS)
@@ -198,8 +223,64 @@ async function boot() {
         if (generateImprint(imprintSettings, sampleContext()) !== null)
           void applyImprint(imprintSettings.family, imprintSettings.variant);
       },
+      // ---- v0.6 -----------------------------------------------------------
+      onCrossfade(value) {
+        presets?.applyCrossfade(value);
+      },
+      getXfade: () => presets?.xfade ?? 0,
+      onPaletteSelect(name) {
+        const palette = PALETTES.find((p) => p.name === name);
+        if (!palette) return;
+        applyPalette(renderer.look, palette);
+        const blendDef = panel.defs.find((d) => d.key === "blendMode");
+        if (blendDef) writeParam(blendDef, palette.blend);
+        panel.refresh();
+      },
+      onCapturePng() {
+        void capturePng(canvas).then((ok) => {
+          if (!ok) panel.setStatus("capture impossible");
+        });
+      },
+      onToggleRecord: () => recorder.toggle(),
+      onFullscreen() {
+        void stage.toggleFullscreen();
+      },
+      getPresets: () => presets,
+      getMod: () => mod,
+      getMidi: () => midi,
     }
   );
+
+  // ----- modulation, MIDI, presets (share the panel's def registry) --------
+  mod = createModMatrix(panel.defs);
+  midi = createMidi(panel.defs, {
+    onWrite(key, value) {
+      mod?.onAuthored(key, value);
+      dirtyKeys.add(key);
+    },
+    onChange() {
+      panel.refresh();
+    },
+  });
+  presets = createPresets(panel.defs, renderer.look, imprintSettings, {
+    writeParam,
+    baseValue: (key) => mod?.centerOf(key),
+    applyImprint(family, variant, text) {
+      if (family === "texte") {
+        imprintSettings.text = text;
+        textImprint = undefined;
+      }
+      void applyImprint(family, variant, { silent: true, quiet: true });
+    },
+    getMod: () => mod?.serialize() ?? { lfos: [], links: [] },
+    setMod: (data) => mod?.load(data),
+    getMidi: () => midi?.serialize() ?? {},
+    setMidi: (data) => midi?.load(data),
+    onApplied() {
+      panel.refresh();
+    },
+  });
+  panel.refresh();
 
   // ----- imprints -----------------------------------------------------------
   function sampleContext() {
@@ -222,10 +303,20 @@ async function boot() {
     }
   }
 
+  // Modulated imprint parameters (an LFO on a drawn wave) re-sample the
+  // cloud on the same slow cadence as living imprints — the particles' own
+  // physics smooth the steps, and the frame never pays for the sampling.
+  window.setInterval(() => {
+    if (!modImprintDirty) return;
+    modImprintDirty = false;
+    const cloud = generateImprint(imprintSettings, sampleContext());
+    if (cloud) renderer.setImprint(cloud, "shape");
+  }, ANIM_INTERVAL);
+
   async function applyImprint(
     family: ImprintFamily,
     variant: string,
-    opts: { silent?: boolean } = {}
+    opts: { silent?: boolean; quiet?: boolean } = {}
   ) {
     const s = imprintSettings;
     if (family === "titre") {
@@ -281,7 +372,9 @@ async function boot() {
       if (cloud) renderer.setImprint(cloud, "shape");
     }
     syncImprintAnimation();
-    panel.refresh();
+    // quiet: called from the crossfade or a preset apply mid-gesture — the
+    // caller refreshes the panel itself, never mid-drag.
+    if (!opts.quiet) panel.refresh();
     if (!opts.silent) markActivity();
   }
 
@@ -469,6 +562,7 @@ async function boot() {
 
   // ----- per-frame orchestration -------------------------------------------
   let last = performance.now();
+  let panelSyncAcc = 0;
   const tick = () => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1);
@@ -565,6 +659,42 @@ async function boot() {
       renderer.dynamics.transient *= FOND_DAMP;
       renderer.dynamics.cymatic *= FOND_DAMP;
       crystal = Math.max(0, crystal - dt * 1.2);
+    }
+
+    // Modulation matrix: a few dozen CPU ops per frame, the image never
+    // pays. Sources: LFOs, the sound bands, the gesture energy.
+    if (mod) {
+      const gesture = Math.min(
+        1,
+        motionArea / WIND_AREA_REF + renderer.dynamics.touchStrength * 0.6
+      );
+      if (
+        mod.update(dt, {
+          bass: renderer.dynamics.bass,
+          treble: renderer.dynamics.treble,
+          transient: renderer.dynamics.transient,
+          gesture,
+        })
+      ) {
+        modImprintDirty = true;
+      }
+      for (const key of mod.activeTargets()) dirtyKeys.add(key);
+    }
+
+    // A strong clap wipes the cendre mémoire clean.
+    if (
+      renderer.tuning.memoryGain > 0.001 &&
+      renderer.dynamics.transient > 0.85
+    ) {
+      renderer.dynamics.memoryClear = 1;
+    }
+
+    // Panel rows driven from outside (LFO, MIDI, crossfade) follow at ~7 Hz.
+    panelSyncAcc += dt;
+    if (panelSyncAcc > 0.15 && dirtyKeys.size) {
+      panelSyncAcc = 0;
+      panel.syncValues(dirtyKeys);
+      dirtyKeys.clear();
     }
 
     // The camera imprint melts while the wordmark takes the matter over.
