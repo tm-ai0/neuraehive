@@ -257,7 +257,10 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   brightness /= blurMul * blurMul;
 
   let corner = quadCorner(vertexIndex);
-  let px = params.pointSize * sizeF * blurMul * mix(1.0, params.presenceSize, presMix);
+  // The wordmark reads at a finer grain: full-size dust blurs the letters.
+  let titleFine = mix(1.0, 0.68, params.titleMode);
+  let px = params.pointSize * sizeF * blurMul * titleFine
+    * mix(1.0, params.presenceSize, presMix);
   var offsetPx = corner * px;
   out.streak = 0.0;
   // Comets stretch along their flight. The stretch follows speed but

@@ -172,7 +172,7 @@ export function createPresets(
       viscosity: 3,
       colorDriver: 1,
     }),
-    // Transe — the copper mandala breathes around whoever stands there.
+    // Transe — the copper mandala turns on the music around whoever stands.
     builtIn("transe", "cuivre", {
       symMode: 4,
       symN: 8,
@@ -180,7 +180,41 @@ export function createPresets(
       halo: 0.3,
       trails: 0.9,
       bodyMat: 7,
+      danse: 1.5,
     }),
+    // Pulsar — a living Julia set pumping on the beat, phosphor sparks.
+    builtIn(
+      "pulsar",
+      "phosphore",
+      {
+        danse: 1.6,
+        halo: 0.45,
+        trails: 0.93,
+        colorDriver: 1,
+        turbulence: 0.4,
+        bodyMat: 3,
+        presenceShare: 0.45,
+        fondVisible: 0.25,
+        ember: 1.2,
+        strobe: 0.15,
+      },
+      { family: "fractale", variant: "julia", text: "lumière", random: false }
+    ),
+    // Canopée — a copper fern swaying to the music, outlined bodies below.
+    builtIn(
+      "canopee",
+      "cuivre",
+      {
+        danse: 0.9,
+        trails: 0.94,
+        halo: 0.3,
+        viscosity: 3,
+        bodyMat: 7,
+        fondVisible: 0.3,
+        colorDriver: 0,
+      },
+      { family: "fractale", variant: "fougere", text: "lumière", random: false }
+    ),
     // Encre — ink body on a dimmed paper field, long brush strokes.
     builtIn(
       "encre",

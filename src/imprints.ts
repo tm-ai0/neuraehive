@@ -36,6 +36,7 @@ export type ImprintFamily =
   | "volume"
   | "forme"
   | "math"
+  | "fractale"
   | "ondes"
   | "texte"
   | "image"
@@ -75,6 +76,7 @@ export const IMPRINT_VARIANTS: Partial<Record<ImprintFamily, string[]>> = {
   volume: ["sphere", "cube", "cone", "tore"],
   forme: ["cercle", "anneau", "carre", "croix", "spirale", "etoile"],
   math: ["lissajous", "attracteur", "chladni", "arbre"],
+  fractale: ["julia", "fougere", "dragon"],
   ondes: ["sinus", "triangle", "carre", "melange"],
   camera: ["gelee", "silhouette"],
 };
@@ -476,6 +478,182 @@ function arbreCloud(): ImprintCloud {
   return c;
 }
 
+// ---- fractales ------------------------------------------------------------
+
+// Julia set by inverse iteration: z <- ±sqrt(z - c), signs hashed per step.
+// The parameter c orbits slowly, so the set morphs forever — a living
+// fractal even before the music-driven dance transform touches it.
+function juliaCloud(time: number): ImprintCloud {
+  const count = 8192;
+  const th = time * 0.045;
+  const cr = 0.7885 * Math.cos(th);
+  const ci = 0.7885 * Math.sin(th);
+  const raw = new Float32Array(count * 2);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < count; i++) {
+    const a0 = hash01(i * 11 + 1) * TAU;
+    let x = Math.cos(a0) * 1.2;
+    let y = Math.sin(a0) * 1.2;
+    for (let k = 0; k < 26; k++) {
+      const wx = x - cr;
+      const wy = y - ci;
+      const r = Math.hypot(wx, wy);
+      const half = Math.atan2(wy, wx) / 2;
+      const sr = Math.sqrt(r);
+      x = sr * Math.cos(half);
+      y = sr * Math.sin(half);
+      if (hash01(i * 37 + k * 5 + 2) < 0.5) {
+        x = -x;
+        y = -y;
+      }
+    }
+    raw[i * 2] = x;
+    raw[i * 2 + 1] = y;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const unit = Math.max(1e-4, maxY - minY);
+  const c = makeCloud(count, "shape", {
+    stagger: 0.3,
+    coverage: 0.62,
+    aspect: (maxX - minX) / unit,
+  });
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  for (let i = 0; i < count; i++) {
+    const an = hash01(i * 13 + 5) * TAU;
+    put(
+      c,
+      i,
+      (raw[i * 2]! - cx) / unit,
+      (raw[i * 2 + 1]! - cy) / unit,
+      Math.cos(an) * 0.6,
+      Math.sin(an) * 0.6
+    );
+  }
+  return c;
+}
+
+// Barnsley fern: each point runs its own hashed IFS walk — deterministic per
+// index, so re-samplings keep every grain on its frond.
+function fougereCloud(): ImprintCloud {
+  const count = 8192;
+  const raw = new Float32Array(count * 2);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < count; i++) {
+    let x = 0;
+    let y = 0;
+    for (let k = 0; k < 34; k++) {
+      const r = hash01(i * 101 + k * 9 + 3);
+      let nx: number;
+      let ny: number;
+      if (r < 0.01) {
+        nx = 0;
+        ny = 0.16 * y;
+      } else if (r < 0.86) {
+        nx = 0.85 * x + 0.04 * y;
+        ny = -0.04 * x + 0.85 * y + 1.6;
+      } else if (r < 0.93) {
+        nx = 0.2 * x - 0.26 * y;
+        ny = 0.23 * x + 0.22 * y + 1.6;
+      } else {
+        nx = -0.15 * x + 0.28 * y;
+        ny = 0.26 * x + 0.24 * y + 0.44;
+      }
+      x = nx;
+      y = ny;
+    }
+    raw[i * 2] = x;
+    raw[i * 2 + 1] = y;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const unit = Math.max(1e-4, maxY - minY);
+  const c = makeCloud(count, "shape", {
+    stagger: 0.35,
+    coverage: 0.68,
+    aspect: (maxX - minX) / unit,
+  });
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  for (let i = 0; i < count; i++) {
+    const an = hash01(i * 17 + 7) * TAU;
+    // Screen y grows downward: flip so the fern stands upright.
+    put(
+      c,
+      i,
+      (raw[i * 2]! - cx) / unit,
+      -(raw[i * 2 + 1]! - cy) / unit,
+      Math.cos(an) * 0.5,
+      Math.sin(an) * 0.5
+    );
+  }
+  return c;
+}
+
+// Heighway dragon: an ordered turtle walk along the curve, so the stagger
+// draws it stroke by stroke as it condenses.
+function dragonCloud(): ImprintCloud {
+  const steps = 8192;
+  const xs = new Float32Array(steps + 1);
+  const ys = new Float32Array(steps + 1);
+  let x = 0;
+  let y = 0;
+  let dx = 1;
+  let dy = 0;
+  let minX = 0;
+  let maxX = 0;
+  let minY = 0;
+  let maxY = 0;
+  for (let k = 1; k <= steps; k++) {
+    x += dx;
+    y += dy;
+    xs[k] = x;
+    ys[k] = y;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    // Turn direction of the dragon sequence at step k.
+    const left = (((k & -k) << 1) & k) === 0;
+    const ndx = left ? -dy : dy;
+    const ndy = left ? dx : -dx;
+    dx = ndx;
+    dy = ndy;
+  }
+  const count = 8192;
+  const unit = Math.max(1e-4, maxY - minY);
+  const c = makeCloud(count, "shape", {
+    stagger: 0.6,
+    coverage: 0.6,
+    aspect: (maxX - minX) / unit,
+  });
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  for (let i = 0; i < count; i++) {
+    const t = ((i + hash01(i * 3 + 1)) / count) * (steps - 1);
+    const k = Math.min(steps - 1, Math.floor(t));
+    const u = t - k;
+    const px = xs[k]! + (xs[k + 1]! - xs[k]!) * u;
+    const py = ys[k]! + (ys[k + 1]! - ys[k]!) * u;
+    const sx = xs[k + 1]! - xs[k]!;
+    const sy = ys[k + 1]! - ys[k]!;
+    const l = Math.hypot(sx, sy) || 1;
+    put(c, i, (px - cx) / unit, (py - cy) / unit, sy / l, -sx / l);
+  }
+  return c;
+}
+
 // ---- ondes (uv space, animated drift) -------------------------------------
 
 function waveY(shape: ImprintSettings["wave"]["shape"], ph: number): number {
@@ -781,7 +959,8 @@ export function isAnimated(s: ImprintSettings): boolean {
   return (
     (s.family === "volume" && s.spin > 0.01) ||
     (s.family === "ondes" && s.wave.drift > 0.01) ||
-    (s.family === "math" && s.variant === "lissajous")
+    (s.family === "math" && s.variant === "lissajous") ||
+    (s.family === "fractale" && s.variant === "julia")
   );
 }
 
@@ -801,6 +980,10 @@ export function generateImprint(
       if (s.variant === "chladni") return chladniCloud();
       if (s.variant === "arbre") return arbreCloud();
       return lissajousCloud(Math.round(s.lissa.a), Math.round(s.lissa.b), ctx.time);
+    case "fractale":
+      if (s.variant === "fougere") return fougereCloud();
+      if (s.variant === "dragon") return dragonCloud();
+      return juliaCloud(ctx.time);
     case "ondes":
       return ondesCloud({ ...s.wave, shape: (s.variant as ImprintSettings["wave"]["shape"]) || s.wave.shape }, ctx.time);
     case "multi":

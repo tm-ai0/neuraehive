@@ -1,15 +1,16 @@
-// Settings panel, v0.7.1b — simple and sober. A header, the three tabs
+// Settings panel, v0.7.1c — limpid. A header, three clearly-tabbed modes
 // (Umbra / Anima / Pro), then a single accordion stack: one section open at
-// a time, opening one closes the others. Nothing ever scrolls: every row
-// shares one fixed-height template (name left, value right, clean track),
-// hints live in a reserved slot at the bottom of the panel, and a section
-// too tall for the window splits into sub-tabs instead of scrolling.
-// Every visible word goes through the FR/EN dictionary. The def registry is
-// the single gate: presets, crossfade, Chaos (per-def flag + range), matrix
-// and MIDI all reach every setting through it.
+// a time. Sections group by what they touch: corps, geste, musique,
+// particules, look (+ scènes, empreintes, modulation, midi, aide in Pro).
+// Labels are short and concrete — three words at most; the hint slot at the
+// bottom carries the one-line explanation. Nothing ever scrolls: fixed-height
+// rows, sub-tabs for tall sections. Every visible word goes through the
+// FR/EN dictionary. The def registry is the single gate: presets, crossfade,
+// Chaos (per-def flag + range), matrix and MIDI all reach every setting
+// through it. Chaos keeps an undo history (button + Z).
 // Desktop: card top-right. Mobile: bottom sheet with a handle.
 import { IMPRINT_VARIANTS, type ImprintFamily, type ImprintSettings } from "./imprints";
-import { PALETTES, sampleStops, type LookColors, type Rgb } from "./look";
+import { cloneLookColors, PALETTES, type LookColors, type Rgb } from "./look";
 import { getLang, setLang, t } from "./i18n";
 import type { Midi } from "./midi";
 import { LFO_SHAPES, type LfoShape, type ModLink, type ModMatrix, type ParamRef } from "./modmatrix";
@@ -30,9 +31,7 @@ export interface PanelState {
   quality: { auto: boolean };
   behavior: {
     imprintReturn: boolean;
-    silenceDelay: number;
-    presenceThreshold: number;
-    presenceDelay: number;
+    presenceSense: number;
   };
   imprint: ImprintSettings;
   colors: LookColors;
@@ -62,10 +61,10 @@ export interface PanelHooks {
 
 type SectionId =
   | "scenes"
-  | "moi"
+  | "corps"
   | "geste"
-  | "voix"
-  | "temps"
+  | "musique"
+  | "particules"
   | "look"
   | "empreintes"
   | "modulation"
@@ -128,11 +127,14 @@ const MATERIAL_KEYS = [
 // Sub-tabs of the tall sections: a section either fits the window whole or
 // splits into these fixed pages — never a scrollbar.
 const SECTION_GROUPS: Partial<Record<SectionId, string[]>> = {
-  moi: ["corps", "tenue"],
-  look: ["teinte", "degrade", "matiere", "lumiere", "espace", "vie"],
+  corps: ["forme", "tenue"],
+  particules: ["grains", "temps"],
+  look: ["teinte", "degrade", "fond", "lumiere", "espace"],
   empreintes: ["forme", "reglages"],
   aide: ["modes", "clavier", "gestes", "camext", "liens"],
 };
+
+const CHAOS_HISTORY_MAX = 8;
 
 export function createPanel(
   root: HTMLElement,
@@ -145,7 +147,7 @@ export function createPanel(
   let midiLearn = false;
   let umbraValue = 0.5;
   // Accordion: exactly one section open at a time (or none).
-  let openSection: SectionId | null = "moi";
+  let openSection: SectionId | null = "corps";
   const groupOpen: Partial<Record<SectionId, string>> = {};
 
   // ----- the registry -------------------------------------------------------
@@ -181,31 +183,25 @@ export function createPanel(
 
   const controls: ControlDef[] = [
     // ---- umbra macro: one slider that doses the body's push --------------
-    def("umbra", "moi", [], 0, 1, 0.01, () => umbraValue, (v) => {
+    def("umbra", "corps", [], 0, 1, 0.01, () => umbraValue, (v) => {
       umbraValue = v;
       writeDef("push", v * 2);
       writeDef("bodyMargin", v * 2);
     }, { transient: true, format: percent }),
-    // ---- moi : qui je suis ----------------------------------------------
-    def("presenceShare", "moi", ["anima", "pro"], 0.1, 1, 0.01,
+    // ---- corps -----------------------------------------------------------
+    def("presenceShare", "corps", ["anima", "pro"], 0.1, 1, 0.01,
       () => state.tuning.presenceShare, (v) => (state.tuning.presenceShare = v),
-      { format: percent, chaos: [0.35, 1], group: "corps" }),
-    def("count", "moi", ["anima", "pro"], 10_000, 400_000, 10_000,
-      () => state.tuning.count, (v) => (state.tuning.count = v),
-      { format: thousands, group: "corps" }),
-    def("bodyMat", "moi", ["anima", "pro"], 0, 7, 1,
+      { format: percent, chaos: [0.35, 1], group: "forme" }),
+    def("bodyMat", "corps", ["anima", "pro"], 0, 7, 1,
       () => state.tuning.bodyMat, (v) => {
         state.tuning.bodyMat = v;
         state.tuning.matBlend = 0; // the hand takes over from the crossfade
       },
-      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "corps" }),
-    def("presenceSize", "moi", ["anima", "pro"], 0.6, 3, 0.05,
+      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "forme" }),
+    def("presenceSize", "corps", ["anima", "pro"], 0.6, 3, 0.05,
       () => state.tuning.presenceSize, (v) => (state.tuning.presenceSize = v),
-      { format: (v) => `×${plain(v)}`, chaos: [0.8, 2.4], group: "corps" }),
-    def("presenceTrail", "moi", ["anima", "pro"], 0, 5, 0.1,
-      () => state.tuning.presenceTrail, (v) => (state.tuning.presenceTrail = v),
-      { format: (v) => `${plain(v)} s`, chaos: [0.5, 4], group: "tenue" }),
-    def("presenceHold", "moi", ["anima", "pro"], 0, 1, 0.01,
+      { format: (v) => `×${plain(v)}`, chaos: [0.8, 2.4], group: "forme" }),
+    def("presenceHold", "corps", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.presenceHold, (v) => (state.tuning.presenceHold = v),
       {
         format: (v) =>
@@ -219,18 +215,19 @@ export function createPanel(
         chaos: [0.2, 1],
         group: "tenue",
       }),
-    def("elastic", "moi", ["anima", "pro"], 0, 1, 0.01,
+    def("elastic", "corps", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.elastic, (v) => (state.tuning.elastic = v),
       { format: percent, chaos: [0.2, 1], group: "tenue" }),
-    def("presenceThreshold", "moi", ["pro"], 0.0005, 0.01, 0.0005,
-      () => state.behavior.presenceThreshold,
-      (v) => (state.behavior.presenceThreshold = v),
-      { group: "tenue" }),
-    def("presenceDelay", "moi", ["pro"], 1, 30, 0.5,
-      () => state.behavior.presenceDelay,
-      (v) => (state.behavior.presenceDelay = v),
-      { format: (v) => `${plain(v)} s`, group: "tenue" }),
-    // ---- geste : ce que fait mon geste ----------------------------------
+    def("presenceTrail", "corps", ["anima", "pro"], 0, 5, 0.1,
+      () => state.tuning.presenceTrail, (v) => (state.tuning.presenceTrail = v),
+      { format: (v) => `${plain(v)} s`, chaos: [0.5, 4], group: "tenue" }),
+    // One knob replaces threshold + delay: how eagerly the piece sees and
+    // keeps a person. 50 % = the validated defaults.
+    def("presenceSense", "corps", ["pro"], 0, 1, 0.01,
+      () => state.behavior.presenceSense,
+      (v) => (state.behavior.presenceSense = v),
+      { format: percent, group: "tenue" }),
+    // ---- geste -----------------------------------------------------------
     def("push", "geste", ["anima", "pro"], 0, 2, 0.05,
       () => state.tuning.push, (v) => (state.tuning.push = v),
       { format: (v) => percent(v / 2), chaos: [0.3, 1.8] }),
@@ -253,35 +250,71 @@ export function createPanel(
       () => state.tuning.mirror, (v) => (state.tuning.mirror = v)),
     def("windOverlay", "geste", [], 0, 1, 0.01,
       () => state.tuning.windOverlay, (v) => (state.tuning.windOverlay = v)),
-    // ---- voix : ce que fait ma voix -------------------------------------
-    def("bassGain", "voix", ["anima", "pro"], 0, 2, 0.05,
+    // ---- musique ---------------------------------------------------------
+    // Anima sees one knob; Pro splits it into the three bands.
+    def("musicReact", "musique", ["anima"], 0, 2, 0.05,
+      () => state.audio.bassGain, (v) => {
+        writeDef("bassGain", v);
+        writeDef("trebleGain", v);
+        writeDef("transientGain", v);
+      },
+      { transient: true, format: (v) => percent(v / 2) }),
+    def("bassGain", "musique", ["pro"], 0, 2, 0.05,
       () => state.audio.bassGain, (v) => (state.audio.bassGain = v),
       { format: (v) => percent(v / 2) }),
-    def("trebleGain", "voix", ["anima", "pro"], 0, 2, 0.05,
+    def("trebleGain", "musique", ["pro"], 0, 2, 0.05,
       () => state.audio.trebleGain, (v) => (state.audio.trebleGain = v),
       { format: (v) => percent(v / 2) }),
-    def("transientGain", "voix", ["anima", "pro"], 0, 2, 0.05,
+    def("transientGain", "musique", ["pro"], 0, 2, 0.05,
       () => state.audio.transientGain, (v) => (state.audio.transientGain = v),
       { format: (v) => percent(v / 2) }),
-    def("voiceEase", "voix", ["anima", "pro"], 0, 1, 0.01,
+    def("danse", "musique", ["anima", "pro"], 0, 2, 0.05,
+      () => state.tuning.danse, (v) => (state.tuning.danse = v),
+      { format: (v) => percent(v / 2), chaos: [0.3, 1.8] }),
+    def("voiceEase", "musique", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.voiceEase, (v) => (state.tuning.voiceEase = v),
       { format: percent }),
-    def("cymatic", "voix", ["anima", "pro"], 0, 2, 0.05,
+    def("cymatic", "musique", ["anima", "pro"], 0, 2, 0.05,
       () => state.tuning.cymGain, (v) => (state.tuning.cymGain = v),
       { format: (v) => percent(v / 2) }),
-    def("ember", "voix", ["anima", "pro"], 0, 2, 0.05,
+    def("ember", "musique", ["anima", "pro"], 0, 2, 0.05,
       () => state.tuning.emberGain, (v) => (state.tuning.emberGain = v),
       { format: (v) => percent(v / 2), chaos: [0.4, 1.6] }),
-    def("silence", "voix", ["pro"], 0.001, 0.15, 0.001,
-      () => state.audio.silenceThreshold,
-      (v) => (state.audio.silenceThreshold = v)),
-    def("tonal", "voix", ["pro"], 0.5, 0.95, 0.01,
+    def("tonal", "musique", ["pro"], 0.5, 0.95, 0.01,
       () => state.audio.tonalThreshold,
       (v) => (state.audio.tonalThreshold = v)),
-    // ---- temps : le temps et la mémoire ---------------------------------
-    def("timeScale", "temps", ["anima", "pro"], -1, 1, 0.01,
+    def("silence", "musique", ["pro"], 0.001, 0.15, 0.001,
+      () => state.audio.silenceThreshold,
+      (v) => (state.audio.silenceThreshold = v)),
+    // ---- particules ------------------------------------------------------
+    def("count", "particules", ["anima", "pro"], 10_000, 400_000, 10_000,
+      () => state.tuning.count, (v) => (state.tuning.count = v),
+      { format: thousands, group: "grains" }),
+    def("size", "particules", ["anima", "pro"], 0.8, 5, 0.1,
+      () => state.tuning.pointSize, (v) => (state.tuning.pointSize = v),
+      { format: (v) => `${plain(v)} px`, group: "grains" }),
+    def("turbulence", "particules", ["anima", "pro"], 0, 2, 0.05,
+      () => state.tuning.turbulence, (v) => (state.tuning.turbulence = v),
+      { format: (v) => percent(v / 2), chaos: [0.3, 1.5], group: "grains" }),
+    def("breath", "particules", ["pro"], 0, 2, 0.05,
+      () => state.tuning.gustStrength, (v) => (state.tuning.gustStrength = v),
+      { format: (v) => percent(v / 2), chaos: [0.3, 1.8], group: "grains" }),
+    def("filament", "particules", ["pro"], 0, 2, 0.05,
+      () => state.tuning.filament, (v) => (state.tuning.filament = v),
+      { chaos: [0, 2], group: "grains" }),
+    def("ashShare", "particules", ["pro"], 0.05, 0.35, 0.01,
+      () => state.tuning.ashShare, (v) => (state.tuning.ashShare = v),
+      { format: percent, group: "grains" }),
+    def("sediment", "particules", ["pro"], 0, 2, 0.05,
+      () => state.tuning.sediment, (v) => (state.tuning.sediment = v),
+      { group: "grains" }),
+    def("lifeCycle", "particules", ["pro"], 15, 120, 1,
+      () => state.tuning.lifeSeconds, (v) => (state.tuning.lifeSeconds = v),
+      { format: (v) => `${Math.round(v)} s`, group: "grains" }),
+    def("timeScale", "particules", ["anima", "pro"], -1, 1, 0.01,
       () => state.tuning.timeScale, (v) => (state.tuning.timeScale = v),
       {
+        group: "temps",
         format: (v) =>
           Math.abs(v) < 0.02
             ? t("val.timeFrozen")
@@ -291,28 +324,23 @@ export function createPanel(
                 ? t("val.timeNormal")
                 : `${t("val.timeSlow")} ×${plain(v)}`,
       }),
-    def("trails", "temps", ["anima", "pro"], 0.4, 0.995, 0.005,
+    def("trails", "particules", ["anima", "pro"], 0.4, 0.995, 0.005,
       () => state.tuning.trailDecay, (v) => (state.tuning.trailDecay = v),
-      { format: (v) => percent((v - 0.4) / 0.595), chaos: [0.7, 0.95] }),
-    def("memoryGain", "temps", ["anima", "pro"], 0, 1, 0.01,
+      { format: (v) => percent((v - 0.4) / 0.595), chaos: [0.7, 0.95], group: "temps" }),
+    def("memoryGain", "particules", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.memoryGain, (v) => (state.tuning.memoryGain = v),
-      { format: percent, reveals: true, chaos: [0, 0.5] }),
-    def("memorySeconds", "temps", ["anima", "pro"], 2, 60, 1,
+      { format: percent, reveals: true, chaos: [0, 0.5], group: "temps" }),
+    def("memorySeconds", "particules", ["anima", "pro"], 2, 60, 1,
       () => state.tuning.memorySeconds, (v) => (state.tuning.memorySeconds = v),
       {
         format: (v) => `${Math.round(v)} s`,
         visible: () => state.tuning.memoryGain > 0.001,
+        group: "temps",
       }),
-    def("lifeCycle", "temps", ["pro"], 15, 120, 1,
-      () => state.tuning.lifeSeconds, (v) => (state.tuning.lifeSeconds = v),
-      { format: (v) => `${Math.round(v)} s` }),
-    def("silenceDelay", "temps", ["pro"], 0.5, 15, 0.5,
-      () => state.behavior.silenceDelay, (v) => (state.behavior.silenceDelay = v),
-      { format: (v) => `${plain(v)} s` }),
-    def("imprintReturn", "temps", [], 0, 1, 1,
+    def("imprintReturn", "particules", [], 0, 1, 1,
       () => (state.behavior.imprintReturn ? 1 : 0),
       (v) => (state.behavior.imprintReturn = v > 0.5)),
-    // ---- look : le monde autour -----------------------------------------
+    // ---- look ------------------------------------------------------------
     def("colorDriver", "look", ["anima", "pro"], 0, 3, 1,
       () => state.tuning.colorDriver, (v) => (state.tuning.colorDriver = v),
       {
@@ -347,22 +375,19 @@ export function createPanel(
         state.tuning.fondMat = v;
         state.tuning.matBlend = 0;
       },
-      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "matiere" }),
+      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "fond" }),
     def("fondVisible", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.fondVisible, (v) => (state.tuning.fondVisible = v),
-      { format: percent, chaos: [0.15, 0.8], group: "matiere" }),
-    def("turbulence", "look", ["anima", "pro"], 0, 2, 0.05,
-      () => state.tuning.turbulence, (v) => (state.tuning.turbulence = v),
-      { format: (v) => percent(v / 2), chaos: [0.3, 1.5], group: "matiere" }),
+      { format: percent, chaos: [0.15, 0.8], group: "fond" }),
     def("fondReact", "look", ["anima", "pro"], 0, 2, 0.05,
       () => state.tuning.fondReact, (v) => (state.tuning.fondReact = v),
-      { format: (v) => percent(v / 2), chaos: [0.4, 1.6], group: "matiere" }),
-    def("size", "look", ["pro"], 0.8, 5, 0.1,
-      () => state.tuning.pointSize, (v) => (state.tuning.pointSize = v),
-      { group: "matiere" }),
-    def("exposure", "look", ["pro"], 0.5, 3, 0.05,
-      () => state.tuning.exposure, (v) => (state.tuning.exposure = v),
-      { group: "matiere" }),
+      { format: (v) => percent(v / 2), chaos: [0.4, 1.6], group: "fond" }),
+    def("ghost", "look", ["pro"], 0, 0.35, 0.005,
+      () => state.tuning.ghost, (v) => (state.tuning.ghost = v),
+      { format: (v) => percent(v / 0.35), group: "fond" }),
+    def("rawCam", "look", [], 0, 1, 1,
+      () => state.tuning.rawCam, (v) => (state.tuning.rawCam = v),
+      { transient: true, hidden: true }),
     def("halo", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.halo, (v) => (state.tuning.halo = v),
       { format: percent, chaos: [0, 0.5], group: "lumiere" }),
@@ -379,6 +404,9 @@ export function createPanel(
           v < 0.4 ? t("val.warm") : v > 0.6 ? t("val.cool") : t("val.neutral"),
         group: "lumiere",
       }),
+    def("exposure", "look", ["pro"], 0.5, 3, 0.05,
+      () => state.tuning.exposure, (v) => (state.tuning.exposure = v),
+      { group: "lumiere" }),
     def("depthAmount", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.depthAmount, (v) => (state.tuning.depthAmount = v),
       { format: percent, reveals: true, chaos: [0, 0.8], group: "espace" }),
@@ -422,21 +450,6 @@ export function createPanel(
         chaosSnap: true,
         group: "espace",
       }),
-    def("breath", "look", ["pro"], 0, 2, 0.05,
-      () => state.tuning.gustStrength, (v) => (state.tuning.gustStrength = v),
-      { format: (v) => percent(v / 2), chaos: [0.3, 1.8], group: "vie" }),
-    def("filament", "look", ["pro"], 0, 2, 0.05,
-      () => state.tuning.filament, (v) => (state.tuning.filament = v),
-      { chaos: [0, 2], group: "vie" }),
-    def("ashShare", "look", ["pro"], 0.05, 0.35, 0.01,
-      () => state.tuning.ashShare, (v) => (state.tuning.ashShare = v),
-      { format: percent, group: "vie" }),
-    def("sediment", "look", ["pro"], 0, 2, 0.05,
-      () => state.tuning.sediment, (v) => (state.tuning.sediment = v),
-      { group: "vie" }),
-    def("ghost", "look", ["pro"], 0, 0.35, 0.005,
-      () => state.tuning.ghost, (v) => (state.tuning.ghost = v),
-      { format: (v) => percent(v / 0.35), group: "vie" }),
     // ---- crossfade (rendered by the scenes section, target like any) -----
     def("xfade", "scenes", [], 0, 1, 0.005,
       () => hooks.getXfade(), (v) => hooks.onCrossfade(v),
@@ -578,6 +591,9 @@ export function createPanel(
     b.setAttribute("role", "tab");
     b.addEventListener("click", () => {
       mode = id;
+      // The raw camera view is a Pro-only calibration tool: leaving Pro
+      // always turns it off — the public promise stays true.
+      if (id !== "pro" && state.tuning.rawCam > 0.5) writeDef("rawCam", 0);
       hooks.onInteraction();
       renderMode();
     });
@@ -593,12 +609,14 @@ export function createPanel(
     labelKey: string,
     get: () => boolean,
     toggle: (next: boolean) => void,
-    parent: HTMLElement = sensorsBox
+    parent: HTMLElement = sensorsBox,
+    hintKey?: string
   ) => {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "cinerae-switch";
     row.setAttribute("role", "switch");
+    if (hintKey) row.dataset.hint = t(hintKey);
     const name = document.createElement("span");
     const track = document.createElement("span");
     track.className = "cinerae-switch-track";
@@ -640,7 +658,7 @@ export function createPanel(
   const crystalFill = crystalBar.querySelector(".cinerae-crystal-fill") as HTMLElement;
   const crystalLabel = crystalBar.querySelector(".cinerae-crystal-label") as HTMLElement;
 
-  // ----- chaos & reset: registry-driven --------------------------------------
+  // ----- chaos & reset: registry-driven, with an undo history ---------------
   const writeDef = (key: string, v: number) => {
     const def = controls.find((d) => d.key === key);
     if (!def) return;
@@ -648,8 +666,27 @@ export function createPanel(
     hooks.getMod()?.onAuthored(key, v);
   };
 
+  interface ChaosSnap {
+    values: [ControlDef, number][];
+    colors: LookColors;
+    imprint: { family: ImprintFamily; variant: string };
+  }
+  const chaosHistory: ChaosSnap[] = [];
+  const syncUndo = () => {
+    undoButton.disabled = chaosHistory.length === 0;
+  };
+
   const chaos = () => {
     hooks.onInteraction();
+    // Remember where we stand: a lucky draw clicked past can come back.
+    chaosHistory.push({
+      values: controls
+        .filter((d) => !d.transient)
+        .map((d) => [d, d.get()] as [ControlDef, number]),
+      colors: cloneLookColors(state.colors),
+      imprint: { family: state.imprint.family, variant: state.imprint.variant },
+    });
+    if (chaosHistory.length > CHAOS_HISTORY_MAX) chaosHistory.shift();
     hooks.onChaos();
     const targets: { def: ControlDef; to: number }[] = [];
     for (const def of controls) {
@@ -667,8 +704,33 @@ export function createPanel(
       const p = PALETTES[(Math.random() * PALETTES.length) | 0]!;
       hooks.onPaletteSelect(p.name);
     }
+    syncUndo();
     window.setTimeout(() => renderMode(), 600);
   };
+
+  const undoChaos = () => {
+    const snap = chaosHistory.pop();
+    if (!snap) return;
+    hooks.onInteraction();
+    glide(snap.values.map(([def, to]) => ({ def, to })));
+    // Colors and imprint come back too — the draw touched them.
+    state.colors.stops = snap.colors.stops.map((s) => [...s] as Rgb);
+    state.colors.bg = [...snap.colors.bg] as Rgb;
+    state.colors.grade = [...snap.colors.grade] as Rgb;
+    state.colors.ink = [...snap.colors.ink] as Rgb;
+    state.colors.corpsLight = [...snap.colors.corpsLight] as Rgb;
+    state.colors.corpsShadow = [...snap.colors.corpsShadow] as Rgb;
+    state.colors.name = snap.colors.name;
+    if (
+      snap.imprint.family !== state.imprint.family ||
+      snap.imprint.variant !== state.imprint.variant
+    ) {
+      hooks.onImprintSelect(snap.imprint.family, snap.imprint.variant);
+    }
+    syncUndo();
+    window.setTimeout(() => renderMode(), 600);
+  };
+
   const reset = () => {
     hooks.onInteraction();
     hooks.onReset();
@@ -684,10 +746,16 @@ export function createPanel(
   const chaosButton = document.createElement("button");
   chaosButton.type = "button";
   chaosButton.addEventListener("click", chaos);
+  const undoButton = document.createElement("button");
+  undoButton.type = "button";
+  undoButton.className = "cinerae-undo";
+  undoButton.textContent = "↶";
+  undoButton.addEventListener("click", undoChaos);
   const resetButton = document.createElement("button");
   resetButton.type = "button";
   resetButton.addEventListener("click", reset);
-  actions.append(chaosButton, resetButton);
+  actions.append(chaosButton, undoButton, resetButton);
+  syncUndo();
 
   // ----- umbra: the tints and one slider, nothing else ----------------------
   const umbraBox = document.createElement("div");
@@ -697,10 +765,10 @@ export function createPanel(
   // ----- accordion sections -------------------------------------------------
   const SECTION_ORDER: SectionId[] = [
     "scenes",
-    "moi",
+    "corps",
     "geste",
-    "voix",
-    "temps",
+    "musique",
+    "particules",
     "look",
     "empreintes",
     "modulation",
@@ -811,7 +879,8 @@ export function createPanel(
   };
 
   // The shared fader template: one fixed-height row, name at the left,
-  // value at the right, a clean track underneath the whole row.
+  // value at the right, a clean track underneath the whole row. Clicking
+  // anywhere on the row drags the fader — nothing else.
   const makeSliderRow = (
     parent: HTMLElement,
     label: string,
@@ -851,37 +920,6 @@ export function createPanel(
     return { row, input, readout, name, show };
   };
 
-  // Two-second demo sweep: tap a slider's name and the setting shows itself —
-  // glides to its floor, sweeps to its ceiling, comes home.
-  const demoSweep = (def: ControlDef, input: HTMLInputElement, show: () => void) => {
-    const from = def.get();
-    const token = ++glideToken;
-    const start = performance.now();
-    const DUR = 2000;
-    const frame = () => {
-      if (token !== glideToken) return;
-      const c = Math.min(1, (performance.now() - start) / DUR);
-      // min -> max -> back home, eased as one smooth breath.
-      let v: number;
-      if (c < 0.25) {
-        const u = c / 0.25;
-        v = from + (def.min - from) * u * u * (3 - 2 * u);
-      } else if (c < 0.75) {
-        const u = (c - 0.25) / 0.5;
-        v = def.min + (def.max - def.min) * u * u * (3 - 2 * u);
-      } else {
-        const u = (c - 0.75) / 0.25;
-        v = def.max + (from - def.max) * u * u * (3 - 2 * u);
-      }
-      def.set(v);
-      hooks.getMod()?.onAuthored(def.key, v);
-      input.value = String(def.get());
-      show();
-      if (c < 1) requestAnimationFrame(frame);
-    };
-    requestAnimationFrame(frame);
-  };
-
   const renderDefRow = (def: ControlDef, parent: HTMLElement) => {
     const mod = hooks.getMod();
     if (def.options) {
@@ -895,7 +933,7 @@ export function createPanel(
       decorateRow(row, name, def);
       return;
     }
-    const { row, input, readout, name, show } = makeSliderRow(
+    const { row, input, readout, name } = makeSliderRow(
       parent,
       def.label,
       def.min,
@@ -912,12 +950,6 @@ export function createPanel(
     );
     row.dataset.hint = t(`hint.${def.key}`);
     if (def.reveals) input.addEventListener("change", () => renderMode());
-    name.addEventListener("click", (e) => {
-      if (midiLearn && hooks.getMidi()?.enabled) return; // learn owns the tap
-      e.preventDefault();
-      hooks.onInteraction();
-      demoSweep(def, input, show);
-    });
     decorateRow(row, name, def);
     rowRefs.push({ def, input, readout, row });
   };
@@ -1229,15 +1261,24 @@ export function createPanel(
       renderLookGradient(body);
     } else {
       renderSectionDefs("look", body, active);
+      if (active === "fond" && mode === "pro") {
+        makeSwitch(
+          "sw.rawCam",
+          () => state.tuning.rawCam > 0.5,
+          (next) => writeDef("rawCam", next ? 1 : 0),
+          body,
+          "hint.rawCam"
+        );
+      }
     }
     renderCaptureRow(body);
   }
 
-  // ----- moi section (grouped: corps / tenue) -------------------------------
-  function renderMoi(body: HTMLElement) {
-    const active = renderGroupTabs("moi", defGroups("moi", ["corps", "tenue"]), body);
-    renderSectionDefs("moi", body, active);
-    if (active === "corps") {
+  // ----- corps section (grouped: forme / tenue) -----------------------------
+  function renderCorps(body: HTMLElement) {
+    const active = renderGroupTabs("corps", defGroups("corps", ["forme", "tenue"]), body);
+    renderSectionDefs("corps", body, active);
+    if (active === "forme") {
       colorPairRow(body, "ctl.corpsTint", "hint.corpsTint", [
         {
           value: state.colors.corpsLight,
@@ -1260,33 +1301,38 @@ export function createPanel(
     }
   }
 
-  // ----- geste / temps switches (pro) --------------------------------------
+  // ----- geste: the mirror lives here, visible from Anima -------------------
   function renderGeste(body: HTMLElement) {
     renderSectionDefs("geste", body);
-    if (mode !== "pro") return;
     makeSwitch(
       "sw.mirror",
       () => state.tuning.mirror > 0.5,
       (next) => writeDef("mirror", next ? 1 : 0),
-      body
+      body,
+      "hint.mirror"
     );
+    if (mode !== "pro") return;
     makeSwitch(
       "sw.overlay",
       () => state.tuning.windOverlay > 0.01,
       (next) => writeDef("windOverlay", next ? 0.85 : 0),
-      body
+      body,
+      "hint.windOverlay"
     );
   }
 
-  function renderTemps(body: HTMLElement) {
-    renderSectionDefs("temps", body);
-    if (mode !== "pro") return;
-    makeSwitch(
-      "sw.imprintReturn",
-      () => state.behavior.imprintReturn,
-      (next) => writeDef("imprintReturn", next ? 1 : 0),
-      body
-    );
+  function renderParticules(body: HTMLElement) {
+    const active = renderGroupTabs("particules", defGroups("particules"), body);
+    renderSectionDefs("particules", body, active);
+    if (active === "temps" && mode === "pro") {
+      makeSwitch(
+        "sw.imprintReturn",
+        () => state.behavior.imprintReturn,
+        (next) => writeDef("imprintReturn", next ? 1 : 0),
+        body,
+        "hint.imprintReturn"
+      );
+    }
   }
 
   // ----- modulation section -------------------------------------------------
@@ -1549,6 +1595,7 @@ export function createPanel(
     "volume",
     "forme",
     "math",
+    "fractale",
     "ondes",
     "texte",
     "camera",
@@ -1644,6 +1691,7 @@ export function createPanel(
       const keys: [string, string][] = [
         ["F", "aide.key.f"],
         ["C", "aide.key.c"],
+        ["Z", "aide.key.z"],
         ["R", "aide.key.r"],
         ["P", "aide.key.p"],
         ["V", "aide.key.v"],
@@ -1722,7 +1770,9 @@ export function createPanel(
     const from = sliding.map((t) => t.def.get());
     const start = performance.now();
     const DURATION = 450; // ms per slider
-    const STAGGER = 70; // ms between sliders, in `targets` order
+    // Cascade capped at ~0.9 s total: a full-registry undo lands as fast
+    // as a chaos draw instead of trickling for seconds.
+    const STAGGER = Math.min(70, 900 / Math.max(1, sliding.length));
     const frame = () => {
       if (token !== glideToken) return;
       const now = performance.now();
@@ -1761,6 +1811,8 @@ export function createPanel(
     handle.setAttribute("aria-label", t("ui.togglePanel"));
     crystalLabel.textContent = t("ui.crystal");
     chaosButton.textContent = t("btn.chaos");
+    undoButton.dataset.hint = t("hint.undo");
+    undoButton.setAttribute("aria-label", t("btn.undo"));
     resetButton.textContent = t("btn.reset");
     modeButtons.forEach((b, i) => {
       const active = MODE_IDS[i] === mode;
@@ -1781,10 +1833,10 @@ export function createPanel(
 
     const visible: Partial<Record<SectionId, boolean>> = {
       scenes: mode === "pro",
-      moi: !minimal,
+      corps: !minimal,
       geste: !minimal,
-      voix: !minimal,
-      temps: !minimal,
+      musique: !minimal,
+      particules: !minimal,
       look: !minimal,
       empreintes: mode === "pro",
       modulation: mode === "pro",
@@ -1801,10 +1853,10 @@ export function createPanel(
       body.replaceChildren();
       if (!open) continue;
       if (id === "scenes") renderScenes(body);
-      else if (id === "moi") renderMoi(body);
+      else if (id === "corps") renderCorps(body);
       else if (id === "geste") renderGeste(body);
-      else if (id === "voix") renderSectionDefs("voix", body);
-      else if (id === "temps") renderTemps(body);
+      else if (id === "musique") renderSectionDefs("musique", body);
+      else if (id === "particules") renderParticules(body);
       else if (id === "look") renderLook(body);
       else if (id === "empreintes") renderImprints(body);
       else if (id === "modulation") renderModulation(body);
@@ -1838,6 +1890,7 @@ export function createPanel(
     defs: controls as ParamRef[],
     /** Keyboard shortcuts route through the same handlers as the buttons. */
     chaos,
+    undoChaos,
     reset,
     toggleCollapsed() {
       setCollapsed(!collapsed);

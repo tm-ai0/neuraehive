@@ -58,6 +58,8 @@ export interface Tuning {
   cometGain: number; // camera-tear sensitivity
   gestureGain: number; // manual multiplier over the adaptive gesture gain
   push: number; // v0.7.1b — the body shoves the dust: 0 = it drifts through me
+  danse: number; // v0.7.1c — how much the music animates imprints and symmetry
+  rawCam: number; // v0.7.1c — Pro-only raw camera view (transient, never saved)
   // ---- look (all inert at their defaults: the historical render) ----------
   colorDriver: number; // 0 âge, 1 vitesse, 2 densité, 3 profondeur
   blendMode: number; // 0 additif, 1 écran, 2 tamisée, 3 dodge, 4 soustractif
@@ -118,6 +120,15 @@ export interface Dynamics {
   presence: number; // someone-in-frame envelope 0..1, set by the orchestrator
   voice: number; // smoothed voice level 0..1 — relaxes the corps serrage
   hand: number; // hands envelope 0..1 — fast small motion, set by the orchestrator
+  // v0.7.1c — the dance, integrated by the orchestrator from the music.
+  danceCos: number;
+  danceSin: number;
+  danceScale: number;
+  danceWarp: number;
+  danceTime: number;
+  danceDriftX: number;
+  danceDriftY: number;
+  symSpin: number; // rotation of the radial symmetry fold
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -142,6 +153,8 @@ export const DEFAULT_TUNING: Tuning = {
   cometGain: 1,
   gestureGain: 1,
   push: 1,
+  danse: 1,
+  rawCam: 0,
   colorDriver: 0,
   blendMode: 0,
   halo: 0,
@@ -284,12 +297,29 @@ export async function createRenderer(
     presence: 0,
     voice: 0,
     hand: 0,
+    danceCos: 1,
+    danceSin: 0,
+    danceScale: 1,
+    danceWarp: 0,
+    danceTime: 0,
+    danceDriftX: 0,
+    danceDriftY: 0,
+    symSpin: 0,
   };
 
   let camera: CameraInput | undefined;
   let cameraTexture: Texture | undefined;
   let cameraSeen = false; // at least one uploaded frame
   let lumaFrames = 0; // luma renders since attach; flow needs two real ones
+
+  // Bound to the present pass whenever no camera is attached, so the raw
+  // camera path (Pro) always has a texture to sample — black by default.
+  const dummyCam = gpu.device.createTexture({
+    size: [1, 1],
+    format: "rgba8unorm",
+    usage: ["texture_binding", "copy_dst"],
+    label: "cinerae-cam-dummy",
+  });
 
   const buffers = pingPongStorage(gpu, MAX_PARTICLES * BYTES_PER_PARTICLE);
   const initialSeed = makeSeed(MAX_PARTICLES);
@@ -380,6 +410,16 @@ export async function createRenderer(
         fieldTex: Target,
         memTex: Target
       ) => {
+        // Raw-camera cover-crop toward the screen (same recipe as luma).
+        let camScale: [number, number] = [1, 1];
+        if (camera) {
+          const camAspect = camera.width / camera.height;
+          const scrAspect = output.size[0] / Math.max(1, output.size[1]);
+          camScale =
+            camAspect > scrAspect
+              ? [scrAspect / camAspect, 1]
+              : [1, camAspect / scrAspect];
+        }
         presentEffect.set({
           params: {
             texel: output.texelSize,
@@ -399,10 +439,16 @@ export async function createRenderer(
             strobe: tuning.strobe,
             ghost: tuning.ghost,
             memoryGain: tuning.memoryGain,
+            symSpin: dynamics.symSpin,
+            rawCam: tuning.rawCam > 0.5 && cameraSeen ? 1 : 0,
+            camScale,
+            camOffset: [(1 - camScale[0]) / 2, (1 - camScale[1]) / 2],
+            camMirror: tuning.mirror,
           },
           trail: trailTex,
           field: fieldTex,
           memoryTex: memTex,
+          cam: cameraTexture ?? dummyCam,
           samp: linear,
         });
       };
@@ -488,6 +534,15 @@ export async function createRenderer(
           margin: tuning.bodyMargin,
           fondReact: tuning.fondReact,
           push: tuning.push,
+          danceCos: dynamics.danceCos,
+          danceSin: dynamics.danceSin,
+          danceCx: imprintCloud.space === "uv" ? 0.5 : title.offset[0],
+          danceCy: imprintCloud.space === "uv" ? 0.5 : title.offset[1],
+          danceDriftX: dynamics.danceDriftX,
+          danceDriftY: dynamics.danceDriftY,
+          danceScale: dynamics.danceScale,
+          danceWarp: dynamics.danceWarp,
+          danceTime: dynamics.danceTime,
         },
         src: buffers.read,
         dst: buffers.write,

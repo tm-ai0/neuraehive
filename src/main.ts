@@ -76,10 +76,11 @@ const FOND_DAMP = 0.25; // audio reactivity left to the fond mode
 const RANDOM_POOL: [ImprintFamily, string][] = [
   ["titre", ""],
   ["multi", ""],
-  ...(["volume", "forme", "math", "ondes"] as const).flatMap((family) =>
-    (IMPRINT_VARIANTS[family] ?? []).map(
-      (variant) => [family, variant] as [ImprintFamily, string]
-    )
+  ...(["volume", "forme", "math", "fractale", "ondes"] as const).flatMap(
+    (family) =>
+      (IMPRINT_VARIANTS[family] ?? []).map(
+        (variant) => [family, variant] as [ImprintFamily, string]
+      )
   ),
 ];
 
@@ -108,12 +109,16 @@ async function boot() {
   // Auto quality is on for everyone: the piece opens at the full 400 k
   // reserve and steps down on its own wherever the GPU cannot hold 60 fps.
   const quality = { auto: true };
+  // v0.7.1c — one presence sensitivity knob replaces threshold + delay.
+  // At 0.5 it lands exactly on the validated defaults (0.0015, 8 s).
   const behavior = {
     imprintReturn: true,
-    silenceDelay: 2,
-    presenceThreshold: 0.0015,
-    presenceDelay: 8,
+    presenceSense: 0.5,
   };
+  const presenceThreshold = () =>
+    0.0015 * Math.pow(4, 0.5 - behavior.presenceSense);
+  const presenceDelay = () =>
+    8 * Math.pow(2, (behavior.presenceSense - 0.5) * 2);
   const imprintSettings: ImprintSettings = structuredClone(
     DEFAULT_IMPRINT_SETTINGS
   );
@@ -128,8 +133,13 @@ async function boot() {
   let mic: MicSource | undefined;
   let cameraSource: CameraSource | undefined;
   let crystal = 0;
-  let silenceTime = 0;
   let lastActivity = performance.now();
+  // v0.7.1c — the dance: rotation/scale/ripple state integrated from music.
+  let danceAngle = 0;
+  let danceKick = 0;
+  let dancePhase = 0;
+  let dancePump = 0;
+  let symAngle = 0;
   let motionAvg = 0;
   let motionArea = 0;
   let windAuto = 1;
@@ -207,6 +217,7 @@ async function boot() {
         crystal = 0;
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
         renderer.tuning.windOverlay = DEFAULT_TUNING.windOverlay;
+        renderer.tuning.rawCam = 0;
         behavior.imprintReturn = true;
         applyPalette(renderer.look, PALETTES[0]!);
         Object.assign(
@@ -495,10 +506,6 @@ async function boot() {
     cym = 0;
     sustain = 0;
     renderer.dynamics.cymatic = 0;
-    // Without an ear, no silence to hear: release the crystal so the matter
-    // goes back to living freely instead of staying frozen forever.
-    crystal = 0;
-    silenceTime = 0;
     updateStatus();
   }
 
@@ -563,6 +570,9 @@ async function boot() {
       case "c":
         panel.chaos();
         break;
+      case "z":
+        panel.undoChaos();
+        break;
       case "r":
         panel.reset();
         break;
@@ -606,7 +616,7 @@ async function boot() {
         motionArea = area;
         // Presence watches its own, lower threshold: a standing person's
         // breath and sway keep the portrait alive without counting as play.
-        if (area > behavior.presenceThreshold) presenceSeen = performance.now();
+        if (area > presenceThreshold()) presenceSeen = performance.now();
         // Hands: fast movement over a small area. A whole body sweeps wide
         // and slow, a standing sway is smaller still — a hand is in between
         // and quick, with high energy per moving texel.
@@ -629,9 +639,11 @@ async function boot() {
           document.documentElement.dataset.cinerae =
             `m=${motionAvg.toFixed(4)} a=${motionArea.toFixed(4)} ` +
             `g=${windAuto.toFixed(2)} c=${crystal.toFixed(2)} ` +
-            `s=${silenceTime.toFixed(1)} p=${presenceEnv.toFixed(2)} ` +
+            `s=${((performance.now() - lastActivity) / 1000).toFixed(1)} ` +
+            `p=${presenceEnv.toFixed(2)} ` +
             `h=${renderer.dynamics.hand.toFixed(2)} ` +
-            `v=${renderer.dynamics.voice.toFixed(2)}`;
+            `v=${renderer.dynamics.voice.toFixed(2)} ` +
+            `d=${danceAngle.toFixed(2)}`;
         }
       })
       .catch(() => undefined)
@@ -655,11 +667,14 @@ async function boot() {
     const present =
       cameraSource !== undefined &&
       imprintSettings.family !== "fond" &&
-      (now - presenceSeen) / 1000 < behavior.presenceDelay;
+      (now - presenceSeen) / 1000 < presenceDelay();
     const presTau = present ? 0.45 : 1.4;
     presenceEnv += ((present ? 1 : 0) - presenceEnv) * (1 - Math.exp(-dt / presTau));
+    // v0.7.1c — presence and imprint cohabit: the corps keeps its grains,
+    // the imprint takes the rest (the shader splits them), so the envelope
+    // no longer dies when the crystal holds.
     renderer.dynamics.presence =
-      presenceEnv * (1 - renderer.dynamics.titleMode) * (1 - crystal);
+      presenceEnv * (1 - renderer.dynamics.titleMode);
     // Hands ride the presence: fast small motion warms and brightens where
     // it happens, and fades out in under a second when the hands rest.
     renderer.dynamics.hand +=
@@ -687,39 +702,8 @@ async function boot() {
       renderer.dynamics.voice +=
         (voiceT - renderer.dynamics.voice) * (1 - Math.exp(-dt / vTau));
 
-      // A real silence is quiet AND still: a body sweeping through the frame
-      // or a finger on the dust counts as playing, and playing always
-      // restarts the countdown — the matter never recrystallizes mid-gesture.
-      const playing =
-        (cameraSource !== undefined && cameraMoving()) ||
-        renderer.dynamics.touchStrength > 0 ||
-        presenceEnv > 0.5; // a present body holds its portrait: no recrystallization over it
-      if (a.level < audioState.silenceThreshold && !playing) {
-        silenceTime += dt;
-        if (behavior.imprintReturn && silenceTime > behavior.silenceDelay)
-          crystal = Math.min(1, crystal + dt / 8);
-        // Random mode: each long silence draws a new imprint; the held
-        // matter simply glides to the new targets — a morphing, not a cut.
-        if (imprintSettings.random && silenceTime > randomNext) {
-          randomNext += RANDOM_SILENCE_DELAY;
-          const current = `${imprintSettings.family}/${imprintSettings.variant}`;
-          const picks = RANDOM_POOL.filter(
-            ([f, v]) => `${f}/${v}` !== current
-          );
-          const [family, variant] =
-            picks[(Math.random() * picks.length) | 0]!;
-          void applyImprint(family, variant, { silent: true });
-        }
-      } else if (a.level >= audioState.silenceThreshold) {
-        silenceTime = 0;
-        randomNext = RANDOM_SILENCE_DELAY;
-        crystal = Math.max(0, crystal - dt * (0.4 + a.level * 5));
-      } else {
-        // Silent but gesturing: the held form only erodes where the body
-        // passes (in the shader); globally it neither builds nor melts.
-        silenceTime = 0;
-        randomNext = RANDOM_SILENCE_DELAY;
-      }
+      // v0.7.1c — sound no longer melts the imprint: the music animates it
+      // instead (dance envelope below). Nothing to do here anymore.
 
       // Cymatics: a held tonal sound (note, drone, sung voice) builds the
       // figure progressively; silence or a percussive attack dissolves it.
@@ -806,13 +790,53 @@ async function boot() {
       dirtyKeys.clear();
     }
 
-    // The camera imprint melts while the wordmark takes the matter over —
-    // and a person entering the frame reclaims the matter the same way.
-    crystal = Math.max(
-      0,
-      crystal - dt * (renderer.dynamics.titleMode * 0.6 + presenceEnv * 0.8)
-    );
+    // v0.7.1c — the chosen imprint forms on its own and never melts with
+    // sound: the music animates it instead. Only the fond family holds no
+    // shape; a present body or the returning wordmark still reclaim the
+    // matter, and a passing gesture erodes it locally in the shader.
+    if (phase === "live" && imprintSettings.family !== "fond") {
+      crystal = Math.min(1, crystal + dt / 6);
+    }
+    // Only the returning wordmark reclaims the matter globally; a person
+    // shares the reserve with the imprint instead of melting it.
+    crystal = Math.max(0, crystal - dt * renderer.dynamics.titleMode * 0.6);
     renderer.dynamics.crystal = crystal;
+
+    // Random mode: a long lull (no sound, no gesture, no touch) draws a new
+    // imprint; the held matter glides to the new targets — a morphing.
+    const idleS = (now - lastActivity) / 1000;
+    if (idleS < 1) randomNext = RANDOM_SILENCE_DELAY;
+    else if (imprintSettings.random && phase === "live" && idleS > randomNext) {
+      randomNext += RANDOM_SILENCE_DELAY;
+      const current = `${imprintSettings.family}/${imprintSettings.variant}`;
+      const picks = RANDOM_POOL.filter(([f, v]) => `${f}/${v}` !== current);
+      const [family, variant] = picks[(Math.random() * picks.length) | 0]!;
+      void applyImprint(family, variant, { silent: true });
+    }
+
+    // v0.7.1c — the dance envelope. Without music: a slow turn, a gentle
+    // breath, a faint ripple. With music: bass pumps the scale, transients
+    // kick the spin, treble shimmers the ripple — all scaled by the danse
+    // setting, all smooth, integrated so the crossfade can traverse it.
+    {
+      const d = renderer.dynamics;
+      const danse = renderer.tuning.danse;
+      danceKick = Math.max(danceKick * Math.exp(-dt * 3), d.transient * 1.1);
+      danceAngle += dt * (0.03 + (d.bass * 0.4 + danceKick * 0.9) * danse);
+      dancePhase += dt * (0.25 + d.treble * 2.0 * danse);
+      dancePump +=
+        (d.bass * 0.09 * danse - dancePump) * (1 - Math.exp(-dt / 0.12));
+      d.danceCos = Math.cos(danceAngle);
+      d.danceSin = Math.sin(danceAngle);
+      d.danceScale = 1 + Math.sin((now / 1000) * 0.45) * 0.02 + dancePump;
+      d.danceWarp = 0.012 + d.treble * 0.05 * danse;
+      d.danceTime = dancePhase;
+      d.danceDriftX = Math.sin((now / 1000) * 0.11) * 0.012 * (1 + danse * 0.5);
+      d.danceDriftY = Math.cos((now / 1000) * 0.13) * 0.01 * (1 + danse * 0.5);
+      // The radial fold turns with the same pulse: Transe rotates on the music.
+      symAngle += dt * danse * (0.04 + d.bass * 0.45 + danceKick * 0.8);
+      d.symSpin = symAngle;
+    }
     renderer.dynamics.windGain = Math.min(
       5,
       windAuto * renderer.tuning.gestureGain

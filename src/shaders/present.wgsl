@@ -27,13 +27,19 @@ struct PresentParams {
   strobe: f32,      // discreet strobe on transients
   ghost: f32,       // camera-luminance veil (Pro, 0 by default)
   memoryGain: f32,  // cendre mémoire veil strength
+  symSpin: f32,     // v0.7.1c — rotation of the radial fold (the mandala turns)
+  rawCam: f32,      // v0.7.1c — Pro only: show the raw camera image, no effects
+  camScale: vec2f,  // raw-camera aspect mapping (same recipe as the luma pass)
+  camOffset: vec2f,
+  camMirror: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: PresentParams;
 @group(0) @binding(1) var trail: texture_2d<f32>;
 @group(0) @binding(2) var field: texture_2d<f32>;
 @group(0) @binding(3) var memoryTex: texture_2d<f32>;
-@group(0) @binding(4) var samp: sampler;
+@group(0) @binding(4) var cam: texture_2d<f32>;
+@group(0) @binding(5) var samp: sampler;
 
 fn grain(uv: vec2f) -> f32 {
   let p = uv * 1000.0 + vec2f(params.time * 61.7, params.time * 39.3);
@@ -67,11 +73,12 @@ fn foldUv(uv: vec2f, mode: f32, n: f32) -> vec2f {
     return vec2f(0.5 - abs(s.x - 0.5), 0.5 - abs(s.y - 0.5));
   }
   // Radial: fold the angle into one mirrored sector -> a living mandala.
+  // The fold angle carries the music-driven spin: the mandala turns.
   let aspect = params.texel.y / max(params.texel.x, 1e-6);
   let p = (s - vec2f(0.5)) * vec2f(aspect, 1.0);
   let r = length(p);
   let sector = 6.2831853 / max(n, 2.0);
-  var a = atan2(p.y, p.x);
+  var a = atan2(p.y, p.x) + params.symSpin;
   a = a - sector * floor(a / sector);
   a = min(a, sector - a);
   let q = vec2f(cos(a), sin(a)) * r;
@@ -94,6 +101,16 @@ fn toneOf(mode: i32, xe: vec3f) -> vec3f {
 }
 
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
+  // Raw camera (Pro only): the piece steps aside and the plain image shows,
+  // mirrored like the wind field — a calibration view, never the public one.
+  if (params.rawCam > 0.5) {
+    // Same cover-crop + mirror recipe as the luma pass.
+    let flipped = vec2f(mix(uv.x, 1.0 - uv.x, params.camMirror), uv.y);
+    let cuv = flipped * params.camScale + params.camOffset;
+    let img = textureSampleLevel(cam, samp, cuv, 0.0).rgb;
+    return vec4f(img, 1.0);
+  }
+
   // Two folds, blended: fractional symmetry is a mix of the two nearest
   // whole folds. When mode and branch count are whole, fMix is 0 and only
   // the first fold is sampled — the historical path.
@@ -104,7 +121,11 @@ fn toneOf(mode: i32, xe: vec3f) -> vec3f {
     params.symN - floor(params.symN),
   );
   let center = uv - vec2f(0.5);
-  let dir = center * params.fringe * 14.0 * params.texel * 60.0;
+  // Chroma shift fades to nothing near the frame so the clamped samples can
+  // never draw a straight edge — the effect lives in the middle of the image.
+  let edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+  let edgeFade = smoothstep(0.0, 0.18, edge);
+  let dir = center * params.fringe * 14.0 * params.texel * 60.0 * edgeFade;
 
   // Spectral separation along the radial axis, transitoires only.
   // The tint biases which side of the spectrum leads. The trail carries real
