@@ -63,6 +63,7 @@ struct SimParams {
   elastic: f32,         // how far the portrait yields under a gesture
   margin: f32,          // shadow margin: fond eviction strength around the body
   fondReact: f32,       // how much the fond feels the gesture wind
+  push: f32,            // v0.7.1b — body shove: momentum kick + obstacle squeeze
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -425,10 +426,13 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       * (1.0 - min(cym, 1.0)) * (1.0 - flight) * 0.8;
   }
 
-  // Fond eviction: the world steps aside around the body. Free dust caught
-  // on the silhouette is pushed toward the dark, leaving a shadow margin
-  // that draws the person in negative — and hands the grains to the edges.
-  if (isFond && params.presence > 0.003 && params.margin > 0.001) {
+  // Fond eviction + obstacle: the world steps aside around the body. Free
+  // dust caught on the silhouette is pushed toward the dark, leaving a
+  // shadow margin that draws the person in negative — and the poussée makes
+  // the lit body a real obstacle, squeezing harder the grains it covers so
+  // even a still body keeps its clearing.
+  let evict = params.margin * 1.6 + params.push * 2.4;
+  if (isFond && params.presence > 0.003 && evict > 0.001) {
     let lpP = smoothstep(0.05, 0.75, f.b);
     if (lpP > 0.02) {
       let dims = vec2f(textureDimensions(field, 0));
@@ -442,8 +446,21 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       let gl = length(g);
       if (gl > 1e-4) {
         // Push down the luminance gradient — out of the light, into shadow.
-        acc += -g / gl * lpP * params.presence * params.margin * 1.6;
+        acc += -g / gl * lpP * params.presence * evict;
       }
+    }
+  }
+
+  // Poussée: where a limb writes motion energy the dust takes a real
+  // momentum kick along the gesture — beyond the wind's entrainment, so it
+  // flies ahead of the arm, piles up at the front and rolls off in a wake
+  // behind. The corps yields a third as much: the portrait bends under the
+  // shove without dissolving (the élastique does the rest).
+  if (params.push > 0.001 && params.presence > 0.003 && flight < 0.5) {
+    let hit = smoothstep(0.02, 0.22, f.a);
+    if (hit > 0.001) {
+      let pw = select(0.35, 1.0, isFond);
+      acc += f.rg * (hit * params.push * pw * params.presence * 26.0);
     }
   }
 

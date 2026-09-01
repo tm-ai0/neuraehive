@@ -57,6 +57,7 @@ export interface Tuning {
   sediment: number; // peripheral drift of ash
   cometGain: number; // camera-tear sensitivity
   gestureGain: number; // manual multiplier over the adaptive gesture gain
+  push: number; // v0.7.1b — the body shoves the dust: 0 = it drifts through me
   // ---- look (all inert at their defaults: the historical render) ----------
   colorDriver: number; // 0 âge, 1 vitesse, 2 densité, 3 profondeur
   blendMode: number; // 0 additif, 1 écran, 2 tamisée, 3 dodge, 4 soustractif
@@ -140,6 +141,7 @@ export const DEFAULT_TUNING: Tuning = {
   sediment: 0.6,
   cometGain: 1,
   gestureGain: 1,
+  push: 1,
   colorDriver: 0,
   blendMode: 0,
   halo: 0,
@@ -485,6 +487,7 @@ export async function createRenderer(
           elastic: tuning.elastic,
           margin: tuning.bodyMargin,
           fondReact: tuning.fondReact,
+          push: tuning.push,
         },
         src: buffers.read,
         dst: buffers.write,

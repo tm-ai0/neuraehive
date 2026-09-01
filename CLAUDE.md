@@ -9,7 +9,8 @@ npm run dev, puis l'adresse affichée. Ajouter ?debug à l'adresse pour lire les
 - 400 000 grains sous qualité auto (v0.7.1 : 90 fps et plus, plafonné par l'écran, palier auto jamais descendu). Toute feature qui coûte à l'image est refusée.
 - La caméra n'est jamais affichée. Le fantôme caméra est une option Pro, désactivée par défaut.
 - Tout reste local : scènes, captures, images importées. Rien n'est envoyé.
-- Panneau trois modes : Umbra (un curseur moi ◀▶ le monde + teintes), Anima (cinq questions), Pro (tout). Pas de mur de réglages. Tout texte visible passe par le dictionnaire FR/EN (src/i18n.ts) ; les curseurs nomment des effets visibles, jamais des sources.
+- Panneau trois modes : Umbra (un curseur frôler ◀▶ bousculer qui dose la poussée + teintes), Anima (cinq questions), Pro (tout). Pas de mur de réglages. Tout texte visible passe par le dictionnaire FR/EN (src/i18n.ts) ; les curseurs nomment des effets visibles, jamais des sources.
+- v0.7.1b, panneau sobre : accordéon à section unique (ouvrir ferme les autres), aucun scroll nulle part — une section trop haute se découpe en sous-onglets, jamais en défilement. Toutes les lignes partagent un gabarit à hauteur fixe (nom à gauche, valeur à droite, piste nette pleine largeur). Les hints s'affichent dans l'emplacement réservé en bas du panneau, jamais en insérant du texte dans la pile. Pas d'ornement : ni strates, ni pastilles muettes, ni croquis, ni mots génériques à la place des valeurs (les libellés de régime — gel, retour, poussière libre — restent).
 - Le touch reste, le MIDI s'ajoute.
 - Le registre de réglages (panel.ts, defs) est la seule porte : tout réglage existant ou futur y entre, avec son drapeau Chaos (plage + snap éventuel). Presets, crossfade, matrice, MIDI et Chaos ne passent que par lui — jamais de réglage hors registre.
 - Le crossfade A ↔ B est continu de bout en bout : les anciens choix (fusion, symétrie, pilote de couleur, couche nette) sont des quantités fractionnaires que les shaders mélangent ; ce qui reste vraiment discret (une matière, une scène) se fond par un mélange de rendu sur la durée du crossfade (paire de matières + mélange stochastique par grain), jamais par un saut à 50 %.
@@ -23,6 +24,7 @@ npm run dev, puis l'adresse affichée. Ajouter ?debug à l'adresse pour lire les
 - Figuratif retiré des empreintes.
 - v0.7.1 : deux couches, une seule réserve de grains. Corps et fond ont chacun leur matière (fumée, liquide, encre, points, dither, lignes, moiré, contours), le partage est un biais de repos, la matière se conserve (le fond forme la personne, ses grains y retournent). Jamais de trame ordonnée sur une palette claire (garde Papier dans renderer.ts). Palettes = Teintes en pastilles, presets = Scènes aux noms de moments.
 - Seuil et délai de présence : défauts 0,0015 et 8 s, à trancher devant une vraie caméra seulement.
+- v0.7.1b, poussée : le corps est un obstacle. Def "push" au registre (0..2, défaut 1, Chaos 0,3-1,8) : bourrade le long du geste (impulsion sur l'énergie de mouvement, le corps cède ×0,35) + expulsion hors de la silhouette fusionnée avec la marge d'ombre (evict = margin×1,6 + push×2,4). Le curseur Umbra écrit push et bodyMargin (v×2). Teintes = bandeaux du vrai dégradé (fond puis stops) avec nom lisible.
 
 ## Périmètre git
 Repo local sans remote. Commits locaux ciblés sur le diff de la tâche. Jamais de push, jamais de branche défensive. Un seul processus à la fois sur ce dossier.

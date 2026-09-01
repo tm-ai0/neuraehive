@@ -35,6 +35,10 @@
         display: block;
         touch-action: none;
       }
+      :focus-visible {
+        outline: 2px solid rgba(232, 221, 204, 0.85);
+        outline-offset: 1px;
+      }
 
       /* ---- intro (the title itself is particles on the canvas) ---- */
       #overlay {
@@ -61,12 +65,13 @@
         transition-duration: 0.9s;
       }
       #overlay p {
-        max-width: 34rem;
+        max-width: 36rem;
         text-align: center;
-        font-size: 0.82rem;
-        line-height: 1.7;
-        letter-spacing: 0.08em;
-        color: var(--ink-dim);
+        font-size: 0.88rem;
+        line-height: 1.75;
+        letter-spacing: 0.05em;
+        color: rgba(240, 231, 214, 0.92);
+        text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
         padding: 0 1.5rem;
         text-wrap: pretty;
       }
@@ -82,8 +87,8 @@
       }
       #overlay button {
         appearance: none;
-        background: transparent;
-        border: 1px solid rgba(232, 221, 204, 0.4);
+        background: rgba(5, 4, 3, 0.5);
+        border: 1px solid rgba(232, 221, 204, 0.45);
         color: var(--ink);
         padding: 0.85rem 1.8rem;
         min-height: 44px;
@@ -91,16 +96,18 @@
         letter-spacing: 0.22em;
         text-transform: uppercase;
         cursor: pointer;
-        transition-property: background-color, border-color, scale;
-        transition-duration: 0.25s;
+        transition-property: background-color, border-color, color, scale;
+        transition-duration: 0.2s;
         transition-timing-function: ease-out;
       }
       #overlay button:hover {
-        background: rgba(232, 221, 204, 0.08);
-        border-color: rgba(232, 221, 204, 0.8);
+        background: rgba(232, 221, 204, 0.16);
+        border-color: rgba(232, 221, 204, 0.95);
+        color: var(--ink-bright);
       }
       #overlay button:active {
         scale: 0.96;
+        background: rgba(232, 221, 204, 0.26);
       }
       #overlay .error {
         color: #d9a08a;
@@ -109,20 +116,22 @@
         min-height: 1.2em;
       }
 
-      /* ---- settings panel ---- */
+      /* ---- settings panel: a single column, nothing ever scrolls ---- */
       .cinerae-panel {
         position: fixed;
         top: 1rem;
         right: 1rem;
-        width: 17rem;
+        width: 17.5rem;
         max-height: calc(100vh - 2rem);
-        overflow-y: auto;
-        padding: 0.85rem 1rem 1rem;
-        background: rgba(5, 4, 3, 0.78);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding: 0.7rem 0.9rem 0.55rem;
+        background: rgba(5, 4, 3, 0.84);
         border: 1px solid var(--ink-faint);
         backdrop-filter: blur(8px);
-        font-size: 0.68rem;
-        letter-spacing: 0.06em;
+        font-size: 0.66rem;
+        letter-spacing: 0.05em;
         z-index: 20;
         user-select: none;
         transition-property: opacity, translate;
@@ -175,10 +184,11 @@
         display: flex;
         align-items: baseline;
         justify-content: space-between;
-        margin-bottom: 0.15rem;
+        margin-bottom: 0.1rem;
+        flex: none;
       }
       .cinerae-fps {
-        font-size: 0.92rem;
+        font-size: 0.9rem;
         letter-spacing: 0.18em;
         color: var(--ink-bright);
         font-variant-numeric: tabular-nums;
@@ -202,8 +212,9 @@
       }
       .cinerae-status {
         color: var(--ink-dim);
-        margin-bottom: 0.7rem;
+        margin-bottom: 0.45rem;
         min-height: 1em;
+        flex: none;
       }
       .cinerae-lang {
         appearance: none;
@@ -225,14 +236,134 @@
         color: var(--ink-bright);
         border-color: rgba(232, 221, 204, 0.55);
       }
+      .cinerae-modes {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        border: 1px solid var(--ink-faint);
+        margin-bottom: 0.5rem;
+        flex: none;
+      }
+      .cinerae-modes button {
+        appearance: none;
+        background: transparent;
+        border: none;
+        color: var(--ink-dim);
+        padding: 0.4rem 0.2rem;
+        min-height: 32px;
+        font-size: 0.62rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition-property: background-color, color;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-modes button.active {
+        background: rgba(232, 221, 204, 0.12);
+        color: var(--ink-bright);
+      }
+      .cinerae-sensors {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+        margin-bottom: 0.35rem;
+        flex: none;
+      }
+      .cinerae-sensors .cinerae-switch {
+        margin-bottom: 0;
+      }
+      .cinerae-switch {
+        appearance: none;
+        background: transparent;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.4rem;
+        color: rgba(232, 221, 204, 0.82);
+        font-size: 0.64rem;
+        letter-spacing: 0.05em;
+        padding: 0;
+        height: 24px;
+        margin-bottom: 4px;
+        cursor: pointer;
+      }
+      .cinerae-switch > span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .cinerae-switch-track {
+        position: relative;
+        flex: none;
+        width: 30px;
+        height: 16px;
+        border-radius: 8px;
+        border: 1px solid rgba(232, 221, 204, 0.3);
+        transition-property: background-color, border-color;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-switch-thumb {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        background: var(--ink-dim);
+        transition-property: translate, background-color;
+        transition-duration: 0.2s;
+        transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+      }
+      .cinerae-switch[aria-checked="true"] .cinerae-switch-track {
+        background: rgba(232, 221, 204, 0.18);
+        border-color: rgba(232, 221, 204, 0.6);
+      }
+      .cinerae-switch[aria-checked="true"] .cinerae-switch-thumb {
+        translate: 14px 0;
+        background: var(--ink-bright);
+      }
+      .cinerae-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+        margin-bottom: 0.45rem;
+        flex: none;
+      }
+      .cinerae-actions button {
+        appearance: none;
+        background: transparent;
+        border: 1px solid rgba(232, 221, 204, 0.35);
+        color: var(--ink);
+        padding: 0.35rem 0;
+        min-height: 30px;
+        font-size: 0.64rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition-property: background-color, border-color, scale;
+        transition-duration: 0.2s;
+        transition-timing-function: ease-out;
+      }
+      .cinerae-actions button:hover {
+        background: rgba(232, 221, 204, 0.08);
+        border-color: rgba(232, 221, 204, 0.7);
+      }
+      .cinerae-actions button:active {
+        scale: 0.96;
+      }
       .cinerae-crystal {
         display: flex;
         align-items: center;
         gap: 0.55rem;
-        margin-bottom: 0.85rem;
+        margin-bottom: 0.45rem;
+        flex: none;
       }
       .cinerae-crystal-label {
         color: var(--ink-dim);
+        font-size: 0.58rem;
+        letter-spacing: 0.12em;
       }
       .cinerae-crystal-track {
         flex: 1;
@@ -249,135 +380,297 @@
         transition-duration: 0.2s;
         transition-timing-function: linear;
       }
-      .cinerae-modes {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        border: 1px solid var(--ink-faint);
-        margin-bottom: 0.85rem;
+
+      /* ---- accordion sections: one open at a time ---- */
+      .cinerae-section {
+        border-top: 1px solid var(--ink-faint);
+        flex: none;
       }
-      .cinerae-modes button {
+      .cinerae-section-head {
         appearance: none;
         background: transparent;
         border: none;
-        color: var(--ink-dim);
-        padding: 0.5rem 0.2rem;
-        min-height: 34px;
-        font-size: 0.62rem;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        cursor: pointer;
-        transition-property: background-color, color;
-        transition-duration: 0.2s;
-        transition-timing-function: ease-out;
-      }
-      .cinerae-modes button.active {
-        background: rgba(232, 221, 204, 0.12);
-        color: var(--ink-bright);
-      }
-      .cinerae-sensors {
-        display: flex;
-        flex-direction: column;
-        margin-bottom: 0.85rem;
-      }
-      .cinerae-switch {
-        appearance: none;
-        background: transparent;
-        border: none;
+        width: 100%;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        color: rgba(232, 221, 204, 0.78);
-        font-size: 0.68rem;
-        letter-spacing: 0.06em;
-        padding: 0.35rem 0;
-        min-height: 34px;
+        gap: 0.45rem;
+        color: var(--ink-dim);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 0.58rem;
+        height: 23px;
+        padding: 0;
         cursor: pointer;
+        transition-property: color;
+        transition-duration: 0.2s;
+        text-align: left;
       }
-      .cinerae-switch-track {
-        position: relative;
-        width: 34px;
-        height: 18px;
-        border-radius: 9px;
-        border: 1px solid rgba(232, 221, 204, 0.3);
-        transition-property: background-color, border-color;
+      .cinerae-section-head:hover {
+        color: var(--ink);
+      }
+      .cinerae-section.open .cinerae-section-head {
+        color: var(--ink-bright);
+      }
+      .cinerae-section-caret {
+        width: 0;
+        height: 0;
+        flex: none;
+        border-left: 4px solid currentColor;
+        border-top: 3.5px solid transparent;
+        border-bottom: 3.5px solid transparent;
+        transition-property: rotate;
         transition-duration: 0.2s;
         transition-timing-function: ease-out;
       }
-      .cinerae-switch-thumb {
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 12px;
-        height: 12px;
-        border-radius: 6px;
-        background: var(--ink-dim);
-        transition-property: translate, background-color;
-        transition-duration: 0.2s;
-        transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+      .cinerae-section.open .cinerae-section-caret {
+        rotate: 90deg;
       }
-      .cinerae-switch[aria-checked="true"] .cinerae-switch-track {
-        background: rgba(232, 221, 204, 0.18);
-        border-color: rgba(232, 221, 204, 0.6);
+      .cinerae-section-body {
+        padding: 0.1rem 0 0.35rem;
       }
-      .cinerae-switch[aria-checked="true"] .cinerae-switch-thumb {
-        translate: 16px 0;
-        background: var(--ink-bright);
+      .cinerae-section:not(.open) .cinerae-section-body {
+        display: none;
       }
-      .cinerae-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.6rem;
-        margin-bottom: 0.85rem;
+
+      /* ---- sub-tabs of a tall section (never a scrollbar) ---- */
+      .cinerae-subtabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.1rem;
+        margin-bottom: 7px;
+        border-bottom: 1px solid var(--ink-faint);
       }
-      .cinerae-actions button {
+      .cinerae-subtabs button {
         appearance: none;
         background: transparent;
-        border: 1px solid rgba(232, 221, 204, 0.35);
-        color: var(--ink);
-        padding: 0.5rem 0;
-        min-height: 36px;
-        font-size: 0.66rem;
-        letter-spacing: 0.18em;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--ink-dim);
+        font-size: 0.58rem;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
+        padding: 0.2rem 0.4rem 0.25rem;
+        min-height: 24px;
         cursor: pointer;
-        transition-property: background-color, border-color, scale;
+        transition-property: color, border-color;
         transition-duration: 0.2s;
+      }
+      .cinerae-subtabs button:hover {
+        color: var(--ink);
+      }
+      .cinerae-subtabs button.active {
+        color: var(--ink-bright);
+        border-bottom-color: rgba(232, 221, 204, 0.8);
+      }
+
+      /* ---- the shared fader template: one fixed-height row ---- */
+      .cinerae-row {
+        position: relative;
+        height: 24px;
+        margin-bottom: 4px;
+      }
+      .cinerae-row input[type="range"] {
+        appearance: none;
+        -webkit-appearance: none;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: linear-gradient(
+          to right,
+          rgba(232, 221, 204, 0.14) var(--f, 50%),
+          rgba(232, 221, 204, 0.045) var(--f, 50%)
+        );
+        border: 1px solid rgba(232, 221, 204, 0.1);
+        cursor: pointer;
+        transition-property: border-color;
+        transition-duration: 0.2s;
+      }
+      .cinerae-row:hover input[type="range"],
+      .cinerae-row:focus-within input[type="range"] {
+        border-color: rgba(232, 221, 204, 0.35);
+      }
+      .cinerae-row input[type="range"]::-webkit-slider-runnable-track {
+        background: transparent;
+        height: 100%;
+      }
+      .cinerae-row input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 2px;
+        height: 22px;
+        background: var(--ink-bright);
+      }
+      .cinerae-row input[type="range"]::-moz-range-track {
+        background: transparent;
+        height: 100%;
+      }
+      .cinerae-row input[type="range"]::-moz-range-thumb {
+        width: 2px;
+        height: 22px;
+        border: none;
+        border-radius: 0;
+        background: var(--ink-bright);
+      }
+      .cinerae-row-name {
+        position: absolute;
+        left: 0.5rem;
+        top: 50%;
+        translate: 0 -50%;
+        max-width: 58%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(232, 221, 204, 0.85);
+        cursor: pointer;
+      }
+      .cinerae-value {
+        position: absolute;
+        right: 0.5rem;
+        top: 50%;
+        translate: 0 -50%;
+        max-width: 40%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(232, 221, 204, 0.55);
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+        transition-property: color;
+        transition-duration: 0.5s;
         transition-timing-function: ease-out;
       }
-      .cinerae-actions button:hover {
+      .cinerae-row.changed .cinerae-value {
+        color: var(--ink-bright);
+        transition-duration: 0.12s;
+      }
+
+      /* ---- selects, colors, minis: same fixed-height template ---- */
+      .cinerae-select-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        height: 24px;
+        margin-bottom: 4px;
+        color: rgba(232, 221, 204, 0.85);
+      }
+      .cinerae-select-row .cinerae-row-name {
+        position: static;
+        translate: none;
+        flex: 1;
+      }
+      .cinerae-select {
+        appearance: none;
+        background: rgba(232, 221, 204, 0.06);
+        border: 1px solid rgba(232, 221, 204, 0.22);
+        color: var(--ink);
+        font-family: inherit;
+        font-size: 0.62rem;
+        letter-spacing: 0.05em;
+        padding: 0 0.4rem;
+        height: 24px;
+        max-width: 58%;
+        cursor: pointer;
+      }
+      .cinerae-select:focus {
+        outline: none;
+        border-color: rgba(232, 221, 204, 0.6);
+      }
+      .cinerae-select option {
+        background: #0b0906;
+        color: var(--ink);
+      }
+      .cinerae-colors {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        height: 24px;
+        margin-bottom: 4px;
+      }
+      .cinerae-colors .cinerae-row-name {
+        position: static;
+        translate: none;
+        flex: 1;
+      }
+      .cinerae-colors input[type="color"] {
+        appearance: none;
+        width: 26px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid rgba(232, 221, 204, 0.3);
+        background: transparent;
+        cursor: pointer;
+        flex: none;
+      }
+      .cinerae-colors input[type="color"]::-webkit-color-swatch-wrapper {
+        padding: 2px;
+      }
+      .cinerae-colors input[type="color"]::-webkit-color-swatch {
+        border: none;
+      }
+      .cinerae-mini-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-bottom: 5px;
+        align-items: center;
+      }
+      .cinerae-binding {
+        justify-content: space-between;
+        color: rgba(232, 221, 204, 0.82);
+      }
+      .cinerae-mini {
+        appearance: none;
+        background: transparent;
+        border: 1px solid rgba(232, 221, 204, 0.3);
+        color: var(--ink);
+        padding: 0 0.55rem;
+        height: 24px;
+        font-size: 0.6rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition-property: background-color, border-color, color;
+        transition-duration: 0.2s;
+      }
+      .cinerae-mini:hover:not(:disabled) {
         background: rgba(232, 221, 204, 0.08);
         border-color: rgba(232, 221, 204, 0.7);
       }
-      .cinerae-actions button:active {
-        scale: 0.96;
+      .cinerae-mini:disabled {
+        opacity: 0.35;
+        cursor: default;
       }
-      .cinerae-imprints {
-        margin-bottom: 0.85rem;
-        padding-top: 0.55rem;
-        border-top: 1px solid var(--ink-faint);
+      .cinerae-mini.recording {
+        border-color: rgba(230, 96, 60, 0.8);
+        color: #e6845c;
       }
-      .cinerae-imprints-title {
+      .cinerae-slotline {
         color: var(--ink-dim);
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
         font-size: 0.6rem;
-        margin-bottom: 0.45rem;
+        letter-spacing: 0.05em;
+        margin-bottom: 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .cinerae-chips {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.35rem;
-        margin-bottom: 0.45rem;
+        gap: 0.3rem;
+        margin-bottom: 5px;
       }
       .cinerae-chip {
         appearance: none;
         background: transparent;
         border: 1px solid rgba(232, 221, 204, 0.22);
         color: var(--ink-dim);
-        padding: 0.28rem 0.55rem;
-        min-height: 28px;
-        font-size: 0.62rem;
-        letter-spacing: 0.08em;
+        padding: 0 0.5rem;
+        height: 24px;
+        font-size: 0.6rem;
+        letter-spacing: 0.07em;
         cursor: pointer;
         transition-property: background-color, border-color, color;
         transition-duration: 0.2s;
@@ -401,8 +694,9 @@
         font-family: inherit;
         font-size: 0.72rem;
         letter-spacing: 0.08em;
-        padding: 0.45rem 0.55rem;
-        margin-bottom: 0.45rem;
+        height: 26px;
+        padding: 0 0.55rem;
+        margin-bottom: 5px;
       }
       .cinerae-text-row input:focus {
         outline: none;
@@ -426,276 +720,104 @@
       .cinerae-drop.visible {
         display: flex;
       }
-      .cinerae-row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        row-gap: 0.15rem;
-        margin-bottom: 0.55rem;
-        padding-left: 0.4rem;
-        margin-left: -0.4rem;
-        border-left: 2px solid transparent;
-        color: rgba(232, 221, 204, 0.78);
-        transition-property: background-color, border-color;
-        transition-duration: 0.6s;
-        transition-timing-function: ease-out;
-      }
-      /* The touched slider takes a warm edge; the rest sleeps. */
-      .cinerae-row:hover,
-      .cinerae-row:focus-within {
-        border-left-color: rgba(224, 160, 92, 0.85);
-      }
-      .cinerae-row-name {
-        cursor: pointer;
-      }
-      /* Dust track: a static dotted bed under the thumb — pure CSS, the
-       * frame never pays for it. */
-      .cinerae-row input[type="range"] {
-        grid-column: 1 / 3;
-        width: 100%;
-        appearance: none;
-        -webkit-appearance: none;
-        background: transparent;
-        height: 1.15rem;
-        cursor: pointer;
-      }
-      .cinerae-row input[type="range"]::-webkit-slider-runnable-track {
-        height: 8px;
-        border-radius: 4px;
-        background-image:
-          radial-gradient(circle, rgba(232, 221, 204, 0.4) 0.8px, transparent 1.1px),
-          radial-gradient(circle, rgba(232, 221, 204, 0.22) 0.6px, transparent 0.9px);
-        background-size: 7px 5px, 5px 3px;
-        background-position: 0 1px, 3px 2px;
-      }
-      .cinerae-row input[type="range"]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 13px;
-        height: 13px;
-        margin-top: -2.5px;
-        border-radius: 50%;
-        background: radial-gradient(circle at 38% 35%, #f2e7d3, #a99a7e);
-        box-shadow: 0 0 5px rgba(232, 221, 204, 0.35);
-      }
-      .cinerae-row input[type="range"]::-moz-range-track {
-        height: 8px;
-        border-radius: 4px;
-        background-image:
-          radial-gradient(circle, rgba(232, 221, 204, 0.4) 0.8px, transparent 1.1px);
-        background-size: 7px 5px;
-      }
-      .cinerae-row input[type="range"]::-moz-range-thumb {
-        width: 13px;
-        height: 13px;
-        border: none;
-        border-radius: 50%;
-        background: radial-gradient(circle at 38% 35%, #f2e7d3, #a99a7e);
-      }
-      /* One-line hint, revealed at touch, under the row it belongs to. */
-      .cinerae-row[data-hint]::after,
-      .cinerae-select-row[data-hint]::after,
-      .cinerae-pastilles[data-hint]::after,
-      .cinerae-chips[data-hint]::after,
-      .cinerae-colors[data-hint]::after {
-        content: attr(data-hint);
-        display: none;
-        grid-column: 1 / 3;
-        flex-basis: 100%;
-        color: rgba(232, 221, 204, 0.55);
-        font-size: 0.6rem;
-        letter-spacing: 0.05em;
-        line-height: 1.5;
-        padding-top: 0.1rem;
-        text-wrap: pretty;
-      }
-      .cinerae-row[data-hint]:hover::after,
-      .cinerae-row[data-hint]:focus-within::after,
-      .cinerae-select-row[data-hint]:hover::after,
-      .cinerae-select-row[data-hint]:focus-within::after,
-      .cinerae-pastilles[data-hint]:hover::after,
-      .cinerae-pastilles[data-hint]:focus-within::after,
-      .cinerae-chips[data-hint]:hover::after,
-      .cinerae-colors[data-hint]:hover::after {
-        display: block;
-      }
-      .cinerae-row .cinerae-value {
-        justify-self: end;
-        align-self: end;
-        color: rgba(232, 221, 204, 0.45);
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
-        transition-property: color;
-        transition-duration: 0.5s;
-        transition-timing-function: ease-out;
-      }
-      .cinerae-row.changed {
-        background-color: rgba(232, 221, 204, 0.08);
-        transition-duration: 0.12s;
-      }
-      .cinerae-row.changed input[type="range"] {
-        accent-color: var(--ink-bright);
-      }
-      .cinerae-row.changed .cinerae-value {
-        color: var(--ink-bright);
-      }
 
-      /* ---- collapsible sections: strata of sediment ---- */
-      /* No separator lines: each section is a stratum of earth, warm linen
-       * at the top down to soot, tinted at low saturation by the active
-       * palette (--strata-tint, set by the panel). The bottom edge of each
-       * stratum is a slightly wavy cut, like a soil section. */
-      .cinerae-panel {
-        --strata-tint: rgb(232 221 204);
-      }
-      .cinerae-section {
-        margin: 0 -1rem;
-        padding: 0 1rem 0.35rem;
-        clip-path: polygon(
-          0 0, 100% 0,
-          100% calc(100% - 4px), 91% calc(100% - 1px), 79% calc(100% - 5px),
-          64% calc(100% - 2px), 50% calc(100% - 6px), 36% calc(100% - 2px),
-          22% calc(100% - 5px), 10% calc(100% - 1px), 0 calc(100% - 4px)
-        );
-      }
-      .cinerae-section:nth-child(even) {
-        clip-path: polygon(
-          0 0, 100% 0,
-          100% calc(100% - 2px), 88% calc(100% - 6px), 74% calc(100% - 1px),
-          58% calc(100% - 5px), 43% calc(100% - 2px), 29% calc(100% - 6px),
-          15% calc(100% - 3px), 6% calc(100% - 6px), 0 calc(100% - 2px)
-        );
-      }
-      .cinerae-strata-scenes  { background: color-mix(in srgb, var(--strata-tint) 10%, #241e16); }
-      .cinerae-strata-moi     { background: color-mix(in srgb, var(--strata-tint) 12%, #221c14); }
-      .cinerae-strata-geste   { background: color-mix(in srgb, var(--strata-tint) 11%, #1e1913); }
-      .cinerae-strata-voix    { background: color-mix(in srgb, var(--strata-tint) 10%, #1b1611); }
-      .cinerae-strata-temps   { background: color-mix(in srgb, var(--strata-tint) 9%, #18130e); }
-      .cinerae-strata-look    { background: color-mix(in srgb, var(--strata-tint) 8%, #15100c); }
-      .cinerae-strata-empreintes { background: color-mix(in srgb, var(--strata-tint) 7%, #130f0b); }
-      .cinerae-strata-modulation { background: color-mix(in srgb, var(--strata-tint) 6%, #120e0a); }
-      .cinerae-strata-midi    { background: color-mix(in srgb, var(--strata-tint) 6%, #110d09); }
-      .cinerae-strata-aide    { background: color-mix(in srgb, var(--strata-tint) 5%, #0f0c08); }
-      .cinerae-section-head {
-        appearance: none;
-        background: transparent;
-        border: none;
-        width: 100%;
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        color: var(--ink-dim);
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        font-size: 0.6rem;
-        padding: 0.55rem 0 0.45rem;
-        cursor: pointer;
-        transition-property: color;
-        transition-duration: 0.2s;
-        text-align: left;
-      }
-      .cinerae-section-head:hover {
-        color: var(--ink);
-      }
-      .cinerae-sketch {
-        display: inline-flex;
-        width: 18px;
-        height: 18px;
-        flex: none;
-        opacity: 0.8;
-      }
-      .cinerae-sketch svg {
-        width: 100%;
-        height: 100%;
-      }
-      .cinerae-section-title {
-        flex: 1;
-      }
-      .cinerae-section-caret {
-        width: 0;
-        height: 0;
-        border-left: 4px solid currentColor;
-        border-top: 3.5px solid transparent;
-        border-bottom: 3.5px solid transparent;
-        transition-property: rotate;
-        transition-duration: 0.2s;
-        transition-timing-function: ease-out;
-      }
-      .cinerae-section.open .cinerae-section-caret {
-        rotate: 90deg;
-      }
-      .cinerae-section-body {
-        padding-bottom: 0.45rem;
-      }
-
-      /* ---- umbra: one slider, the tints ---- */
+      /* ---- umbra: the tints, one slider ---- */
       .cinerae-umbra {
-        padding: 0.4rem 0 0.6rem;
-      }
-      .cinerae-umbra .cinerae-pastilles {
-        justify-content: center;
-        margin-bottom: 0.9rem;
+        padding: 0.2rem 0 0.4rem;
       }
       .cinerae-umbra-ends {
         display: flex;
         justify-content: space-between;
         color: var(--ink);
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         letter-spacing: 0.14em;
-        margin-bottom: 0.2rem;
+        margin: 0.55rem 0 0.3rem;
       }
-      .cinerae-umbra-row input[type="range"] {
-        height: 2rem;
+      .cinerae-umbra-row {
+        height: 34px;
+      }
+      .cinerae-umbra-row input[type="range"]::-webkit-slider-thumb {
+        height: 32px;
+      }
+      .cinerae-umbra-row input[type="range"]::-moz-range-thumb {
+        height: 32px;
       }
 
-      /* ---- teintes: pastilles of colored dust, no words ---- */
-      .cinerae-pastilles {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.55rem;
+      /* ---- teintes: the real palette, its name readable ---- */
+      .cinerae-teintes {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        margin-bottom: 6px;
       }
-      .cinerae-pastille {
+      .cinerae-teinte {
         appearance: none;
-        width: 26px;
-        height: 26px;
-        padding: 0;
-        border-radius: 50%;
-        border: 1px solid rgba(232, 221, 204, 0.25);
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 3px 6px 3px;
+        background: rgba(232, 221, 204, 0.03);
+        border: 1px solid rgba(232, 221, 204, 0.14);
         cursor: pointer;
-        box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.5);
-        transition-property: scale, border-color, box-shadow;
+        text-align: left;
+        transition-property: border-color, background-color;
         transition-duration: 0.2s;
         transition-timing-function: ease-out;
       }
-      .cinerae-pastille:hover {
-        border-color: rgba(232, 221, 204, 0.6);
+      .cinerae-teinte:hover {
+        border-color: rgba(232, 221, 204, 0.5);
       }
-      .cinerae-pastille:active {
-        scale: 0.96;
+      .cinerae-teinte:active {
+        scale: 0.98;
       }
-      .cinerae-pastille.active {
-        border-color: rgba(232, 221, 204, 0.9);
-        box-shadow:
-          inset 0 0 4px rgba(0, 0, 0, 0.5),
-          0 0 7px rgba(232, 221, 204, 0.35);
+      .cinerae-teinte.active {
+        border-color: rgba(232, 221, 204, 0.85);
+        background: rgba(232, 221, 204, 0.07);
+      }
+      .cinerae-teinte-band {
+        display: block;
+        width: 100%;
+        height: 6px;
+      }
+      .cinerae-teinte-name {
+        font-size: 0.6rem;
+        letter-spacing: 0.08em;
+        color: rgba(232, 221, 204, 0.75);
+      }
+      .cinerae-teinte.active .cinerae-teinte-name {
+        color: var(--ink-bright);
       }
 
-      /* ---- aide ---- */
-      .cinerae-aide-block {
-        margin-bottom: 0.6rem;
+      /* ---- aide: terms left, plain words right ---- */
+      .cinerae-aide-item {
+        display: grid;
+        grid-template-columns: 4.4rem 1fr;
+        gap: 0.5rem;
+        align-items: baseline;
+        margin-bottom: 0.4rem;
       }
-      .cinerae-aide-title {
+      .cinerae-aide-term {
         color: var(--ink);
         font-size: 0.62rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        margin-bottom: 0.2rem;
+        letter-spacing: 0.1em;
+      }
+      .cinerae-aide-term kbd {
+        display: inline-block;
+        min-width: 1.5rem;
+        padding: 0.1rem 0.3rem;
+        border: 1px solid rgba(232, 221, 204, 0.35);
+        border-bottom-width: 2px;
+        text-align: center;
+        font-family: inherit;
+        font-size: 0.6rem;
+        color: var(--ink);
+        background: rgba(232, 221, 204, 0.05);
       }
       .cinerae-aide-text {
-        color: var(--ink-dim);
-        font-size: 0.64rem;
+        color: rgba(232, 221, 204, 0.68);
+        font-size: 0.62rem;
         letter-spacing: 0.04em;
-        line-height: 1.65;
+        line-height: 1.55;
         text-wrap: pretty;
       }
       .cinerae-aide-text b {
@@ -708,129 +830,61 @@
         text-underline-offset: 2px;
       }
       .cinerae-aide-links {
-        margin-bottom: 0.5rem;
-      }
-
-      /* ---- selects, mini buttons, hints ---- */
-      .cinerae-select-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 0.55rem;
-        margin-bottom: 0.5rem;
-        color: rgba(232, 221, 204, 0.78);
+        gap: 0.7rem;
+        padding: 0.35rem 0;
+        font-size: 0.66rem;
       }
-      .cinerae-select {
-        appearance: none;
-        background: rgba(232, 221, 204, 0.06);
-        border: 1px solid rgba(232, 221, 204, 0.25);
+      .cinerae-aide-links a {
         color: var(--ink);
-        font-family: inherit;
-        font-size: 0.64rem;
-        letter-spacing: 0.06em;
-        padding: 0.3rem 0.45rem;
-        max-width: 60%;
-        cursor: pointer;
+        text-decoration-thickness: from-font;
+        text-underline-offset: 2px;
       }
-      .cinerae-select:focus {
-        outline: none;
-        border-color: rgba(232, 221, 204, 0.6);
-      }
-      .cinerae-select option {
-        background: #0b0906;
-        color: var(--ink);
-      }
-      .cinerae-mini-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem;
-        margin-bottom: 0.5rem;
+      .cinerae-linktree {
+        display: inline-flex;
         align-items: center;
-      }
-      .cinerae-mini {
-        appearance: none;
-        background: transparent;
-        border: 1px solid rgba(232, 221, 204, 0.3);
-        color: var(--ink);
-        padding: 0.3rem 0.6rem;
-        min-height: 28px;
-        font-size: 0.62rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        cursor: pointer;
-        transition-property: background-color, border-color, color;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        color: var(--ink-dim);
+        transition-property: color;
         transition-duration: 0.2s;
       }
-      .cinerae-mini:hover:not(:disabled) {
-        background: rgba(232, 221, 204, 0.08);
-        border-color: rgba(232, 221, 204, 0.7);
+      .cinerae-linktree:hover {
+        color: var(--ink-bright);
       }
-      .cinerae-mini:disabled {
-        opacity: 0.35;
-        cursor: default;
-      }
-      .cinerae-mini.recording {
-        border-color: rgba(230, 96, 60, 0.8);
-        color: #e6845c;
-      }
-      .cinerae-hint {
-        color: var(--ink-dim);
-        font-size: 0.62rem;
-        letter-spacing: 0.06em;
-        margin-bottom: 0.45rem;
-      }
-      .cinerae-binding {
-        justify-content: space-between;
-        color: rgba(232, 221, 204, 0.78);
+      .cinerae-linktree svg {
+        width: 16px;
+        height: 16px;
       }
 
-      /* ---- palette gradient editor ---- */
-      .cinerae-colors {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.35rem;
-        margin-bottom: 0.55rem;
-      }
-      .cinerae-colors input[type="color"] {
-        appearance: none;
-        width: 30px;
-        height: 26px;
-        padding: 0;
-        border: 1px solid rgba(232, 221, 204, 0.3);
-        background: transparent;
-        cursor: pointer;
-      }
-      .cinerae-colors input[type="color"]::-webkit-color-swatch-wrapper {
-        padding: 2px;
-      }
-      .cinerae-colors input[type="color"]::-webkit-color-swatch {
-        border: none;
-      }
-      .cinerae-color-label {
-        color: var(--ink-dim);
-        font-size: 0.62rem;
-        margin-left: 0.3rem;
+      /* ---- reserved hint slot: hints never move anything ---- */
+      .cinerae-hintbar {
+        flex: none;
+        height: 2.3rem;
+        margin-top: 0.25rem;
+        padding-top: 0.3rem;
+        border-top: 1px solid var(--ink-faint);
+        color: rgba(232, 221, 204, 0.55);
+        font-size: 0.6rem;
+        letter-spacing: 0.04em;
+        line-height: 1.45;
+        overflow: hidden;
+        text-wrap: pretty;
       }
 
-      /* ---- modulation ---- */
-      .cinerae-lfo-head {
-        color: var(--ink-dim);
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        font-size: 0.58rem;
-        margin: 0.5rem 0 0.35rem;
-      }
+      /* ---- modulation link rows ---- */
       .cinerae-link {
         border-left: 2px solid rgba(232, 221, 204, 0.15);
         padding-left: 0.55rem;
-        margin-bottom: 0.6rem;
+        margin-bottom: 0.5rem;
       }
       .cinerae-link-selects {
         display: flex;
         align-items: center;
         gap: 0.35rem;
-        margin-bottom: 0.4rem;
+        margin-bottom: 5px;
       }
       .cinerae-link-selects .cinerae-select {
         flex: 1;
@@ -890,7 +944,17 @@
         transition-duration: 0.8s;
       }
 
-      /* ---- mobile: bottom sheet ---- */
+      @media (prefers-reduced-motion: reduce) {
+        .cinerae-panel,
+        .cinerae-panel *,
+        #overlay,
+        #overlay * {
+          transition-duration: 0.01s !important;
+          animation-duration: 0.01s !important;
+        }
+      }
+
+      /* ---- mobile: bottom sheet, same rules, bigger targets ---- */
       @media (max-width: 720px), (pointer: coarse) and (max-width: 1024px) {
         .cinerae-panel {
           top: auto;
@@ -898,12 +962,12 @@
           left: 0;
           bottom: 0;
           width: 100%;
-          max-height: min(70vh, 34rem);
+          max-height: 86vh;
           border-left: none;
           border-right: none;
           border-bottom: none;
-          padding: 0 1.2rem calc(1.2rem + env(safe-area-inset-bottom));
-          font-size: 0.8rem;
+          padding: 0 1.2rem calc(0.8rem + env(safe-area-inset-bottom));
+          font-size: 0.78rem;
           translate: 0 0;
           transition-property: translate, opacity;
         }
@@ -911,7 +975,6 @@
           opacity: 1;
           pointer-events: auto;
           translate: 0 calc(100% - 52px);
-          overflow-y: hidden;
         }
         .cinerae-open {
           display: none;
@@ -942,16 +1005,36 @@
         .cinerae-actions button {
           min-height: 44px;
         }
-        .cinerae-row input[type="range"] {
-          height: 2rem;
-          font-size: 16px;
+        .cinerae-switch {
+          height: 44px;
         }
-        .cinerae-chip {
-          min-height: 40px;
-          padding: 0.35rem 0.75rem;
-          font-size: 0.74rem;
+        .cinerae-row,
+        .cinerae-select-row,
+        .cinerae-colors {
+          height: 40px;
+        }
+        .cinerae-row input[type="range"]::-webkit-slider-thumb {
+          height: 38px;
+          width: 3px;
+        }
+        .cinerae-row input[type="range"]::-moz-range-thumb {
+          height: 38px;
+          width: 3px;
+        }
+        .cinerae-select {
+          height: 36px;
+        }
+        .cinerae-chip,
+        .cinerae-mini {
+          height: 40px;
+          padding: 0 0.75rem;
+          font-size: 0.7rem;
+        }
+        .cinerae-subtabs button {
+          min-height: 36px;
         }
         .cinerae-text-row input {
+          height: 40px;
           font-size: 16px;
         }
         .cinerae-switch-track {

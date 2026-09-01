@@ -1,17 +1,16 @@
-// Settings panel. Three modes: Umbra (one "moi ◀▶ le monde" slider and the
-// tint pastilles), Anima (five question sections — Qui je suis / Ce que fait
-// mon geste / Ce que fait ma voix / Le temps et la mémoire / Le look), Pro
-// (the same plus fine settings, scenes, A/B crossfade, matrix, MIDI). Every
-// visible word goes through the FR/EN dictionary; every slider names a
-// visible effect and carries a one-line hint; tapping a slider's name plays
-// a two-second demo sweep. The def registry is the single gate: presets,
-// crossfade, Chaos (per-def flag + range), matrix and MIDI all reach every
-// setting through it.
-// Desktop: collapsible card top-right. Mobile: bottom sheet with a handle.
-// Every control writes straight into live state read by the render loop.
+// Settings panel, v0.7.1b — simple and sober. A header, the three tabs
+// (Umbra / Anima / Pro), then a single accordion stack: one section open at
+// a time, opening one closes the others. Nothing ever scrolls: every row
+// shares one fixed-height template (name left, value right, clean track),
+// hints live in a reserved slot at the bottom of the panel, and a section
+// too tall for the window splits into sub-tabs instead of scrolling.
+// Every visible word goes through the FR/EN dictionary. The def registry is
+// the single gate: presets, crossfade, Chaos (per-def flag + range), matrix
+// and MIDI all reach every setting through it.
+// Desktop: card top-right. Mobile: bottom sheet with a handle.
 import { IMPRINT_VARIANTS, type ImprintFamily, type ImprintSettings } from "./imprints";
 import { PALETTES, sampleStops, type LookColors, type Rgb } from "./look";
-import { getLang, setLang, t, words } from "./i18n";
+import { getLang, setLang, t } from "./i18n";
 import type { Midi } from "./midi";
 import { LFO_SHAPES, type LfoShape, type ModLink, type ModMatrix, type ParamRef } from "./modmatrix";
 import type { PresetData, Presets } from "./presets";
@@ -76,9 +75,9 @@ type SectionId =
 interface ControlDef extends ParamRef {
   modes: PanelMode[];
   section: SectionId;
+  /** Sub-tab of a grouped section this row belongs to. */
+  group?: string;
   format?: (v: number) => string;
-  /** Verbal readout already — never replaced by the generic word scale. */
-  verbal?: boolean;
   /** Extra gate on top of modes (imprint family params, gated look rows). */
   visible?: () => boolean;
   /** Render as a <select> of these options instead of a slider. */
@@ -110,22 +109,10 @@ const hexToRgb = (s: string): Rgb => [
   parseInt(s.slice(5, 7), 16) / 255,
 ];
 
-// Micro-sketches of grains for the section heads: nothing but dots and a
-// stroke or two — dust drawings, never app icons.
-const SKETCH: Record<string, string> = {
-  moi: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="4.4" r="0.9"/><circle cx="7.6" cy="6.6" r="0.7"/><circle cx="10.4" cy="6.6" r="0.7"/><circle cx="6.8" cy="9" r="0.8"/><circle cx="9" cy="8.6" r="0.7"/><circle cx="11.2" cy="9" r="0.8"/><circle cx="7.4" cy="11.6" r="0.7"/><circle cx="10.6" cy="11.6" r="0.7"/><circle cx="8.2" cy="14" r="0.8"/><circle cx="9.9" cy="14" r="0.8"/><circle cx="3.4" cy="5.4" r="0.5" opacity="0.4"/><circle cx="14.8" cy="7.4" r="0.5" opacity="0.4"/><circle cx="14" cy="12.8" r="0.5" opacity="0.4"/><circle cx="3.8" cy="12" r="0.5" opacity="0.4"/></g></svg>`,
-  geste: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="13.5" r="0.9"/><circle cx="5.4" cy="12.2" r="0.8"/><circle cx="7.8" cy="10.6" r="0.7"/><circle cx="10" cy="8.8" r="0.7"/><circle cx="12" cy="6.8" r="0.8"/><circle cx="13.8" cy="4.6" r="0.9"/><circle cx="6.6" cy="14.6" r="0.5" opacity="0.4"/><circle cx="9.6" cy="12.6" r="0.5" opacity="0.4"/><circle cx="12.4" cy="10.2" r="0.5" opacity="0.4"/></g></svg>`,
-  voix: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="3.4" cy="9" r="0.9"/><circle cx="5.8" cy="6.6" r="0.7"/><circle cx="5.8" cy="11.4" r="0.7"/><circle cx="8.4" cy="4.8" r="0.6"/><circle cx="8.4" cy="9" r="0.6"/><circle cx="8.4" cy="13.2" r="0.6"/><circle cx="11" cy="6" r="0.6" opacity="0.7"/><circle cx="11" cy="12" r="0.6" opacity="0.7"/><circle cx="13.6" cy="7.6" r="0.5" opacity="0.4"/><circle cx="13.6" cy="10.4" r="0.5" opacity="0.4"/></g></svg>`,
-  temps: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="3.4" r="0.8"/><circle cx="12.6" cy="5" r="0.7"/><circle cx="14" cy="9" r="0.8"/><circle cx="12.6" cy="13" r="0.7"/><circle cx="9" cy="14.6" r="0.8"/><circle cx="5.4" cy="13" r="0.7" opacity="0.6"/><circle cx="4" cy="9" r="0.6" opacity="0.4"/><circle cx="5.4" cy="5" r="0.5" opacity="0.3"/><circle cx="9" cy="9" r="0.6"/></g></svg>`,
-  look: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="4.4" cy="6" r="1.1" opacity="0.95"/><circle cx="8.6" cy="4.6" r="0.9" opacity="0.75"/><circle cx="12.8" cy="6.2" r="1" opacity="0.55"/><circle cx="6.4" cy="10" r="0.9" opacity="0.65"/><circle cx="10.8" cy="10.4" r="1" opacity="0.45"/><circle cx="4.8" cy="13.6" r="0.8" opacity="0.35"/><circle cx="9" cy="13.8" r="0.7" opacity="0.3"/><circle cx="13.2" cy="13.4" r="0.8" opacity="0.25"/></g></svg>`,
-  scenes: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="5" r="0.8"/><circle cx="7" cy="5" r="0.6" opacity="0.6"/><circle cx="4" cy="9" r="0.6" opacity="0.6"/><circle cx="7" cy="9" r="0.8"/><circle cx="11" cy="5" r="0.6" opacity="0.6"/><circle cx="14" cy="5" r="0.6" opacity="0.4"/><circle cx="11" cy="9" r="0.6" opacity="0.4"/><circle cx="14" cy="9" r="0.6" opacity="0.6"/><circle cx="9" cy="13.4" r="0.8"/><circle cx="6" cy="13.4" r="0.5" opacity="0.4"/><circle cx="12" cy="13.4" r="0.5" opacity="0.4"/></g></svg>`,
-  empreintes: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="4" r="0.7"/><circle cx="12" cy="5.4" r="0.6"/><circle cx="13.4" cy="8.4" r="0.7"/><circle cx="12" cy="11.4" r="0.6"/><circle cx="9" cy="12.8" r="0.7"/><circle cx="6" cy="11.4" r="0.6"/><circle cx="4.6" cy="8.4" r="0.7"/><circle cx="6" cy="5.4" r="0.6"/><circle cx="9" cy="8.4" r="0.5" opacity="0.5"/></g></svg>`,
-  modulation: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="9" r="0.6"/><circle cx="5.2" cy="6" r="0.6"/><circle cx="7.4" cy="4.8" r="0.6"/><circle cx="9.6" cy="6" r="0.6"/><circle cx="11.8" cy="9" r="0.6"/><circle cx="14" cy="12" r="0.6"/><circle cx="15.6" cy="13" r="0.6" opacity="0.5"/></g></svg>`,
-  midi: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="5" cy="5" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="13" cy="5" r="1"/><circle cx="5" cy="9" r="0.6" opacity="0.5"/><circle cx="9" cy="9" r="0.6" opacity="0.5"/><circle cx="13" cy="9" r="0.6" opacity="0.5"/><circle cx="7" cy="13" r="0.7"/><circle cx="11" cy="13" r="0.7"/></g></svg>`,
-  aide: `<svg viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="7" cy="5.4" r="0.7"/><circle cx="9.4" cy="4.6" r="0.7"/><circle cx="11.4" cy="5.8" r="0.7"/><circle cx="11.8" cy="8" r="0.7"/><circle cx="10.2" cy="9.8" r="0.7"/><circle cx="9" cy="11.4" r="0.6"/><circle cx="9" cy="14.2" r="0.8"/></g></svg>`,
-};
-
 const SLIDERS_ICON = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 10h14M3 14h14"/><circle cx="7" cy="6" r="1.8" fill="#050403"/><circle cx="13" cy="10" r="1.8" fill="#050403"/><circle cx="9" cy="14" r="1.8" fill="#050403"/></svg>`;
+
+// The Linktree mark, redrawn as a minimal asterisk-tree.
+const LINKTREE_ICON = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M8 1.5v7M8 8.5 3.2 4.9M8 8.5l4.8-3.6M2.4 8.5h11.2M8 8.5v6"/></svg>`;
 
 const MATERIAL_KEYS = [
   "fumee",
@@ -138,6 +125,15 @@ const MATERIAL_KEYS = [
   "contours",
 ] as const;
 
+// Sub-tabs of the tall sections: a section either fits the window whole or
+// splits into these fixed pages — never a scrollbar.
+const SECTION_GROUPS: Partial<Record<SectionId, string[]>> = {
+  moi: ["corps", "tenue"],
+  look: ["teinte", "degrade", "matiere", "lumiere", "espace", "vie"],
+  empreintes: ["forme", "reglages"],
+  aide: ["modes", "clavier", "gestes", "camext", "liens"],
+};
+
 export function createPanel(
   root: HTMLElement,
   state: PanelState,
@@ -148,18 +144,9 @@ export function createPanel(
   let sensors = { camera: false, mic: false };
   let midiLearn = false;
   let umbraValue = 0.5;
-  const sectionOpen: Record<SectionId, boolean> = {
-    scenes: true,
-    moi: true,
-    geste: false,
-    voix: false,
-    temps: false,
-    look: true,
-    empreintes: false,
-    modulation: false,
-    midi: false,
-    aide: false,
-  };
+  // Accordion: exactly one section open at a time (or none).
+  let openSection: SectionId | null = "moi";
+  const groupOpen: Partial<Record<SectionId, string>> = {};
 
   // ----- the registry -------------------------------------------------------
   // Every setting is a def: label + hint from the dictionary, section, the
@@ -193,33 +180,34 @@ export function createPanel(
     MATERIAL_KEYS.map((k, i) => ({ value: i, label: t(`mat.${k}`) }));
 
   const controls: ControlDef[] = [
-    // ---- umbra macro: one slider that ties the room's balance ------------
+    // ---- umbra macro: one slider that doses the body's push --------------
     def("umbra", "moi", [], 0, 1, 0.01, () => umbraValue, (v) => {
       umbraValue = v;
-      writeDef("presenceShare", 0.95 - v * 0.75);
-      writeDef("fondVisible", 0.12 + v * 0.88);
-      writeDef("bodyMargin", 1.6 - v * 1.2);
-    }, { transient: true, verbal: true, format: (v) => words(1 - v) }),
+      writeDef("push", v * 2);
+      writeDef("bodyMargin", v * 2);
+    }, { transient: true, format: percent }),
     // ---- moi : qui je suis ----------------------------------------------
     def("presenceShare", "moi", ["anima", "pro"], 0.1, 1, 0.01,
       () => state.tuning.presenceShare, (v) => (state.tuning.presenceShare = v),
-      { format: percent, chaos: [0.35, 1] }),
+      { format: percent, chaos: [0.35, 1], group: "corps" }),
     def("count", "moi", ["anima", "pro"], 10_000, 400_000, 10_000,
       () => state.tuning.count, (v) => (state.tuning.count = v),
-      { format: thousands, verbal: true }),
+      { format: thousands, group: "corps" }),
     def("bodyMat", "moi", ["anima", "pro"], 0, 7, 1,
       () => state.tuning.bodyMat, (v) => {
         state.tuning.bodyMat = v;
         state.tuning.matBlend = 0; // the hand takes over from the crossfade
       },
-      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true }),
+      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "corps" }),
+    def("presenceSize", "moi", ["anima", "pro"], 0.6, 3, 0.05,
+      () => state.tuning.presenceSize, (v) => (state.tuning.presenceSize = v),
+      { format: (v) => `×${plain(v)}`, chaos: [0.8, 2.4], group: "corps" }),
     def("presenceTrail", "moi", ["anima", "pro"], 0, 5, 0.1,
       () => state.tuning.presenceTrail, (v) => (state.tuning.presenceTrail = v),
-      { format: (v) => `${plain(v)} s`, verbal: true, chaos: [0.5, 4] }),
+      { format: (v) => `${plain(v)} s`, chaos: [0.5, 4], group: "tenue" }),
     def("presenceHold", "moi", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.presenceHold, (v) => (state.tuning.presenceHold = v),
       {
-        verbal: true,
         format: (v) =>
           v < 0.05
             ? t("val.holdFree")
@@ -229,24 +217,26 @@ export function createPanel(
                 ? t("val.holdElastic")
                 : t("val.holdRigid"),
         chaos: [0.2, 1],
+        group: "tenue",
       }),
     def("elastic", "moi", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.elastic, (v) => (state.tuning.elastic = v),
-      { format: percent, chaos: [0.2, 1] }),
-    def("presenceSize", "moi", ["anima", "pro"], 0.6, 3, 0.05,
-      () => state.tuning.presenceSize, (v) => (state.tuning.presenceSize = v),
-      { format: (v) => `×${plain(v)}`, verbal: true, chaos: [0.8, 2.4] }),
+      { format: percent, chaos: [0.2, 1], group: "tenue" }),
     def("presenceThreshold", "moi", ["pro"], 0.0005, 0.01, 0.0005,
       () => state.behavior.presenceThreshold,
-      (v) => (state.behavior.presenceThreshold = v)),
+      (v) => (state.behavior.presenceThreshold = v),
+      { group: "tenue" }),
     def("presenceDelay", "moi", ["pro"], 1, 30, 0.5,
       () => state.behavior.presenceDelay,
       (v) => (state.behavior.presenceDelay = v),
-      { format: (v) => `${plain(v)} s`, verbal: true }),
+      { format: (v) => `${plain(v)} s`, group: "tenue" }),
     // ---- geste : ce que fait mon geste ----------------------------------
+    def("push", "geste", ["anima", "pro"], 0, 2, 0.05,
+      () => state.tuning.push, (v) => (state.tuning.push = v),
+      { format: (v) => percent(v / 2), chaos: [0.3, 1.8] }),
     def("gesture", "geste", ["anima", "pro"], 0.3, 3, 0.05,
       () => state.tuning.gestureGain, (v) => (state.tuning.gestureGain = v),
-      { format: (v) => `×${plain(v)}`, verbal: true }),
+      { format: (v) => `×${plain(v)}` }),
     def("bodyMargin", "geste", ["anima", "pro"], 0, 2, 0.05,
       () => state.tuning.bodyMargin, (v) => (state.tuning.bodyMargin = v),
       { format: (v) => percent(v / 2), chaos: [0.3, 1.6] }),
@@ -292,7 +282,6 @@ export function createPanel(
     def("timeScale", "temps", ["anima", "pro"], -1, 1, 0.01,
       () => state.tuning.timeScale, (v) => (state.tuning.timeScale = v),
       {
-        verbal: true,
         format: (v) =>
           Math.abs(v) < 0.02
             ? t("val.timeFrozen")
@@ -312,7 +301,6 @@ export function createPanel(
       () => state.tuning.memorySeconds, (v) => (state.tuning.memorySeconds = v),
       {
         format: (v) => `${Math.round(v)} s`,
-        verbal: true,
         visible: () => state.tuning.memoryGain > 0.001,
       }),
     def("lifeCycle", "temps", ["pro"], 15, 120, 1,
@@ -325,27 +313,13 @@ export function createPanel(
       () => (state.behavior.imprintReturn ? 1 : 0),
       (v) => (state.behavior.imprintReturn = v > 0.5)),
     // ---- look : le monde autour -----------------------------------------
-    def("fondMat", "look", ["anima", "pro"], 0, 7, 1,
-      () => state.tuning.fondMat, (v) => {
-        state.tuning.fondMat = v;
-        state.tuning.matBlend = 0;
-      },
-      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true }),
-    def("fondVisible", "look", ["anima", "pro"], 0, 1, 0.01,
-      () => state.tuning.fondVisible, (v) => (state.tuning.fondVisible = v),
-      { format: percent, chaos: [0.15, 0.8] }),
-    def("turbulence", "look", ["anima", "pro"], 0, 2, 0.05,
-      () => state.tuning.turbulence, (v) => (state.tuning.turbulence = v),
-      { format: (v) => percent(v / 2), chaos: [0.3, 1.5] }),
-    def("fondReact", "look", ["anima", "pro"], 0, 2, 0.05,
-      () => state.tuning.fondReact, (v) => (state.tuning.fondReact = v),
-      { format: (v) => percent(v / 2), chaos: [0.4, 1.6] }),
     def("colorDriver", "look", ["anima", "pro"], 0, 3, 1,
       () => state.tuning.colorDriver, (v) => (state.tuning.colorDriver = v),
       {
         discrete: true,
         chaos: [0, 3],
         chaosSnap: true,
+        group: "teinte",
         options: () => [
           { value: 0, label: t("opt.driverAge") },
           { value: 1, label: t("opt.driverSpeed") },
@@ -359,6 +333,7 @@ export function createPanel(
         discrete: true,
         chaos: [0, 3],
         chaosSnap: true,
+        group: "teinte",
         options: () => [
           { value: 0, label: t("opt.blendAdd") },
           { value: 1, label: t("opt.blendScreen") },
@@ -367,20 +342,52 @@ export function createPanel(
           { value: 4, label: t("opt.blendPaper") },
         ],
       }),
+    def("fondMat", "look", ["anima", "pro"], 0, 7, 1,
+      () => state.tuning.fondMat, (v) => {
+        state.tuning.fondMat = v;
+        state.tuning.matBlend = 0;
+      },
+      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "matiere" }),
+    def("fondVisible", "look", ["anima", "pro"], 0, 1, 0.01,
+      () => state.tuning.fondVisible, (v) => (state.tuning.fondVisible = v),
+      { format: percent, chaos: [0.15, 0.8], group: "matiere" }),
+    def("turbulence", "look", ["anima", "pro"], 0, 2, 0.05,
+      () => state.tuning.turbulence, (v) => (state.tuning.turbulence = v),
+      { format: (v) => percent(v / 2), chaos: [0.3, 1.5], group: "matiere" }),
+    def("fondReact", "look", ["anima", "pro"], 0, 2, 0.05,
+      () => state.tuning.fondReact, (v) => (state.tuning.fondReact = v),
+      { format: (v) => percent(v / 2), chaos: [0.4, 1.6], group: "matiere" }),
+    def("size", "look", ["pro"], 0.8, 5, 0.1,
+      () => state.tuning.pointSize, (v) => (state.tuning.pointSize = v),
+      { group: "matiere" }),
+    def("exposure", "look", ["pro"], 0.5, 3, 0.05,
+      () => state.tuning.exposure, (v) => (state.tuning.exposure = v),
+      { group: "matiere" }),
     def("halo", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.halo, (v) => (state.tuning.halo = v),
-      { format: percent, chaos: [0, 0.5] }),
+      { format: percent, chaos: [0, 0.5], group: "lumiere" }),
     def("paperGrain", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.paperGrain, (v) => (state.tuning.paperGrain = v),
-      { format: percent }),
+      { format: percent, group: "lumiere" }),
+    def("strobe", "look", ["anima", "pro"], 0, 1, 0.01,
+      () => state.tuning.strobe, (v) => (state.tuning.strobe = v),
+      { format: percent, chaos: [0, 0.3], group: "lumiere" }),
+    def("fringe", "look", ["pro"], 0, 1, 0.01,
+      () => state.tuning.fringeTint, (v) => (state.tuning.fringeTint = v),
+      {
+        format: (v) =>
+          v < 0.4 ? t("val.warm") : v > 0.6 ? t("val.cool") : t("val.neutral"),
+        group: "lumiere",
+      }),
     def("depthAmount", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.depthAmount, (v) => (state.tuning.depthAmount = v),
-      { format: percent, reveals: true, chaos: [0, 0.8] }),
+      { format: percent, reveals: true, chaos: [0, 0.8], group: "espace" }),
     def("focusLayer", "look", ["anima", "pro"], 0, 2, 1,
       () => state.tuning.focusLayer, (v) => (state.tuning.focusLayer = v),
       {
         discrete: true,
         visible: () => state.tuning.depthAmount > 0.001,
+        group: "espace",
         options: () => [
           { value: 0, label: t("opt.layerFar") },
           { value: 1, label: t("opt.layerMid") },
@@ -389,7 +396,7 @@ export function createPanel(
       }),
     def("dofBlur", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.dofBlur, (v) => (state.tuning.dofBlur = v),
-      { format: percent, visible: () => state.tuning.depthAmount > 0.001 }),
+      { format: percent, visible: () => state.tuning.depthAmount > 0.001, group: "espace" }),
     def("symMode", "look", ["anima", "pro"], 0, 4, 1,
       () => state.tuning.symMode, (v) => (state.tuning.symMode = v),
       {
@@ -397,6 +404,7 @@ export function createPanel(
         chaos: [0, 4],
         chaosSnap: true,
         reveals: true,
+        group: "espace",
         options: () => [
           { value: 0, label: t("opt.symNone") },
           { value: 1, label: t("opt.symH") },
@@ -409,39 +417,26 @@ export function createPanel(
       () => state.tuning.symN, (v) => (state.tuning.symN = v),
       {
         format: (v) => String(Math.round(v)),
-        verbal: true,
         visible: () => state.tuning.symMode > 3.5,
         chaos: [3, 9],
         chaosSnap: true,
-      }),
-    def("strobe", "look", ["anima", "pro"], 0, 1, 0.01,
-      () => state.tuning.strobe, (v) => (state.tuning.strobe = v),
-      { format: percent, chaos: [0, 0.3] }),
-    def("size", "look", ["pro"], 0.8, 5, 0.1,
-      () => state.tuning.pointSize, (v) => (state.tuning.pointSize = v)),
-    def("exposure", "look", ["pro"], 0.5, 3, 0.05,
-      () => state.tuning.exposure, (v) => (state.tuning.exposure = v)),
-    def("fringe", "look", ["pro"], 0, 1, 0.01,
-      () => state.tuning.fringeTint, (v) => (state.tuning.fringeTint = v),
-      {
-        verbal: true,
-        format: (v) =>
-          v < 0.4 ? t("val.warm") : v > 0.6 ? t("val.cool") : t("val.neutral"),
+        group: "espace",
       }),
     def("breath", "look", ["pro"], 0, 2, 0.05,
       () => state.tuning.gustStrength, (v) => (state.tuning.gustStrength = v),
-      { format: (v) => percent(v / 2), chaos: [0.3, 1.8] }),
+      { format: (v) => percent(v / 2), chaos: [0.3, 1.8], group: "vie" }),
     def("filament", "look", ["pro"], 0, 2, 0.05,
       () => state.tuning.filament, (v) => (state.tuning.filament = v),
-      { chaos: [0, 2] }),
+      { chaos: [0, 2], group: "vie" }),
     def("ashShare", "look", ["pro"], 0.05, 0.35, 0.01,
       () => state.tuning.ashShare, (v) => (state.tuning.ashShare = v),
-      { format: percent }),
+      { format: percent, group: "vie" }),
     def("sediment", "look", ["pro"], 0, 2, 0.05,
-      () => state.tuning.sediment, (v) => (state.tuning.sediment = v)),
+      () => state.tuning.sediment, (v) => (state.tuning.sediment = v),
+      { group: "vie" }),
     def("ghost", "look", ["pro"], 0, 0.35, 0.005,
       () => state.tuning.ghost, (v) => (state.tuning.ghost = v),
-      { format: (v) => percent(v / 0.35) }),
+      { format: (v) => percent(v / 0.35), group: "vie" }),
     // ---- crossfade (rendered by the scenes section, target like any) -----
     def("xfade", "scenes", [], 0, 1, 0.005,
       () => hooks.getXfade(), (v) => hooks.onCrossfade(v),
@@ -465,39 +460,39 @@ export function createPanel(
     // ---- paramètres fins des empreintes (pro, gated by family) -----------
     def("waveFreq", "empreintes", ["pro"], 0.5, 8, 0.1,
       () => state.imprint.wave.freq, (v) => (state.imprint.wave.freq = v),
-      { visible: () => state.imprint.family === "ondes", imprint: true }),
+      { visible: () => state.imprint.family === "ondes", imprint: true, group: "reglages" }),
     def("waveAmp", "empreintes", ["pro"], 0.02, 0.25, 0.005,
       () => state.imprint.wave.amp, (v) => (state.imprint.wave.amp = v),
-      { visible: () => state.imprint.family === "ondes", imprint: true }),
+      { visible: () => state.imprint.family === "ondes", imprint: true, group: "reglages" }),
     def("waveThick", "empreintes", ["pro"], 0.001, 0.02, 0.001,
       () => state.imprint.wave.thickness,
       (v) => (state.imprint.wave.thickness = v),
-      { visible: () => state.imprint.family === "ondes", imprint: true }),
+      { visible: () => state.imprint.family === "ondes", imprint: true, group: "reglages" }),
     def("waveCount", "empreintes", ["pro"], 1, 7, 1,
       () => state.imprint.wave.waves, (v) => (state.imprint.wave.waves = v),
       {
         visible: () => state.imprint.family === "ondes",
         imprint: true,
         format: (v) => String(Math.round(v)),
-        verbal: true,
+        group: "reglages",
       }),
     def("waveDrift", "empreintes", ["pro"], 0, 2, 0.05,
       () => state.imprint.wave.drift, (v) => (state.imprint.wave.drift = v),
-      { visible: () => state.imprint.family === "ondes", imprint: true }),
+      { visible: () => state.imprint.family === "ondes", imprint: true, group: "reglages" }),
     def("multiN", "empreintes", ["pro"], 2, 9, 1,
       () => state.imprint.multi.n, (v) => (state.imprint.multi.n = v),
       {
         visible: () => state.imprint.family === "multi",
         imprint: true,
         format: (v) => String(Math.round(v)),
-        verbal: true,
+        group: "reglages",
       }),
     def("multiSize", "empreintes", ["pro"], 0.08, 0.4, 0.01,
       () => state.imprint.multi.size, (v) => (state.imprint.multi.size = v),
-      { visible: () => state.imprint.family === "multi", imprint: true }),
+      { visible: () => state.imprint.family === "multi", imprint: true, group: "reglages" }),
     def("spin", "empreintes", ["pro"], 0, 2, 0.05,
       () => state.imprint.spin, (v) => (state.imprint.spin = v),
-      { visible: () => state.imprint.family === "volume", imprint: true }),
+      { visible: () => state.imprint.family === "volume", imprint: true, group: "reglages" }),
     def("lissaA", "empreintes", ["pro"], 1, 7, 1,
       () => state.imprint.lissa.a, (v) => (state.imprint.lissa.a = v),
       {
@@ -505,7 +500,7 @@ export function createPanel(
           state.imprint.family === "math" && state.imprint.variant === "lissajous",
         imprint: true,
         format: (v) => String(Math.round(v)),
-        verbal: true,
+        group: "reglages",
       }),
     def("lissaB", "empreintes", ["pro"], 1, 7, 1,
       () => state.imprint.lissa.b, (v) => (state.imprint.lissa.b = v),
@@ -514,7 +509,7 @@ export function createPanel(
           state.imprint.family === "math" && state.imprint.variant === "lissajous",
         imprint: true,
         format: (v) => String(Math.round(v)),
-        verbal: true,
+        group: "reglages",
       }),
   ];
 
@@ -571,13 +566,6 @@ export function createPanel(
   const statusLine = document.createElement("div");
   statusLine.className = "cinerae-status";
   panel.appendChild(statusLine);
-
-  const crystalBar = document.createElement("div");
-  crystalBar.className = "cinerae-crystal";
-  crystalBar.innerHTML = `<span class="cinerae-crystal-label"></span><span class="cinerae-crystal-track"><span class="cinerae-crystal-fill"></span></span>`;
-  panel.appendChild(crystalBar);
-  const crystalFill = crystalBar.querySelector(".cinerae-crystal-fill") as HTMLElement;
-  const crystalLabel = crystalBar.querySelector(".cinerae-crystal-label") as HTMLElement;
 
   const modeBar = document.createElement("div");
   modeBar.className = "cinerae-modes";
@@ -645,6 +633,13 @@ export function createPanel(
   actions.className = "cinerae-actions";
   panel.appendChild(actions);
 
+  const crystalBar = document.createElement("div");
+  crystalBar.className = "cinerae-crystal";
+  crystalBar.innerHTML = `<span class="cinerae-crystal-label"></span><span class="cinerae-crystal-track"><span class="cinerae-crystal-fill"></span></span>`;
+  panel.appendChild(crystalBar);
+  const crystalFill = crystalBar.querySelector(".cinerae-crystal-fill") as HTMLElement;
+  const crystalLabel = crystalBar.querySelector(".cinerae-crystal-label") as HTMLElement;
+
   // ----- chaos & reset: registry-driven --------------------------------------
   const writeDef = (key: string, v: number) => {
     const def = controls.find((d) => d.key === key);
@@ -694,12 +689,12 @@ export function createPanel(
   resetButton.addEventListener("click", reset);
   actions.append(chaosButton, resetButton);
 
-  // ----- umbra: one slider, the tints, nothing else -------------------------
+  // ----- umbra: the tints and one slider, nothing else ----------------------
   const umbraBox = document.createElement("div");
   umbraBox.className = "cinerae-umbra";
   panel.appendChild(umbraBox);
 
-  // ----- collapsible sections ----------------------------------------------
+  // ----- accordion sections -------------------------------------------------
   const SECTION_ORDER: SectionId[] = [
     "scenes",
     "moi",
@@ -714,19 +709,20 @@ export function createPanel(
   ];
   const sections = {} as Record<
     SectionId,
-    { box: HTMLElement; body: HTMLElement; title: HTMLElement }
+    { box: HTMLElement; head: HTMLButtonElement; body: HTMLElement; title: HTMLElement }
   >;
   for (const id of SECTION_ORDER) {
     const box = document.createElement("div");
-    box.className = `cinerae-section cinerae-strata-${id}`;
+    box.className = "cinerae-section";
     const head = document.createElement("button");
     head.type = "button";
     head.className = "cinerae-section-head";
-    head.innerHTML = `<span class="cinerae-sketch">${SKETCH[id] ?? ""}</span><span class="cinerae-section-title"></span><span class="cinerae-section-caret"></span>`;
+    head.innerHTML = `<span class="cinerae-section-title"></span><span class="cinerae-section-caret" aria-hidden="true"></span>`;
     const body = document.createElement("div");
     body.className = "cinerae-section-body";
     head.addEventListener("click", () => {
-      sectionOpen[id] = !sectionOpen[id];
+      // One section open at a time: opening one closes the others.
+      openSection = openSection === id ? null : id;
       hooks.onInteraction();
       renderMode();
     });
@@ -734,17 +730,33 @@ export function createPanel(
     panel.appendChild(box);
     sections[id] = {
       box,
+      head,
       body,
       title: head.querySelector(".cinerae-section-title") as HTMLElement,
     };
   }
+
+  // ----- reserved hint slot -------------------------------------------------
+  // Hints never move anything: they render here, in a slot that is always
+  // present, on hover or focus of any row that carries one.
+  const hintBar = document.createElement("div");
+  hintBar.className = "cinerae-hintbar";
+  panel.appendChild(hintBar);
+  const showHint = (target: EventTarget | null) => {
+    const el =
+      target instanceof Element ? target.closest<HTMLElement>("[data-hint]") : null;
+    hintBar.textContent = el?.dataset.hint ?? "";
+  };
+  panel.addEventListener("mouseover", (e) => showHint(e.target));
+  panel.addEventListener("mouseleave", () => (hintBar.textContent = ""));
+  panel.addEventListener("focusin", (e) => showHint(e.target));
 
   // ----- shared row builders ------------------------------------------------
   let rowRefs: {
     def: ControlDef;
     input: HTMLInputElement;
     readout: HTMLSpanElement;
-    row: HTMLLabelElement;
+    row: HTMLElement;
   }[] = [];
   const changedTimers = new Map<HTMLElement, number>();
   const markChanged = (row: HTMLElement) => {
@@ -760,10 +772,12 @@ export function createPanel(
     );
   };
 
-  // In Umbra and Anima a slider reads in plain words; Pro reads the numbers.
-  const displayFormat = (def: ControlDef): ((v: number) => string) => {
-    if (mode === "pro" || def.verbal) return def.format ?? plain;
-    return (v: number) => words((v - def.min) / Math.max(1e-9, def.max - def.min));
+  // The track fill follows the value — the row itself is the fader.
+  const setFill = (input: HTMLInputElement) => {
+    const min = Number(input.min);
+    const max = Number(input.max);
+    const f = ((Number(input.value) - min) / Math.max(1e-9, max - min)) * 100;
+    input.style.setProperty("--f", `${f.toFixed(1)}%`);
   };
 
   const makeSelect = (
@@ -776,6 +790,7 @@ export function createPanel(
     const row = document.createElement("label");
     row.className = "cinerae-select-row";
     const name = document.createElement("span");
+    name.className = "cinerae-row-name";
     name.textContent = label;
     const select = document.createElement("select");
     select.className = "cinerae-select";
@@ -795,6 +810,8 @@ export function createPanel(
     return { row, select, name };
   };
 
+  // The shared fader template: one fixed-height row, name at the left,
+  // value at the right, a clean track underneath the whole row.
   const makeSliderRow = (
     parent: HTMLElement,
     label: string,
@@ -805,27 +822,31 @@ export function createPanel(
     set: (v: number) => void,
     format: (v: number) => string = plain
   ) => {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "cinerae-row";
-    const name = document.createElement("span");
-    name.className = "cinerae-row-name";
-    name.textContent = label;
-    const readout = document.createElement("span");
-    readout.className = "cinerae-value";
     const input = document.createElement("input");
     input.type = "range";
     input.min = String(min);
     input.max = String(max);
     input.step = String(step);
     input.value = String(get());
-    const show = () => (readout.textContent = format(get()));
+    if (label) input.setAttribute("aria-label", label);
+    const name = document.createElement("span");
+    name.className = "cinerae-row-name";
+    name.textContent = label;
+    const readout = document.createElement("span");
+    readout.className = "cinerae-value";
+    const show = () => {
+      readout.textContent = format(get());
+      setFill(input);
+    };
     show();
     input.addEventListener("input", () => {
       set(Number(input.value));
       show();
       hooks.onInteraction();
     });
-    row.append(name, input, readout);
+    row.append(input, name, readout);
     parent.appendChild(row);
     return { row, input, readout, name, show };
   };
@@ -887,7 +908,7 @@ export function createPanel(
         mod?.onAuthored(def.key, v);
         if (def.imprint) hooks.onImprintParams();
       },
-      displayFormat(def)
+      def.format ?? plain
     );
     row.dataset.hint = t(`hint.${def.key}`);
     if (def.reveals) input.addEventListener("change", () => renderMode());
@@ -934,37 +955,92 @@ export function createPanel(
     }
   };
 
-  const renderSectionDefs = (id: SectionId, body: HTMLElement) => {
+  const renderSectionDefs = (id: SectionId, body: HTMLElement, group?: string) => {
     for (const def of controls) {
       if (def.section !== id) continue;
+      if (group !== undefined && def.group !== group) continue;
       if (!def.modes.includes(mode)) continue;
       if (def.visible && !def.visible()) continue;
       renderDefRow(def, body);
     }
   };
 
-  // ----- teintes (pastilles of colored dust) --------------------------------
+  // ----- sub-tabs of a grouped section --------------------------------------
+  // Renders the tab chips, remembers the active page, returns its id.
+  const renderGroupTabs = (
+    id: SectionId,
+    groups: { key: string; label: string }[],
+    body: HTMLElement
+  ): string => {
+    let active = groupOpen[id] ?? groups[0]!.key;
+    if (!groups.some((g) => g.key === active)) active = groups[0]!.key;
+    groupOpen[id] = active;
+    if (groups.length > 1) {
+      const bar = document.createElement("div");
+      bar.className = "cinerae-subtabs";
+      for (const g of groups) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = g.label;
+        b.classList.toggle("active", g.key === active);
+        b.setAttribute("aria-pressed", String(g.key === active));
+        b.addEventListener("click", () => {
+          groupOpen[id] = g.key;
+          hooks.onInteraction();
+          renderMode();
+        });
+        bar.appendChild(b);
+      }
+      body.appendChild(bar);
+    }
+    return active;
+  };
+
+  // Groups of a def-driven section that actually have content in this mode.
+  const defGroups = (id: SectionId, withExtras: string[] = []): { key: string; label: string }[] =>
+    (SECTION_GROUPS[id] ?? []).filter((g) =>
+      withExtras.includes(g) ||
+      controls.some(
+        (d) =>
+          d.section === id &&
+          d.group === g &&
+          d.modes.includes(mode) &&
+          (!d.visible || d.visible())
+      )
+    ).map((g) => ({ key: g, label: t(`grp.${g}`) }));
+
+  // ----- teintes: the real palette, its name readable -----------------------
   const renderTeintes = (parent: HTMLElement) => {
-    const rowBox = document.createElement("div");
-    rowBox.className = "cinerae-pastilles";
-    rowBox.dataset.hint = t("hint.teinte");
-    parent.appendChild(rowBox);
+    const grid = document.createElement("div");
+    grid.className = "cinerae-teintes";
+    grid.dataset.hint = t("hint.teinte");
+    parent.appendChild(grid);
     for (const p of PALETTES) {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "cinerae-pastille";
+      b.className = "cinerae-teinte";
       b.classList.toggle("active", state.colors.name === p.name);
-      b.title = t(`teinte.${p.name}`);
-      b.setAttribute("aria-label", t(`teinte.${p.name}`));
-      const c0 = rgbToHex(sampleStops(p.colors.stops, 0.15));
-      const c1 = rgbToHex(sampleStops(p.colors.stops, 0.85));
-      const bg = rgbToHex(p.colors.bg);
-      b.style.background = `radial-gradient(circle at 32% 30%, ${c1} 0%, ${c0} 55%, ${bg} 100%)`;
+      const band = document.createElement("span");
+      band.className = "cinerae-teinte-band";
+      // The true palette: its ground first, then the dust gradient.
+      const stops = [
+        rgbToHex(p.colors.bg),
+        rgbToHex(p.colors.bg),
+        ...p.colors.stops.map((s) => rgbToHex(s)),
+      ];
+      const n = stops.length - 1;
+      band.style.background = `linear-gradient(90deg, ${stops
+        .map((c, i) => `${c} ${Math.round((i / n) * 100)}%`)
+        .join(", ")})`;
+      const name = document.createElement("span");
+      name.className = "cinerae-teinte-name";
+      name.textContent = t(`teinte.${p.name}`);
+      b.append(band, name);
       b.addEventListener("click", () => {
         hooks.onInteraction();
         hooks.onPaletteSelect(p.name);
       });
-      rowBox.appendChild(b);
+      grid.appendChild(b);
     }
   };
 
@@ -991,13 +1067,13 @@ export function createPanel(
     parent: HTMLElement,
     label: string,
     onClick: () => void,
-    title = ""
+    hint = ""
   ) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "cinerae-mini";
     b.textContent = label;
-    if (title) b.title = title;
+    if (hint) b.dataset.hint = hint;
     b.addEventListener("click", () => {
       hooks.onInteraction();
       onClick();
@@ -1036,12 +1112,12 @@ export function createPanel(
     // The crossfade row: the VJ's base gesture, a def like any other.
     const xfadeDef = controls.find((d) => d.key === "xfade")!;
     const slotNames = presets?.slotNames ?? [undefined, undefined];
-    const hint = document.createElement("div");
-    hint.className = "cinerae-hint";
-    hint.textContent = presets?.hasSlots
+    const slots = document.createElement("div");
+    slots.className = "cinerae-slotline";
+    slots.textContent = presets?.hasSlots
       ? `A · ${slotNames[0]}  ↔  B · ${slotNames[1]}`
       : t("hint.xfadeFlow");
-    body.appendChild(hint);
+    body.appendChild(slots);
     renderDefRow(xfadeDef, body);
   }
 
@@ -1069,7 +1145,7 @@ export function createPanel(
     row.className = "cinerae-colors";
     row.dataset.hint = t(hintKey);
     const label = document.createElement("span");
-    label.className = "cinerae-color-label";
+    label.className = "cinerae-row-name";
     label.textContent = t(labelKey);
     row.appendChild(label);
     for (const e of entries) {
@@ -1077,6 +1153,7 @@ export function createPanel(
       input.type = "color";
       input.value = rgbToHex(e.value);
       input.title = e.title;
+      input.setAttribute("aria-label", e.title);
       input.addEventListener("input", () => {
         e.set(hexToRgb(input.value));
         state.colors.name = "";
@@ -1088,11 +1165,9 @@ export function createPanel(
     return row;
   };
 
-  function renderLook(body: HTMLElement) {
-    renderTeintes(body);
-
-    if (mode === "pro") {
-      // Gradient editor: 2..5 stops + background, straight into live colors.
+  function renderLookGradient(body: HTMLElement) {
+    // Gradient editor: 2..5 stops + background, straight into live colors.
+    {
       const grad = document.createElement("div");
       grad.className = "cinerae-colors";
       grad.dataset.hint = t("hint.gradient");
@@ -1102,6 +1177,7 @@ export function createPanel(
         input.type = "color";
         input.value = rgbToHex(value);
         input.title = title;
+        input.setAttribute("aria-label", title);
         input.addEventListener("input", () => {
           onSet(hexToRgb(input.value));
           state.colors.name = "";
@@ -1136,71 +1212,80 @@ export function createPanel(
         state.colors.name = "";
       });
       const bgLabel = document.createElement("span");
-      bgLabel.className = "cinerae-color-label";
+      bgLabel.className = "cinerae-row-name";
       bgLabel.textContent = t("ui.bg");
       grad.appendChild(bgLabel);
       colorInput(state.colors.bg, (c) => (state.colors.bg = c), t("ui.bg"));
     }
+  }
 
-    renderSectionDefs("look", body);
+  function renderLook(body: HTMLElement) {
+    const extras = mode === "pro" ? ["teinte", "degrade"] : ["teinte"];
+    const active = renderGroupTabs("look", defGroups("look", extras), body);
+    if (active === "teinte") {
+      renderTeintes(body);
+      renderSectionDefs("look", body, "teinte");
+    } else if (active === "degrade") {
+      renderLookGradient(body);
+    } else {
+      renderSectionDefs("look", body, active);
+    }
     renderCaptureRow(body);
   }
 
-  // ----- moi section (adds the corps tint pair) ----------------------------
+  // ----- moi section (grouped: corps / tenue) -------------------------------
   function renderMoi(body: HTMLElement) {
-    renderSectionDefs("moi", body);
-    colorPairRow(body, "ctl.corpsTint", "hint.corpsTint", [
-      {
-        value: state.colors.corpsLight,
-        set: (c) => (state.colors.corpsLight = c),
-        title: t("ui.light"),
-      },
-      {
-        value: state.colors.corpsShadow,
-        set: (c) => (state.colors.corpsShadow = c),
-        title: t("ui.shadow"),
-      },
-    ]);
-    const autoBox = document.createElement("div");
-    body.appendChild(autoBox);
-    makeSwitch(
-      "sw.auto",
-      () => state.quality.auto,
-      (next) => (state.quality.auto = next),
-      autoBox
-    );
+    const active = renderGroupTabs("moi", defGroups("moi", ["corps", "tenue"]), body);
+    renderSectionDefs("moi", body, active);
+    if (active === "corps") {
+      colorPairRow(body, "ctl.corpsTint", "hint.corpsTint", [
+        {
+          value: state.colors.corpsLight,
+          set: (c) => (state.colors.corpsLight = c),
+          title: t("ui.light"),
+        },
+        {
+          value: state.colors.corpsShadow,
+          set: (c) => (state.colors.corpsShadow = c),
+          title: t("ui.shadow"),
+        },
+      ]);
+    } else {
+      makeSwitch(
+        "sw.auto",
+        () => state.quality.auto,
+        (next) => (state.quality.auto = next),
+        body
+      );
+    }
   }
 
   // ----- geste / temps switches (pro) --------------------------------------
   function renderGeste(body: HTMLElement) {
     renderSectionDefs("geste", body);
     if (mode !== "pro") return;
-    const box = document.createElement("div");
-    body.appendChild(box);
     makeSwitch(
       "sw.mirror",
       () => state.tuning.mirror > 0.5,
       (next) => writeDef("mirror", next ? 1 : 0),
-      box
+      body
     );
     makeSwitch(
       "sw.overlay",
       () => state.tuning.windOverlay > 0.01,
       (next) => writeDef("windOverlay", next ? 0.85 : 0),
-      box
+      body
     );
   }
 
   function renderTemps(body: HTMLElement) {
     renderSectionDefs("temps", body);
     if (mode !== "pro") return;
-    const box = document.createElement("div");
-    body.appendChild(box);
     makeSwitch(
       "sw.imprintReturn",
       () => state.behavior.imprintReturn,
       (next) => writeDef("imprintReturn", next ? 1 : 0),
-      box
+      body
     );
   }
 
@@ -1217,51 +1302,9 @@ export function createPanel(
       .filter((d) => d.key !== "xfade" && !d.hidden)
       .map((d) => ({ key: d.key, label: d.label }));
 
-  function makeTargetSelect(
-    parent: HTMLElement,
-    label: string,
-    current: string | undefined,
-    withNone: boolean,
-    onPick: (key: string) => void
-  ) {
-    const row = document.createElement("label");
-    row.className = "cinerae-select-row";
-    const name = document.createElement("span");
-    name.textContent = label;
-    const select = document.createElement("select");
-    select.className = "cinerae-select";
-    if (withNone) {
-      const o = document.createElement("option");
-      o.value = "";
-      o.textContent = "—";
-      select.appendChild(o);
-    }
-    const xf = document.createElement("option");
-    xf.value = "xfade";
-    xf.textContent = t("ctl.xfade");
-    select.appendChild(xf);
-    for (const opt of targetOptions()) {
-      const o = document.createElement("option");
-      o.value = opt.key;
-      o.textContent = opt.label;
-      select.appendChild(o);
-    }
-    select.value = current ?? "";
-    select.addEventListener("change", () => {
-      hooks.onInteraction();
-      onPick(select.value);
-    });
-    row.append(name, select);
-    parent.appendChild(row);
-  }
-
-  function renderLfoBlock(body: HTMLElement, i: number, simple: boolean) {
+  function renderLfoBlock(body: HTMLElement, i: number) {
     const mod = hooks.getMod()!;
     const lfo = mod.lfos[i]!;
-    const head = document.createElement("div");
-    head.className = "cinerae-lfo-head";
-    head.textContent = `lfo ${i + 1}`;
-    body.appendChild(head);
     const shapeRow = document.createElement("div");
     shapeRow.className = "cinerae-chips";
     body.appendChild(shapeRow);
@@ -1291,99 +1334,64 @@ export function createPanel(
       (v) => (lfo.amp = v),
       percent
     );
-    if (!simple) {
-      makeSliderRow(
-        body,
-        t("ui.lfoPhase"),
-        0,
-        1,
-        0.01,
-        () => lfo.phase,
-        (v) => (lfo.phase = v),
-        percent
-      );
-    }
-    const syncBox = document.createElement("div");
-    body.appendChild(syncBox);
+    makeSliderRow(
+      body,
+      t("ui.lfoPhase"),
+      0,
+      1,
+      0.01,
+      () => lfo.phase,
+      (v) => (lfo.phase = v),
+      percent
+    );
     makeSwitch(
       "sw.lfoSync",
       () => lfo.sync,
       (next) => (lfo.sync = next),
-      syncBox
+      body
     );
-    if (simple) {
-      const source = `lfo${i + 1}`;
-      const link = mod.links.find((l) => l.source === source);
-      makeTargetSelect(body, t("ui.lfoTarget"), link?.target, true, (key) => {
-        if (!key) {
-          if (link) mod.removeLink(link);
-        } else if (link) {
-          mod.retarget(link, key);
-        } else {
-          mod.addLink(source, key);
-        }
+    const lfoBtns = document.createElement("div");
+    lfoBtns.className = "cinerae-mini-row";
+    body.appendChild(lfoBtns);
+    miniButton(lfoBtns, "+ lfo", () => {
+      if (mod.lfos.length < 10) {
+        mod.addLfo();
+        groupOpen.modulation = `lfo${mod.lfos.length}`;
         renderMode();
-      });
-      if (link) {
-        makeSliderRow(
-          body,
-          t("ui.lfoDepth"),
-          -1,
-          1,
-          0.01,
-          () => link.depth,
-          (v) => (link.depth = v),
-          (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)} %`
-        );
       }
-    }
+    });
+    miniButton(lfoBtns, "− lfo", () => {
+      if (mod.lfos.length > 1) {
+        mod.removeLfo();
+        groupOpen.modulation = `lfo${Math.min(i + 1, mod.lfos.length)}`;
+        renderMode();
+      }
+    });
   }
 
   function renderModulation(body: HTMLElement) {
     const mod = hooks.getMod();
     if (!mod) return;
-    for (let i = 0; i < mod.lfos.length; i++) renderLfoBlock(body, i, false);
-
-    const lfoBtns = document.createElement("div");
-    lfoBtns.className = "cinerae-mini-row";
-    body.appendChild(lfoBtns);
-    const mini = (label: string, onClick: () => void, disabled = false) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "cinerae-mini";
-      b.textContent = label;
-      b.disabled = disabled;
-      b.addEventListener("click", () => {
-        hooks.onInteraction();
-        onClick();
+    const groups = [
+      ...mod.lfos.map((_, i) => ({ key: `lfo${i + 1}`, label: `lfo ${i + 1}` })),
+      { key: "liens", label: t("ui.links") },
+    ];
+    const active = renderGroupTabs("modulation", groups, body);
+    if (active === "liens") {
+      for (const link of [...mod.links]) {
+        renderLinkRow(body, mod, link);
+      }
+      const addRow = document.createElement("div");
+      addRow.className = "cinerae-mini-row";
+      body.appendChild(addRow);
+      miniButton(addRow, t("ui.addLink"), () => {
+        mod.addLink("lfo1", "force");
         renderMode();
       });
-      lfoBtns.appendChild(b);
-    };
-    mini("+ lfo", () => mod.addLfo(), mod.lfos.length >= 10);
-    mini("− lfo", () => mod.removeLfo(), mod.lfos.length <= 1);
-
-    // The matrix: source -> target links, each with its own depth.
-    const title = document.createElement("div");
-    title.className = "cinerae-lfo-head";
-    title.textContent = t("ui.links");
-    body.appendChild(title);
-    for (const link of [...mod.links]) {
-      renderLinkRow(body, mod, link);
+    } else {
+      const i = Number(active.slice(3)) - 1;
+      if (mod.lfos[i]) renderLfoBlock(body, i);
     }
-    const addRow = document.createElement("div");
-    addRow.className = "cinerae-mini-row";
-    body.appendChild(addRow);
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "cinerae-mini";
-    add.textContent = t("ui.addLink");
-    add.addEventListener("click", () => {
-      hooks.onInteraction();
-      mod.addLink("lfo1", "force");
-      renderMode();
-    });
-    addRow.appendChild(add);
   }
 
   function renderLinkRow(body: HTMLElement, mod: ModMatrix, link: ModLink) {
@@ -1456,23 +1464,18 @@ export function createPanel(
     const midi = hooks.getMidi();
     if (!midi) return;
     const status = document.createElement("div");
-    status.className = "cinerae-hint";
+    status.className = "cinerae-slotline";
     status.textContent = `midi : ${midi.status}`;
     body.appendChild(status);
     if (!midi.enabled) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "cinerae-mini";
-      b.textContent = t("btn.midiOn");
-      b.addEventListener("click", () => {
-        hooks.onInteraction();
+      const row = document.createElement("div");
+      row.className = "cinerae-mini-row";
+      body.appendChild(row);
+      miniButton(row, t("btn.midiOn"), () => {
         void midi.enable().then(() => renderMode());
       });
-      body.appendChild(b);
       return;
     }
-    const learnBox = document.createElement("div");
-    body.appendChild(learnBox);
     makeSwitch(
       "sw.midiLearn",
       () => midiLearn,
@@ -1481,10 +1484,10 @@ export function createPanel(
         if (!next) midi.disarm();
         renderMode();
       },
-      learnBox
+      body
     );
     const hint = document.createElement("div");
-    hint.className = "cinerae-hint";
+    hint.className = "cinerae-slotline";
     hint.textContent = midiLearn
       ? midi.armedKey
         ? t("ui.midiTurn")
@@ -1540,17 +1543,6 @@ export function createPanel(
   });
   panel.appendChild(fileInput);
 
-  const randomSwitchBox = document.createElement("div");
-  const randomSwitch = makeSwitch(
-    "sw.randomImprint",
-    () => state.imprint.random,
-    (next) => {
-      state.imprint.random = next;
-      hooks.onImprintParams();
-    },
-    randomSwitchBox
-  );
-
   const FAMILY_ORDER: ImprintFamily[] = [
     "titre",
     "fond",
@@ -1582,7 +1574,16 @@ export function createPanel(
   };
 
   function renderImprints(body: HTMLElement) {
-    body.append(familyChips, variantChips, textRow, randomSwitchBox);
+    const active = renderGroupTabs(
+      "empreintes",
+      defGroups("empreintes", ["forme"]),
+      body
+    );
+    if (active !== "forme") {
+      renderSectionDefs("empreintes", body, "reglages");
+      return;
+    }
+    body.append(familyChips, variantChips, textRow);
     familyChips.replaceChildren();
     variantChips.replaceChildren();
     const sel = state.imprint;
@@ -1606,37 +1607,64 @@ export function createPanel(
     textRow.style.display = sel.family === "texte" ? "" : "none";
     textInput.placeholder = t("ui.freeText");
     textInput.value = sel.text;
-    randomSwitchBox.style.display = "";
-    randomSwitch.sync();
-    renderSectionDefs("empreintes", body);
+    makeSwitch(
+      "sw.randomImprint",
+      () => state.imprint.random,
+      (next) => {
+        state.imprint.random = next;
+        hooks.onImprintParams();
+      },
+      body
+    );
   }
 
   // ----- aide ---------------------------------------------------------------
-  // A short, living help — not a manual. Each future chantier adds its own
-  // block to this same section (a titled sub-block appended below).
+  // Short and airy: one page per topic, terms on the left, plain words on
+  // the right. Each future chantier adds its own page here.
   function renderAide(body: HTMLElement) {
-    const block = (titleKey: string, html: string) => {
-      const box = document.createElement("div");
-      box.className = "cinerae-aide-block";
-      const h = document.createElement("div");
-      h.className = "cinerae-aide-title";
-      h.textContent = t(titleKey);
-      const p = document.createElement("div");
-      p.className = "cinerae-aide-text";
-      p.innerHTML = html;
-      box.append(h, p);
-      body.appendChild(box);
+    const groups = SECTION_GROUPS.aide!.map((g) => ({ key: g, label: t(`grp.${g}`) }));
+    const active = renderGroupTabs("aide", groups, body);
+    const item = (term: string, text: string) => {
+      const row = document.createElement("div");
+      row.className = "cinerae-aide-item";
+      const dt = document.createElement("span");
+      dt.className = "cinerae-aide-term";
+      dt.innerHTML = term;
+      const dd = document.createElement("span");
+      dd.className = "cinerae-aide-text";
+      dd.innerHTML = text;
+      row.append(dt, dd);
+      body.appendChild(row);
     };
-    block("aide.modesTitle", t("aide.modes"));
-    block("aide.keysTitle", t("aide.keys"));
-    block("aide.touchTitle", t("aide.touch"));
-    block("aide.ndiTitle", t("aide.ndi"));
-    const links = document.createElement("div");
-    links.className = "cinerae-aide-text cinerae-aide-links";
-    links.innerHTML =
-      `<a href="https://nh.thomasmaury.fr" target="_blank" rel="noopener">nh.thomasmaury.fr</a>` +
-      ` · <a href="https://nh.thomasmaury.fr/experiments" target="_blank" rel="noopener">${t("aide.expLink")}</a>`;
-    body.appendChild(links);
+    if (active === "modes") {
+      item("Umbra", t("aide.umbra"));
+      item("Anima", t("aide.anima"));
+      item("Pro", t("aide.pro"));
+    } else if (active === "clavier") {
+      const keys: [string, string][] = [
+        ["F", "aide.key.f"],
+        ["C", "aide.key.c"],
+        ["R", "aide.key.r"],
+        ["P", "aide.key.p"],
+        ["V", "aide.key.v"],
+        [t("aide.kspace"), "aide.key.space"],
+        [t("aide.kesc"), "aide.key.esc"],
+      ];
+      for (const [k, label] of keys) {
+        item(`<kbd>${k}</kbd>`, t(label));
+      }
+    } else if (active === "gestes") {
+      item(t("aide.touchTitle"), t("aide.touch"));
+    } else if (active === "camext") {
+      item(t("aide.ndiTitle"), t("aide.ndi"));
+    } else {
+      const links = document.createElement("div");
+      links.className = "cinerae-aide-links";
+      links.innerHTML =
+        `<a href="https://nh.thomasmaury.fr" target="_blank" rel="noopener">nh.thomasmaury.fr</a>` +
+        `<a class="cinerae-linktree" href="https://linktr.ee/thomasmaury" target="_blank" rel="noopener" aria-label="${t("aide.linktree")}" title="${t("aide.linktree")}">${LINKTREE_ICON}</a>`;
+      body.appendChild(links);
+    }
   }
 
   // ----- umbra body ---------------------------------------------------------
@@ -1654,9 +1682,9 @@ export function createPanel(
     umbraBox.appendChild(wrap);
     const ends = document.createElement("div");
     ends.className = "cinerae-umbra-ends";
-    ends.innerHTML = `<span>${t("ui.me")}</span><span>${t("ui.world")}</span>`;
+    ends.innerHTML = `<span>${t("ui.pushL")}</span><span>${t("ui.pushR")}</span>`;
     wrap.appendChild(ends);
-    const { row } = makeSliderRow(
+    const { row, input } = makeSliderRow(
       wrap,
       "",
       macro.min,
@@ -1670,6 +1698,7 @@ export function createPanel(
       },
       () => ""
     );
+    input.setAttribute("aria-label", t("ctl.umbra"));
     row.dataset.hint = t("hint.umbra");
     row.classList.add("cinerae-umbra-row");
   }
@@ -1710,7 +1739,8 @@ export function createPanel(
       // The state lives, the matter follows: refresh every visible row.
       for (const ref of rowRefs) {
         ref.input.value = String(ref.def.get());
-        const text = displayFormat(ref.def)(ref.def.get());
+        setFill(ref.input);
+        const text = (ref.def.format ?? plain)(ref.def.get());
         if (ref.readout.textContent !== text) {
           ref.readout.textContent = text;
           markChanged(ref.row);
@@ -1719,15 +1749,6 @@ export function createPanel(
       if (!done) requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
-  }
-
-  // ----- panel tint: the strata borrow the active palette -------------------
-  function applyPanelTint() {
-    const mid = sampleStops(state.colors.stops, 0.5);
-    panel.style.setProperty(
-      "--strata-tint",
-      `rgb(${Math.round(mid[0] * 255)} ${Math.round(mid[1] * 255)} ${Math.round(mid[2] * 255)})`
-    );
   }
 
   // ----- rendering ---------------------------------------------------------
@@ -1749,7 +1770,6 @@ export function createPanel(
     });
     cameraSwitch.sync();
     micSwitch.sync();
-    applyPanelTint();
 
     const minimal = mode === "umbra";
     sensorsBox.style.display = minimal ? "none" : "";
@@ -1772,12 +1792,14 @@ export function createPanel(
       aide: true,
     };
     for (const id of SECTION_ORDER) {
-      const { box, body, title } = sections[id];
+      const { box, head, body, title } = sections[id];
       box.style.display = visible[id] ? "" : "none";
-      box.classList.toggle("open", sectionOpen[id]);
+      const open = visible[id] === true && openSection === id;
+      box.classList.toggle("open", open);
+      head.setAttribute("aria-expanded", String(open));
       title.textContent = t(`sec.${id}`);
       body.replaceChildren();
-      if (!visible[id] || !sectionOpen[id]) continue;
+      if (!open) continue;
       if (id === "scenes") renderScenes(body);
       else if (id === "moi") renderMoi(body);
       else if (id === "geste") renderGeste(body);
@@ -1841,7 +1863,8 @@ export function createPanel(
       for (const ref of rowRefs) {
         if (!keys.has(ref.def.key)) continue;
         ref.input.value = String(ref.def.get());
-        const text = displayFormat(ref.def)(ref.def.get());
+        setFill(ref.input);
+        const text = (ref.def.format ?? plain)(ref.def.get());
         if (ref.readout.textContent !== text) ref.readout.textContent = text;
       }
     },
