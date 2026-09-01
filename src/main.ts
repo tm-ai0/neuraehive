@@ -105,7 +105,12 @@ async function boot() {
   // ----- shared live state (read by the render loop every frame) -----------
   const audioState = { ...AUDIO_DEFAULTS };
   const quality = { auto: window.matchMedia("(pointer: coarse)").matches };
-  const behavior = { imprintReturn: true, silenceDelay: 2 };
+  const behavior = {
+    imprintReturn: true,
+    silenceDelay: 2,
+    presenceThreshold: 0.0015,
+    presenceDelay: 8,
+  };
   const imprintSettings: ImprintSettings = structuredClone(
     DEFAULT_IMPRINT_SETTINGS
   );
@@ -125,6 +130,8 @@ async function boot() {
   let motionAvg = 0;
   let motionArea = 0;
   let windAuto = 1;
+  let presenceEnv = 0;
+  let presenceSeen = -Infinity;
   const cameraMoving = () =>
     motionAvg > MOTION_STILL || motionArea > MOTION_AREA_PLAY;
   let chaosStart = -Infinity;
@@ -537,6 +544,9 @@ async function boot() {
       .then(({ avg, area }) => {
         motionAvg = avg;
         motionArea = area;
+        // Presence watches its own, lower threshold: a standing person's
+        // breath and sway keep the portrait alive without counting as play.
+        if (area > behavior.presenceThreshold) presenceSeen = performance.now();
         if (cameraMoving()) {
           markActivity();
           const desired = Math.min(
@@ -551,7 +561,7 @@ async function boot() {
           document.documentElement.dataset.cinerae =
             `m=${motionAvg.toFixed(4)} a=${motionArea.toFixed(4)} ` +
             `g=${windAuto.toFixed(2)} c=${crystal.toFixed(2)} ` +
-            `s=${silenceTime.toFixed(1)}`;
+            `s=${silenceTime.toFixed(1)} p=${presenceEnv.toFixed(2)}`;
         }
       })
       .catch(() => undefined)
@@ -567,6 +577,19 @@ async function boot() {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
+
+    // Presence envelope: someone stands in the frame when the moving area
+    // crossed the threshold recently. The asymmetric smoothing gathers the
+    // portrait in about a second and disperses it gently, and keeps sensor
+    // noise from flickering it. The fond imprint stays pure abstract dust.
+    const present =
+      cameraSource !== undefined &&
+      imprintSettings.family !== "fond" &&
+      (now - presenceSeen) / 1000 < behavior.presenceDelay;
+    const presTau = present ? 0.45 : 1.4;
+    presenceEnv += ((present ? 1 : 0) - presenceEnv) * (1 - Math.exp(-dt / presTau));
+    renderer.dynamics.presence =
+      presenceEnv * (1 - renderer.dynamics.titleMode) * (1 - crystal);
 
     // Audio analysis -> dynamics, with the Pro band gains applied.
     if (mic) {
@@ -584,7 +607,8 @@ async function boot() {
       // restarts the countdown — the matter never recrystallizes mid-gesture.
       const playing =
         (cameraSource !== undefined && cameraMoving()) ||
-        renderer.dynamics.touchStrength > 0;
+        renderer.dynamics.touchStrength > 0 ||
+        presenceEnv > 0.5; // a present body holds its portrait: no recrystallization over it
       if (a.level < audioState.silenceThreshold && !playing) {
         silenceTime += dt;
         if (behavior.imprintReturn && silenceTime > behavior.silenceDelay)
@@ -697,8 +721,12 @@ async function boot() {
       dirtyKeys.clear();
     }
 
-    // The camera imprint melts while the wordmark takes the matter over.
-    crystal = Math.max(0, crystal - dt * renderer.dynamics.titleMode * 0.6);
+    // The camera imprint melts while the wordmark takes the matter over —
+    // and a person entering the frame reclaims the matter the same way.
+    crystal = Math.max(
+      0,
+      crystal - dt * (renderer.dynamics.titleMode * 0.6 + presenceEnv * 0.8)
+    );
     renderer.dynamics.crystal = crystal;
     renderer.dynamics.windGain = Math.min(
       5,
@@ -712,6 +740,7 @@ async function boot() {
         behavior.imprintReturn &&
         renderer.imprintCount > 0 &&
         !cameraMoving() &&
+        presenceEnv < 0.3 &&
         idleFor > IDLE_DELAY &&
         titleTarget === 0
       ) {

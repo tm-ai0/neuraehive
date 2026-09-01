@@ -3,7 +3,7 @@
 Poussière de lumière WebGPU pilotée par la caméra (flux optique) et le son (micro). Pièce de la page experiments du site NeuraeHive et instrument d'installation (personnes debout à 2 ou 3 m).
 
 ## Lancer
-npm run dev, puis l'adresse affichée. Ajouter ?debug à l'adresse pour lire les mesures du geste (m/a/g/c/s dans document.documentElement.dataset.cinerae). Vérification au rendu réel : Claude in Chrome sur Edge, captures dans .debug (dans .gitignore, jamais commité).
+npm run dev, puis l'adresse affichée. Ajouter ?debug à l'adresse pour lire les mesures du geste (m/a/g/c/s/p dans document.documentElement.dataset.cinerae ; p = enveloppe de présence). Vérification au rendu réel : Claude in Chrome sur Edge, captures dans .debug (dans .gitignore, jamais commité).
 
 ## Invariants
 - 200 000 grains au fps de référence (v0.5.1 : 60 à 65 fps plafonnés par l'écran). Toute feature qui coûte à l'image est refusée.

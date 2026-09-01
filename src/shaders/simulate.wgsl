@@ -44,6 +44,10 @@ struct SimParams {
   imprintShape: f32,    // 1 = crystal targets the imprint cloud, 0 = home cells
   stagger: f32,         // 0 = all points engage together, ->1 = ordered build
   depthAmount: f32,     // parallax layer separation, 0 = off
+  presence: f32,        // someone-in-frame envelope 0..1 (0 = historical render)
+  presenceMode: f32,    // trame: 0 bruit, 1 dithering, 2 lignes, 3 moiré, 4 points, 5 contours
+  presenceShare: f32,   // share of the population serving the portrait
+  presenceHold: f32,    // 0 = free dust, 1 = rigid portrait
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -167,6 +171,65 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let tEff = clamp((title - params.stagger * rank) / unstag, 0.0, 1.0);
   let ero = params.imprintShape * smoothstep(0.05, 0.28, f.a);
 
+  // ---- présence ------------------------------------------------------------
+  // Continuous portrait: the mirrored camera luminance places the grains
+  // through a procedural screen (trame) evaluated at each grain's home cell —
+  // the person reads as dust from the first second, never as video. The whole
+  // block is inert while the presence envelope is 0 (empty room, no camera,
+  // fond imprint) or while the elasticity sits at "poussière libre".
+  var presW = 0.0;
+  var presLum = 0.0;
+  if (params.presence > 0.003 && params.presenceHold > 0.001
+      && hash01(i * 41u + 9u) < params.presenceShare) {
+    let hp = homeOf(i);
+    let lp = smoothstep(0.06, 0.9, textureSampleLevel(field, fieldSamp, hp, 0.0).b);
+    let pAsp = params.gridCols / max(params.gridRows, 1.0);
+    let pa = vec2f(hp.x * pAsp, hp.y);
+    let mode = params.presenceMode;
+    var on = false;
+    if (mode < 0.5) {
+      // bruit: static stochastic threshold, density follows the light
+      on = hash01(i * 13u + 7u) < lp;
+    } else if (mode < 1.5) {
+      // dithering ordonné: Bayer 4x4 over the home cells
+      let col = i % u32(params.gridCols);
+      let row = i / u32(params.gridCols);
+      var m = array<f32, 16>(
+        0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,
+        3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0,
+      );
+      on = lp > (m[(row % 4u) * 4u + (col % 4u)] + 0.5) / 16.0;
+    } else if (mode < 2.5) {
+      // lignes: horizontal raster whose thickness follows the light — capped
+      // so the raster stays visible even in full light.
+      on = abs(fract(hp.y * 44.0) - 0.5) * 2.0 < lp * 0.8;
+    } else if (mode < 3.5) {
+      // moiré: two slightly rotated line systems interfering
+      let d1 = pa.x * 0.2955 + pa.y * 0.9553;
+      let d2 = pa.y * 0.9553 - pa.x * 0.2955;
+      on = abs(fract(d1 * 30.0) - 0.5) * 2.0 < lp * 0.62
+        || abs(fract(d2 * 30.0) - 0.5) * 2.0 < lp * 0.62;
+    } else if (mode < 4.5) {
+      // trame de points: rotated dot screen, dot area follows the light
+      let pr = vec2f(pa.x * 0.9659 - pa.y * 0.2588, pa.x * 0.2588 + pa.y * 0.9659) * 34.0;
+      on = length(fract(pr) - vec2f(0.5)) < 0.62 * sqrt(lp);
+    } else {
+      // contours: the luminance gradient draws the outlines of the body
+      let dims = vec2f(textureDimensions(field, 0));
+      let ex = vec2f(1.0 / dims.x, 0.0);
+      let ey = vec2f(0.0, 1.0 / dims.y);
+      let gx = textureSampleLevel(field, fieldSamp, hp + ex, 0.0).b
+        - textureSampleLevel(field, fieldSamp, hp - ex, 0.0).b;
+      let gy = textureSampleLevel(field, fieldSamp, hp + ey, 0.0).b
+        - textureSampleLevel(field, fieldSamp, hp - ey, 0.0).b;
+      on = hash01(i * 31u + 5u) < clamp(length(vec2f(gx, gy)) * 14.0 + lp * 0.08, 0.0, 1.0);
+    }
+    if (on) {
+      presW = params.presence;
+      presLum = lp;
+    }
+  }
+
   // ---- life cycle ----------------------------------------------------------
   // Aging, with a per-particle tempo so the population never pulses in sync.
   age = fract(age + dt * params.lifeRate * (0.7 + 0.6 * hash01(i * 9u + 3u)));
@@ -241,14 +304,19 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 
   // Treble feeds fine turbulence; the chaos burst multiplies it hard. Rest
   // and a held tone both quiet it so structure can emerge from the fur.
+  // While someone stands in the frame the ambient weather steps back so the
+  // portrait reads: held grains ignore most turbulence, and even the free
+  // dust calms down instead of veiling the body with filaments.
   let turb = params.turbulence * (0.35 + params.treble * 2.0)
     * (1.0 + params.chaosBurst * 5.0) * calm
-    * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75);
+    * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75)
+    * (1.0 - presW * 0.85) * (1.0 - params.presence * 0.55);
   acc += curlNoise(pos, params.time, params.gridCols / max(params.gridRows, 1.0)) * turb * layerF;
 
   // Resting filaments: condense on the zero level-set of a slow drifting
   // noise (iron filings on a wandering magnet) and slide gently along it.
-  let rest = params.filament * restness * (1.0 - flight);
+  let rest = params.filament * restness * (1.0 - flight) * (1.0 - presW)
+    * (1.0 - params.presence * 0.75);
   if (rest > 0.003) {
     let asp = params.gridCols / max(params.gridRows, 1.0);
     let q = vec2f(pos.x * asp, pos.y) * 2.3
@@ -314,11 +382,23 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold;
   }
 
+  // Presence spring: the portrait gathers on the body. A moving limb writes
+  // motion energy, the portrait yields there and the freed grains scatter
+  // around the gesture before coming back — the elasticity says how far.
+  var presDrag = 0.0;
+  if (presW > 0.001) {
+    let ph = params.presenceHold;
+    let give = smoothstep(0.06, 0.30, f.a) * (1.0 - ph * 0.7);
+    let pull = presW * ph * (1.0 - give) * (1.0 - flight);
+    acc += (homeOf(i) - pos) * pull * (10.0 + 30.0 * ph);
+    presDrag = pull * (4.0 + 22.0 * ph);
+  }
+
   vel += acc * dt;
   // Viscosity damps motion; ash, a forming crystal, a held tone or the word
   // damp it much harder. Comets fly nearly free.
   let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
-    + ash * 4.0 + min(cym, 1.0) * 4.0 + (c2 * 22.0 + t2 * 26.0) * hold;
+    + ash * 4.0 + min(cym, 1.0) * 4.0 + (c2 * 22.0 + t2 * 26.0) * hold + presDrag;
   vel *= exp(-dt * drag);
   let maxSpeed = 0.9 + flight * 0.9;
   let speed = length(vel);
@@ -346,5 +426,10 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
 
   dst[i * 2u] = vec4f(pos, vel);
-  dst[i * 2u + 1u] = vec4f(heat, age, comet, 0.0);
+  // Spare channel = presence: 0 for free grains, else the trame luminance
+  // packed into [0.02, 1] so the render pass lights and tints the portrait.
+  dst[i * 2u + 1u] = vec4f(
+    heat, age, comet,
+    select(0.0, 0.02 + presLum * 0.98, presW > 0.001),
+  );
 }

@@ -28,6 +28,8 @@ struct RenderParams {
   depthAmount: f32,  // parallax layer separation, 0 = off
   focusLayer: f32,   // 0 far, 1 mid, 2 near
   dofBlur: f32,      // out-of-focus blur amount
+  presence: f32,     // someone-in-frame envelope 0..1
+  presenceSize: f32, // point-size multiplier of portrait grains
 };
 
 struct VertexOut {
@@ -114,6 +116,10 @@ fn palette(t: f32) -> vec3f {
   let heat = extra.x;
   let age = extra.y;
   let comet = extra.z;
+  // Presence: the simulation packs the trame luminance of a held grain into
+  // the spare channel — 0 means this grain plays no part in the portrait.
+  let presMix = select(0.0, params.presence, extra.w > 0.001);
+  let presLum = clamp((extra.w - 0.02) / 0.98, 0.0, 1.0);
 
   // Parallax layer of this grain: 0 far, 1 mid, 2 near (same as simulate).
   let layer = f32(instanceIndex % 3u);
@@ -137,6 +143,12 @@ fn palette(t: f32) -> vec3f {
   // While the imprint holds the matter, every grain glows evenly; the
   // additive pile-up on the strokes does the rest.
   brightness = mix(brightness, params.imprintGlow, params.titleMode * params.titleMode);
+  // Presence portrait: a held grain glows with the light it stands on, so
+  // the bichromie lumière/ombre reads even on a plain white palette. The
+  // free dust steps back while someone is there — the matter gathers on them.
+  brightness = mix(brightness, 0.30 + presLum * 1.15, presMix);
+  let heldFlag = select(0.0, 1.0, extra.w > 0.001);
+  brightness *= 1.0 - params.presence * 0.4 * (1.0 - heldFlag);
 
   // Palette color along the chosen driver; ember orange burns over it.
   var t = age;
@@ -150,6 +162,9 @@ fn palette(t: f32) -> vec3f {
   } else if (params.colorDriver > 0.5) {
     t = clamp(speed * 9.0, 0.0, 1.0);
   }
+  // The portrait hooks the driver to the camera light: shadow reads the low
+  // end of the palette gradient, light the high end — bichromie lumière/ombre.
+  t = mix(t, presLum, presMix);
   let hotness = clamp(heat * 1.15, 0.0, 1.0);
   out.tint = mix(palette(t), vec3f(1.0, 0.42, 0.16), hotness);
 
@@ -163,7 +178,7 @@ fn palette(t: f32) -> vec3f {
   brightness /= blurMul * blurMul;
 
   let corner = quadCorner(vertexIndex);
-  let px = params.pointSize * sizeF * blurMul;
+  let px = params.pointSize * sizeF * blurMul * mix(1.0, params.presenceSize, presMix);
   var offsetPx = corner * px;
   out.streak = 0.0;
   // Comets stretch along their flight. The stretch follows speed but

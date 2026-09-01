@@ -72,6 +72,11 @@ export interface Tuning {
   memoryGain: number; // cendre mémoire veil strength
   memorySeconds: number; // memory duration
   ghost: number; // camera-luminance veil (Pro)
+  // ---- présence (all inert while dynamics.presence stays 0) ---------------
+  presenceTrame: number; // 0 bruit, 1 dithering, 2 lignes, 3 moiré, 4 points, 5 contours
+  presenceShare: number; // share of the population serving the portrait
+  presenceSize: number; // point-size multiplier of held grains
+  presenceHold: number; // 0 = free dust (historical), 1 = rigid portrait
 }
 
 export interface Dynamics {
@@ -94,6 +99,7 @@ export interface Dynamics {
   cymN: number;
   windGain: number; // effective gesture gain fed to the flow injection
   memoryClear: number; // 1 = wipe the cendre mémoire this frame (consumed)
+  presence: number; // someone-in-frame envelope 0..1, set by the orchestrator
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -131,6 +137,10 @@ export const DEFAULT_TUNING: Tuning = {
   memoryGain: 0,
   memorySeconds: 12,
   ghost: 0,
+  presenceTrame: 0,
+  presenceShare: 0.7,
+  presenceSize: 1.5,
+  presenceHold: 0.6,
 };
 
 interface CameraInput {
@@ -240,6 +250,7 @@ export async function createRenderer(
     cymN: 2,
     windGain: 1,
     memoryClear: 0,
+    presence: 0,
   };
 
   let camera: CameraInput | undefined;
@@ -296,6 +307,10 @@ export async function createRenderer(
       if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
       const count = Math.max(1, Math.min(MAX_PARTICLES, Math.round(tuning.count)));
+      // At "poussière libre" (hold 0) presence leaves no trace at all: the
+      // envelope is muted so even the ambient calming vanishes.
+      const presence =
+        dynamics.presence * Math.min(1, tuning.presenceHold / 0.1);
       const aspect = output.size[0] / Math.max(1, output.size[1]);
       const gridCols = Math.max(1, Math.ceil(Math.sqrt(count * aspect)));
       const gridRows = Math.max(1, Math.ceil(count / gridCols));
@@ -408,6 +423,10 @@ export async function createRenderer(
           imprintShape: imprintMode === "shape" ? 1 : 0,
           stagger: imprintCloud.stagger,
           depthAmount: tuning.depthAmount,
+          presence,
+          presenceMode: tuning.presenceTrame,
+          presenceShare: tuning.presenceShare,
+          presenceHold: tuning.presenceHold,
         },
         src: buffers.read,
         dst: buffers.write,
@@ -514,6 +533,8 @@ export async function createRenderer(
           depthAmount: tuning.depthAmount,
           focusLayer: tuning.focusLayer,
           dofBlur: tuning.dofBlur,
+          presence,
+          presenceSize: tuning.presenceSize,
         },
         particles: buffers.read,
         field: fieldPrev,
