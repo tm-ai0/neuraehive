@@ -193,6 +193,7 @@ export async function createRenderer(
   let camera: CameraInput | undefined;
   let cameraTexture: Texture | undefined;
   let cameraSeen = false; // at least one uploaded frame
+  let lumaFrames = 0; // luma renders since attach; flow needs two real ones
 
   const buffers = pingPongStorage(gpu, MAX_PARTICLES * BYTES_PER_PARTICLE);
   const initialSeed = makeSeed(MAX_PARTICLES);
@@ -305,8 +306,10 @@ export async function createRenderer(
       simulate.dispatch(Math.ceil(count / WORKGROUP));
       buffers.swap();
 
-      // 3. Luma + flow field for the next step.
-      const hasCamera = cameraSeen ? 1 : 0;
+      // 3. Luma + flow field for the next step. The wind field remembers, so
+      // it must never ingest a comparison against a never-rendered luma: wait
+      // for two real frames before declaring the camera to the flow pass.
+      const hasCamera = cameraSeen && lumaFrames >= 2 ? 1 : 0;
       if (camera && cameraTexture && cameraSeen) {
         const camAspect = camera.width / camera.height;
         const fieldAspect = FLOW_W / FLOW_H;
@@ -326,12 +329,13 @@ export async function createRenderer(
         frame.pass({ target: lumaCurr, clear: [0, 0, 0, 1] }, (pass) =>
           pass.draw(lumaEffect)
         );
+        lumaFrames++;
       }
       flowEffect.set({
         params: {
           texel: [1 / FLOW_W, 1 / FLOW_H],
           hasCamera,
-          smoothing: 0.22,
+          dt,
         },
         lumaCurr,
         lumaPrev,
@@ -416,10 +420,12 @@ export async function createRenderer(
       });
       camera = input;
       cameraSeen = false;
+      lumaFrames = 0;
     },
     detachCamera() {
       camera = undefined;
       cameraSeen = false;
+      lumaFrames = 0;
       cameraTexture?.destroy();
       cameraTexture = undefined;
     },

@@ -39,8 +39,18 @@ fondre l'empreinte caméra.
 ## Le concept
 
 - La caméra n'est **jamais affichée**. Un champ de flux optique 192×108
-  (Lucas-Kanade un point, lissé) pousse les particules comme du vent — il
-  n'attire jamais. Toggle miroir dans le panneau.
+  (Lucas-Kanade un point) nourrit un **champ de vent à mémoire** : le vent
+  s'advecte lui-même (semi-lagrangien), ses remous sont resserrés par
+  confinement de vorticité, il meurt lentement (~1,5–2 s), et l'injection est
+  non linéaire (quadratique en vitesse) — un geste rapide commande le champ,
+  une dérive lente chuchote. Les grains ne subissent pas une poussée aveugle
+  mais une **traînée vers la vitesse du vent local** (poussière dans l'air) :
+  une main qui balaie emporte la matière derrière elle avec un léger retard,
+  et le courant continue de porter une à deux secondes après le passage.
+  Toggle miroir dans le panneau.
+- **Aucun bord n'est perceptible** : la simulation vit sur un domaine étendu
+  de ±8,5 % hors champ ; sortie et ré-entrée se font hors écran, et le lit de
+  cendre se dépose à cheval sur le bord, principalement hors cadre.
 - Le micro pilote l'état de la matière : silence prolongé → cristallisation
   vers l'empreinte de luminance caméra ; le son la fait fondre. Basses →
   pression du vent, aigus → turbulence, transitoires → frange spectrale RGB
@@ -64,8 +74,13 @@ fondre l'empreinte caméra.
   modes (m, n) suivent la hauteur par paliers d'environ une tierce, avec
   hystérésis anti-vibrato ; le motif se dissout dès que le son cesse ou
   devient percussif. Un geste caméra très rapide arrache quelques comètes à
-  longue traîne (étirées le long de leur vitesse) qui refroidissent en vol et
-  retombent en cendre.
+  longue traîne : l'étirement suit la vitesse mais **sature**, la lumière se
+  répartit sur la longueur (jamais une barre cramée), tête brillante et queue
+  qui s'éteint ; elles refroidissent en vol et retombent en cendre.
+- La turbulence est un **curl simplex à trois octaves dérivantes**, corrigées
+  de l'aspect : la plus grande structure dépasse la largeur de l'écran et
+  chaque octave glisse à sa propre vitesse dans l'espace et le temps — de la
+  fumée, jamais une grille de tourbillons repérable.
 - Esthétique : poussière blanc chaud additive sur noir profond, trainées par
   ping-pong HDR, grain anti-banding.
 - Capteurs **uniquement sur geste explicite** (boutons d'intro ou toggles du
@@ -80,9 +95,16 @@ silence, teinte de la frange, braises, cymatique, respiration), **Pro**
 (+ taille des grains, nombre exact de particules, exposition, gains
 basses/aigus/transitoires, part de cendre, cycle de la matière,
 sédimentation, filaments, seuil tonal, comètes, overlay du champ de vent en
-voiles chauds). Plus : toggles caméra/micro/miroir, **Chaos**
-(aspiration du vent inversé ~0,7 s puis burst de turbulence décroissant),
-**Reset** (matière re-semée + réglages), FPS, statut, jauge de cristal.
+voiles chauds, interrupteur **« retour du titre »** — actif par défaut, il
+autorise la recomposition du wordmark après 40 s de vrai silence sans geste
+caméra ; coupé, le titre ne revient jamais tout seul). Plus : toggles
+caméra/micro/miroir, **Chaos** (aspiration du vent inversé ~0,7 s + burst de
+turbulence décroissant, et tirage de nouvelles valeurs pour les curseurs
+matière — force, viscosité, turbulence, trainées, respiration, filaments,
+comètes, braises — qui **glissent vers leurs cibles** avec une animation
+courte et décalée et une surbrillance brève), **Reset** (matière re-semée,
+curseurs qui glissent de la même façon vers les défauts), FPS, statut, jauge
+de cristal.
 
 Tous les réglages agissent immédiatement : les buffers sont alloués une fois
 à 400 k particules (32 octets chacune : position/vitesse + chaleur, âge,
@@ -98,8 +120,13 @@ Maintenir le doigt sur la scène émet de la poussière sous le doigt.
 
 1. `copyExternalImageToTexture` : frame caméra → texture (jamais rendue).
 2. Effet `luma` : caméra → luminance 192×108 (miroir + cover-crop).
-3. Effet `flow` : deux lumas → champ (rg = vent, b = empreinte, a = énergie).
-4. Compute `simulate` (workgroup 256) : vent + curl simplex + cycle de vie
+3. Effet `flow` : deux lumas + champ précédent → champ à mémoire (rg = vent
+   auto-advecté + confinement de vorticité + décroissance lente + injection
+   non linéaire du flux optique, b = empreinte, a = énergie). Le renderer
+   attend deux vraies frames luma avant de déclarer la caméra au champ, pour
+   ne jamais ingérer une comparaison contre une texture jamais rendue.
+4. Compute `simulate` (workgroup 256) : entraînement par le vent (traînée
+   vers la vitesse locale) + curl simplex 3 octaves + cycle de vie
    (braise/cendre/sédiment) + filaments de repos + rafales + cymatique de
    Chladni (analytique) + comètes + cristallisation + cibles wordmark
    (storage buffer) + chaos + émission tactile, dans un `pingPongStorage` de
@@ -112,25 +139,36 @@ Maintenir le doigt sur la scène émet de la poussière sous le doigt.
 
 ## État / vérifié · non vérifié
 
-Vérifié sur cette machine (session v0.3, fenêtre Brave, 186–272 fps à 200 k
-grains) : formation du wordmark Ephesis à l'ouverture (fidèle au lettrage de
-référence), dissolution au choix, recomposition après inactivité ; repos en
-filaments de fumée sans aucun rectangle ; part de cendre mesurée par lecture
-GPU à ~18 % avec sédimentation vers les bords et renaissance douce ;
-cristallisation sous silence micro réel (et relâchement à la coupure du
-micro) ; force de Chladni vérifiée en forçant l'enveloppe (figure nette
-m=3, n=5) ; détection de hauteur validée hors navigateur (sinus 110–880 Hz
-justes au cent près, harmoniques comprises, bruit rejeté) ; braises orange
-éparses sur transitoire forcé (jamais un décor, la cendre ne se rallume pas
-au son) ; trois modes du panneau avec les nouveaux réglages à effet
-immédiat.
+Vérifié sur cette machine (session v0.4, fenêtre Edge Beta, caméra
+synthétique injectée — blob lumineux balayant un canvas capturé en
+`captureStream`) : le geste emporte la poussière — champ mesuré par lecture
+GPU : zéro exact au repos sur caméra statique (aucune auto-excitation),
+pic à 0,8 pendant un balayage de 0,7 s, direction cohérente avec le miroir,
+décroissance du courant sur ~2 s après le passage ; visuellement la bande
+balayée est peignée dans le sens du geste, la matière suit avec retard et
+le sillage roule en tourbillons (confinement de vorticité) ; comètes en
+filaments effilés à toutes les vitesses testées, plus aucune barre ;
+turbulence sans maille visible à turbulence 2,0 / viscosité 0,6 sous
+agitation, structures plus larges que l'écran ; aucun bord perceptible au
+repos ni en mouvement (zooms sur les quatre bords) ; retour du titre après
+40 s d'immobilité réelle, fonte au premier geste, interrupteur Pro qui le
+bloque, Reset qui le réactive ; Chaos et Reset font glisser les curseurs
+avec décalage et surbrillance, valeurs vérifiées en mouvement entre deux
+captures ; fps identiques à v0.3 dans les mêmes conditions (110–130 contre
+108–124 à 200 k grains, écran d'intro).
 
-Non vérifié en conditions réelles, à tester à la main : la cymatique sous un
-vrai son tenu (voix, note — la chaîne micro→hauteur→figure n'a pas pu être
-exercée de bout en bout, les haut-parleurs de test étant restés muets), les
-braises sous vraie percussion, les comètes et le remous du lit de cendres
-sous vrai geste caméra, le panache tactile, la media query mobile sur écran
-étroit.
+Hérité de v0.3 et toujours valable : wordmark Ephesis fidèle, cendre ~18 %
+mesurée, cristallisation sous silence micro réel, Chladni forcé net,
+détection de hauteur validée hors navigateur, braises éparses sur
+transitoire forcé.
+
+Non vérifié en conditions réelles, à tester à la main devant la vraie
+caméra : la sensation du geste réel (main, manche, corps — la caméra
+synthétique n'a qu'un seul blob très contrasté, un vrai flux est plus
+bruité et plus doux : les seuils d'injection quadratique et de couplage
+peuvent demander un ajustement fin) ; les comètes et le remue-cendre sous
+vrai geste ; la cymatique sous vrai son tenu ; les braises sous vraie
+percussion ; le panache tactile ; mobile réel.
 
 Note : dans une fenêtre en arrière-plan, le navigateur suspend
 `requestAnimationFrame` ; la pièce est simplement en pause, c'est normal.
