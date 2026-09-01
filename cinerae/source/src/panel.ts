@@ -25,7 +25,12 @@ export interface PanelState {
     tonalThreshold: number;
   };
   quality: { auto: boolean };
-  behavior: { imprintReturn: boolean; silenceDelay: number };
+  behavior: {
+    imprintReturn: boolean;
+    silenceDelay: number;
+    presenceThreshold: number;
+    presenceDelay: number;
+  };
   imprint: ImprintSettings;
   colors: LookColors;
 }
@@ -51,7 +56,14 @@ export interface PanelHooks {
   getMidi(): Midi | undefined;
 }
 
-type SectionId = "presets" | "empreintes" | "look" | "modulation" | "midi" | "reglages";
+type SectionId =
+  | "presets"
+  | "presence"
+  | "empreintes"
+  | "look"
+  | "modulation"
+  | "midi"
+  | "reglages";
 
 interface ControlDef extends ParamRef {
   modes: PanelMode[];
@@ -109,6 +121,7 @@ export function createPanel(
   let midiLearn = false;
   const sectionOpen: Record<SectionId, boolean> = {
     presets: true,
+    presence: true,
     empreintes: true,
     look: false,
     modulation: false,
@@ -588,6 +601,93 @@ export function createPanel(
       get: () => state.tuning.ghost,
       set: (v) => (state.tuning.ghost = v),
     },
+    // ---- présence -----------------------------------------------------------
+    {
+      key: "presenceTrame",
+      label: "trame du portrait",
+      min: 0,
+      max: 5,
+      step: 1,
+      modes: ["curieux", "pro"],
+      section: "presence",
+      discrete: true,
+      options: [
+        { value: 0, label: "bruit" },
+        { value: 1, label: "dithering ordonné" },
+        { value: 2, label: "lignes" },
+        { value: 3, label: "moiré" },
+        { value: 4, label: "trame de points" },
+        { value: 5, label: "contours" },
+      ],
+      get: () => state.tuning.presenceTrame,
+      set: (v) => (state.tuning.presenceTrame = v),
+    },
+    {
+      key: "presenceShare",
+      label: "grains du portrait",
+      min: 0.1,
+      max: 1,
+      step: 0.01,
+      modes: ["curieux", "pro"],
+      section: "presence",
+      format: percent,
+      get: () => state.tuning.presenceShare,
+      set: (v) => (state.tuning.presenceShare = v),
+    },
+    {
+      key: "presenceSize",
+      label: "taille du portrait",
+      min: 0.6,
+      max: 3,
+      step: 0.05,
+      modes: ["curieux", "pro"],
+      section: "presence",
+      format: (v) => `×${plain(v)}`,
+      get: () => state.tuning.presenceSize,
+      set: (v) => (state.tuning.presenceSize = v),
+    },
+    {
+      key: "presenceHold",
+      label: "élasticité",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      modes: ["curieux", "pro"],
+      section: "presence",
+      format: (v) =>
+        v < 0.05
+          ? "poussière libre"
+          : v < 0.4
+            ? "souple"
+            : v < 0.8
+              ? "élastique"
+              : "portrait rigide",
+      get: () => state.tuning.presenceHold,
+      set: (v) => (state.tuning.presenceHold = v),
+    },
+    {
+      key: "presenceThreshold",
+      label: "seuil de présence",
+      min: 0.0005,
+      max: 0.01,
+      step: 0.0005,
+      modes: ["pro"],
+      section: "presence",
+      get: () => state.behavior.presenceThreshold,
+      set: (v) => (state.behavior.presenceThreshold = v),
+    },
+    {
+      key: "presenceDelay",
+      label: "délai de présence",
+      min: 1,
+      max: 30,
+      step: 0.5,
+      modes: ["pro"],
+      section: "presence",
+      format: (v) => `${plain(v)} s`,
+      get: () => state.behavior.presenceDelay,
+      set: (v) => (state.behavior.presenceDelay = v),
+    },
     // ---- crossfade (rendered by the presets section, target like any) ------
     {
       key: "xfade",
@@ -760,6 +860,9 @@ export function createPanel(
     halo: [0, 0.5],
     strobe: [0, 0.3],
     depthAmount: [0, 0.8],
+    presenceHold: [0.2, 1],
+    presenceShare: [0.35, 1],
+    presenceSize: [0.8, 2.4],
   };
 
   // ----- skeleton ----------------------------------------------------------
@@ -917,6 +1020,11 @@ export function createPanel(
       writeDef("symN", 3 + ((Math.random() * 7) | 0));
       renderMode();
     }
+    // ... and one out of four a new portrait trame — presence plays along.
+    if (Math.random() < 1 / 4) {
+      writeDef("presenceTrame", (Math.random() * 6) | 0);
+      renderMode();
+    }
   });
   const resetButton = document.createElement("button");
   resetButton.type = "button";
@@ -958,6 +1066,7 @@ export function createPanel(
     return sections[id];
   };
   makeSection("presets", "presets");
+  makeSection("presence", "présence");
   makeSection("empreintes", "empreintes");
   makeSection("look", "look");
   makeSection("modulation", "modulation");
@@ -1784,6 +1893,7 @@ export function createPanel(
     const visible: Partial<Record<SectionId, boolean>> = {
       presets: true,
       look: true,
+      presence: mode !== "simple",
       empreintes: mode !== "simple",
       modulation: mode !== "simple",
       midi: mode === "pro",
@@ -1800,7 +1910,14 @@ export function createPanel(
       else if (id === "look") renderLook(body);
       else if (id === "modulation") renderModulation(body);
       else if (id === "midi") renderMidi(body);
-      else if (id === "reglages") {
+      else if (id === "presence") {
+        for (const def of controls) {
+          if (def.section !== "presence") continue;
+          if (!def.modes.includes(mode)) continue;
+          if (def.visible && !def.visible()) continue;
+          renderDefRow(def, body);
+        }
+      } else if (id === "reglages") {
         for (const def of controls) {
           if (def.section !== "reglages") continue;
           if (!def.modes.includes(mode)) continue;
