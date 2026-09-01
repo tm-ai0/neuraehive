@@ -25,7 +25,7 @@ import lumaWgsl from "./shaders/luma.wgsl";
 import particlesWgsl from "./shaders/particles.wgsl";
 import presentWgsl from "./shaders/present.wgsl";
 import simulateWgsl from "./shaders/simulate.wgsl";
-import { TITLE_POINTS, type Wordmark } from "./wordmark";
+import { IMPRINT_MAX_POINTS, type ImprintCloud } from "./imprints";
 
 const FLOW_W = 192;
 const FLOW_H = 108;
@@ -60,6 +60,7 @@ export interface Dynamics {
   bass: number;
   treble: number;
   transient: number;
+  reactivity: number; // 1 = full camera coupling; the fond mode quiets it
   crystal: number;
   titleMode: number;
   chaosAspire: number;
@@ -127,7 +128,7 @@ function decodeF16(bits: number): number {
 
 export async function createRenderer(
   canvas: HTMLCanvasElement,
-  wordmark: Wordmark
+  initialImprint: ImprintCloud
 ) {
   const gpu: Gpu = await init();
   const output = surface(gpu, canvas, { dpr: [1, 1.5] });
@@ -167,14 +168,19 @@ export async function createRenderer(
   const presentEffect = effect(gpu, presentWgsl, { label: "cinerae-present" });
   const simulate = compute(gpu, simulateWgsl, { label: "cinerae-simulate" });
 
-  const titleBuffer = storage(gpu, TITLE_POINTS * 16, "read");
-  titleBuffer.write(wordmark.data);
+  // One target buffer for every imprint; the live count is just a uniform,
+  // so swapping imprints is a single CPU-side buffer write.
+  const titleBuffer = storage(gpu, IMPRINT_MAX_POINTS * 16, "read");
+  let imprintCloud: ImprintCloud = initialImprint;
+  let imprintMode: "shape" | "camera" = "shape";
+  titleBuffer.write(initialImprint.data);
 
   const tuning: Tuning = { ...DEFAULT_TUNING };
   const dynamics: Dynamics = {
     bass: 0,
     treble: 0,
     transient: 0,
+    reactivity: 1,
     crystal: 0,
     titleMode: 0,
     chaosAspire: 0,
@@ -219,16 +225,21 @@ export async function createRenderer(
     for (const t of previous) t.color.destroy();
   });
 
-  // Wordmark layout: centered, slightly above the middle, responsive width.
+  // Imprint layout. "uv" clouds already live in screen space; "shape" clouds
+  // are height-normalized: coverage 0 keeps the validated wordmark cap
+  // formula, otherwise the height takes a fraction of the screen.
   function titleLayout(): { scale: [number, number]; offset: [number, number] } {
+    const c = imprintCloud;
+    if (c.space === "uv") return { scale: [1, 1], offset: [0, 0] };
     const [w, h] = output.size;
-    const capPx = Math.max(
-      36,
-      Math.min((0.6 * w) / wordmark.aspect, 0.2 * h, 150)
-    );
+    const aspect = Math.max(c.aspect, 1e-3);
+    const capPx =
+      c.coverage > 0
+        ? Math.max(24, Math.min(c.coverage * h, (0.92 * w) / aspect))
+        : Math.max(36, Math.min((0.6 * w) / aspect, 0.2 * h, 150));
     return {
       scale: [capPx / Math.max(1, w), capPx / Math.max(1, h)],
-      offset: [0.5, 0.42],
+      offset: [0.5, c.offsetY],
     };
   }
 
@@ -266,7 +277,7 @@ export async function createRenderer(
         params: {
           dt,
           time: time.time,
-          force: tuning.force,
+          force: tuning.force * dynamics.reactivity,
           viscosity: tuning.viscosity,
           turbulence: tuning.turbulence,
           crystal: dynamics.crystal,
@@ -277,7 +288,7 @@ export async function createRenderer(
           gridRows,
           count,
           titleMode: dynamics.titleMode,
-          titleCount: TITLE_POINTS,
+          titleCount: Math.max(1, imprintCloud.count),
           titleScale: title.scale,
           titleOffset: title.offset,
           chaosAspire: dynamics.chaosAspire,
@@ -296,6 +307,8 @@ export async function createRenderer(
           ashLevel: Math.min(0.95, Math.max(0.55, 0.97 - tuning.ashShare)),
           sediment: tuning.sediment,
           cometGain: tuning.cometGain,
+          imprintShape: imprintMode === "shape" ? 1 : 0,
+          stagger: imprintCloud.stagger,
         },
         src: buffers.read,
         dst: buffers.write,
@@ -363,6 +376,12 @@ export async function createRenderer(
           gridRows,
           titleMode: dynamics.titleMode,
           ashLevel: Math.min(0.95, Math.max(0.55, 0.97 - tuning.ashShare)),
+          imprintShape: imprintMode === "shape" ? 1 : 0,
+          // Denser clouds spread the grains thinner: brighten each one so a
+          // stroke reads the same whatever the point count.
+          imprintGlow:
+            0.55 *
+            Math.min(1.6, Math.max(1, Math.sqrt(imprintCloud.count / 4096))),
         },
         particles: buffers.read,
         field: fieldPrev,
@@ -433,6 +452,30 @@ export async function createRenderer(
       const seed = makeSeed(MAX_PARTICLES);
       buffers.read.write(seed);
       buffers.write.write(seed);
+    },
+    /** Swap the imprint the matter crystallizes toward. A held population
+     * simply glides to the new targets — the morphing costs nothing. */
+    setImprint(cloud: ImprintCloud, mode: "shape" | "camera") {
+      imprintCloud = cloud;
+      imprintMode = mode;
+      if (cloud.count > 0)
+        titleBuffer.write(cloud.data.subarray(0, cloud.count * 4));
+    },
+    get imprintCount() {
+      return imprintCloud.count;
+    },
+    /** Read back the smoothed camera luminance (field b channel). */
+    async readLuma(): Promise<{ data: Float32Array; width: number; height: number }> {
+      const source = fieldTargets[1 - fieldIndex]!;
+      const bytes = await source.read();
+      const half = new Uint16Array(
+        bytes.buffer,
+        bytes.byteOffset,
+        Math.floor(bytes.byteLength / 2)
+      );
+      const data = new Float32Array(FLOW_W * FLOW_H);
+      for (let i = 0; i < data.length; i++) data[i] = decodeF16(half[i * 4 + 2]!);
+      return { data, width: FLOW_W, height: FLOW_H };
     },
     /** Average optical-flow motion energy, ~0 when the scene is still. */
     async readMotion(): Promise<number> {

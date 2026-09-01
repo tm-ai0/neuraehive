@@ -13,6 +13,8 @@ struct RenderParams {
   gridRows: f32,
   titleMode: f32,
   ashLevel: f32,     // must match the simulation's life-cycle threshold
+  imprintShape: f32, // 1 = crystal holds a shape imprint, 0 = camera image
+  imprintGlow: f32,  // even glow of a held grain, tuned to the point count
 };
 
 struct VertexOut {
@@ -96,14 +98,17 @@ fn lifeTone(age: f32) -> f32 {
   let imprint = textureLoad(field, texel, 0).b;
   let fluid = 0.55 + min(speed * 9.0, 1.4);
   let frozen = 0.10 + imprint * 1.2;
+  // Shape imprints glow evenly (the additive pile-up on the strokes does the
+  // drawing); only the camera imprint reads the frozen luminance image.
+  let held = select(frozen, params.imprintGlow, params.imprintShape > 0.5);
   let crystalWeight = params.crystal * (1.0 - params.titleMode);
-  var brightness = mix(fluid, frozen, crystalWeight * crystalWeight);
+  var brightness = mix(fluid, held, crystalWeight * crystalWeight);
   // The life cycle darkens ash; embers and comets burn over everything.
   brightness *= lifeTone(age);
   brightness *= 1.0 + heat * 1.1 + comet * 0.8;
-  // While the wordmark holds the matter, every grain glows evenly; the
+  // While the imprint holds the matter, every grain glows evenly; the
   // additive pile-up on the strokes does the rest.
-  brightness = mix(brightness, 0.55, params.titleMode * params.titleMode);
+  brightness = mix(brightness, params.imprintGlow, params.titleMode * params.titleMode);
 
   // Ember orange fades back to warm white as the grain cools.
   let hotness = clamp(heat * 1.15, 0.0, 1.0);

@@ -5,6 +5,19 @@
 // Sensors start only from an explicit user gesture, never automatically.
 import { requestMicrophone, type MicSource } from "./audio";
 import { requestCamera, type CameraSource } from "./camera";
+import {
+  DEFAULT_IMPRINT_SETTINGS,
+  IMPRINT_VARIANTS,
+  generateImprint,
+  isAnimated,
+  sampleImageCloud,
+  sampleTextCloud,
+  silhouetteCloud,
+  titleCloud,
+  type ImprintCloud,
+  type ImprintFamily,
+  type ImprintSettings,
+} from "./imprints";
 import { createPanel } from "./panel";
 import { createRenderer, DEFAULT_TUNING, type Renderer } from "./renderer";
 import { sampleWordmark } from "./wordmark";
@@ -37,6 +50,22 @@ const CHLADNI_MODES: [number, number][] = [
 ];
 const smooth01 = (t: number) => t * t * (3 - 2 * t);
 
+const ANIM_INTERVAL = 140; // ms between re-samplings of a living imprint
+const RANDOM_SILENCE_DELAY = 24; // s of silence between random imprints
+const FOND_DAMP = 0.25; // audio reactivity left to the fond mode
+
+// Chaos and the random mode draw from the families that need no asset or
+// camera: every variant, flattened, plus the title and a fresh multi seed.
+const RANDOM_POOL: [ImprintFamily, string][] = [
+  ["titre", ""],
+  ["multi", ""],
+  ...(["volume", "forme", "math", "ondes"] as const).flatMap((family) =>
+    (IMPRINT_VARIANTS[family] ?? []).map(
+      (variant) => [family, variant] as [ImprintFamily, string]
+    )
+  ),
+];
+
 function fail(message: string, error?: unknown) {
   console.error("[cinerae]", message, error ?? "");
   fatal.textContent = message;
@@ -45,8 +74,10 @@ function fail(message: string, error?: unknown) {
 
 async function boot() {
   let renderer: Renderer;
+  let titleImprint: ImprintCloud;
   try {
-    renderer = await createRenderer(canvas, await sampleWordmark());
+    titleImprint = titleCloud(await sampleWordmark());
+    renderer = await createRenderer(canvas, titleImprint);
   } catch (error) {
     fail(
       "WebGPU n'a pas pu démarrer. Il faut un navigateur récent (Chrome/Edge) avec un GPU actif.",
@@ -59,6 +90,13 @@ async function boot() {
   const audioState = { ...AUDIO_DEFAULTS };
   const quality = { auto: window.matchMedia("(pointer: coarse)").matches };
   const behavior = { titleReturn: true };
+  const imprintSettings: ImprintSettings = structuredClone(
+    DEFAULT_IMPRINT_SETTINGS
+  );
+  let imageImprint: ImprintCloud | undefined;
+  let textImprint: ImprintCloud | undefined;
+  let animTimer: number | undefined;
+  let randomNext = RANDOM_SILENCE_DELAY;
 
   let phase: "intro" | "live" = "intro";
   let titleTarget = 1;
@@ -91,7 +129,13 @@ async function boot() {
   // ----- panel --------------------------------------------------------------
   const panel = createPanel(
     document.body,
-    { tuning: renderer.tuning, audio: audioState, quality, behavior },
+    {
+      tuning: renderer.tuning,
+      audio: audioState,
+      quality,
+      behavior,
+      imprint: imprintSettings,
+    },
     {
       onSensor(kind, enabled) {
         if (kind === "camera") void (enabled ? startCamera() : stopCamera());
@@ -99,6 +143,12 @@ async function boot() {
       },
       onChaos() {
         chaosStart = performance.now();
+        // One time out of two, chaos also draws a new imprint.
+        if (Math.random() < 0.5) {
+          const [family, variant] =
+            RANDOM_POOL[(Math.random() * RANDOM_POOL.length) | 0]!;
+          void applyImprint(family, variant);
+        }
       },
       onReset() {
         // The sliders glide home from the panel; here only the matter and
@@ -108,10 +158,159 @@ async function boot() {
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
         renderer.tuning.windOverlay = DEFAULT_TUNING.windOverlay;
         behavior.titleReturn = true;
+        Object.assign(
+          imprintSettings,
+          structuredClone(DEFAULT_IMPRINT_SETTINGS)
+        );
+        textImprint = undefined;
+        void applyImprint("titre", "");
       },
       onInteraction: markActivity,
+      onImprintSelect(family, variant) {
+        void applyImprint(family, variant);
+      },
+      onImprintText(text) {
+        imprintSettings.text = text;
+        textImprint = undefined;
+        void applyImprint("texte", "");
+      },
+      onImprintFile(file) {
+        void importImage(file);
+      },
+      onImprintParams() {
+        // A fine parameter moved (or the random switch): refresh the cloud
+        // of the current generator-driven family right away.
+        if (generateImprint(imprintSettings, sampleContext()) !== null)
+          void applyImprint(imprintSettings.family, imprintSettings.variant);
+      },
     }
   );
+
+  // ----- imprints -----------------------------------------------------------
+  function sampleContext() {
+    return {
+      time: performance.now() / 1000,
+      screenAspect: window.innerWidth / Math.max(1, window.innerHeight),
+    };
+  }
+
+  function syncImprintAnimation() {
+    const animated = isAnimated(imprintSettings);
+    if (animated && animTimer === undefined) {
+      animTimer = window.setInterval(() => {
+        const cloud = generateImprint(imprintSettings, sampleContext());
+        if (cloud) renderer.setImprint(cloud, "shape");
+      }, ANIM_INTERVAL);
+    } else if (!animated && animTimer !== undefined) {
+      window.clearInterval(animTimer);
+      animTimer = undefined;
+    }
+  }
+
+  async function applyImprint(
+    family: ImprintFamily,
+    variant: string,
+    opts: { silent?: boolean } = {}
+  ) {
+    const s = imprintSettings;
+    if (family === "titre") {
+      s.family = "titre";
+      s.variant = "";
+      renderer.setImprint(titleImprint, "shape");
+    } else if (family === "camera" && variant === "silhouette") {
+      if (!cameraSource) {
+        panel.setStatus("caméra inactive — silhouette indisponible");
+        panel.refresh();
+        return;
+      }
+      const luma = await renderer.readLuma();
+      const cloud = silhouetteCloud(luma.data, luma.width, luma.height);
+      if (!cloud) {
+        panel.setStatus("silhouette introuvable — rien devant la caméra ?");
+        panel.refresh();
+        return;
+      }
+      s.family = "camera";
+      s.variant = "silhouette";
+      renderer.setImprint(cloud, "shape");
+    } else if (family === "camera") {
+      // The frozen live-luminance image: the historical behavior of silence,
+      // kept as its own imprint. Idle re-forms the wordmark, as before.
+      s.family = "camera";
+      s.variant = "gelee";
+      renderer.setImprint(titleImprint, "camera");
+    } else if (family === "texte") {
+      const cloud = textImprint ?? (await sampleTextCloud(s.text));
+      if (!cloud) {
+        panel.setStatus("texte vide — rien à cristalliser");
+        panel.refresh();
+        return;
+      }
+      textImprint = cloud;
+      s.family = "texte";
+      s.variant = "";
+      renderer.setImprint(cloud, "shape");
+    } else if (family === "image") {
+      if (!imageImprint) {
+        panel.setStatus("déposer une image sur la scène, ou passer par image…");
+        panel.refresh();
+        return;
+      }
+      s.family = "image";
+      s.variant = "";
+      renderer.setImprint(imageImprint, "shape");
+    } else {
+      s.family = family;
+      s.variant = variant;
+      const cloud = generateImprint(s, sampleContext());
+      if (cloud) renderer.setImprint(cloud, "shape");
+    }
+    syncImprintAnimation();
+    panel.refresh();
+    if (!opts.silent) markActivity();
+  }
+
+  async function importImage(file: File) {
+    try {
+      const cloud = await sampleImageCloud(file);
+      if (!cloud) {
+        panel.setStatus("image sans matière exploitable");
+        return;
+      }
+      imageImprint = cloud;
+      await applyImprint("image", "");
+    } catch (error) {
+      console.warn("[cinerae] import image:", error);
+      panel.setStatus("image illisible");
+    }
+  }
+
+  // Drag & drop d'une image, partout sur la scène. Tout reste local.
+  const dropHint = document.getElementById("drop-hint")!;
+  window.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropHint.classList.add("visible");
+  });
+  window.addEventListener("dragleave", (event) => {
+    if (!event.relatedTarget) dropHint.classList.remove("visible");
+  });
+  window.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropHint.classList.remove("visible");
+    const file = event.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith("image/")) void importImage(file);
+  });
+
+  // Multi is the only family laid out against the screen aspect: re-seed it
+  // when the window really changes shape.
+  let resizeTimer: number | undefined;
+  window.addEventListener("resize", () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      if (imprintSettings.family === "multi")
+        void applyImprint("multi", "", { silent: true });
+    }, 300);
+  });
 
   const updateStatus = () => {
     const cam = cameraSource ? "caméra active" : "sans caméra";
@@ -254,8 +453,21 @@ async function boot() {
       if (a.level < audioState.silenceThreshold) {
         silenceTime += dt;
         if (silenceTime > 2) crystal = Math.min(1, crystal + dt / 8);
+        // Random mode: each long silence draws a new imprint; the held
+        // matter simply glides to the new targets — a morphing, not a cut.
+        if (imprintSettings.random && silenceTime > randomNext) {
+          randomNext += RANDOM_SILENCE_DELAY;
+          const current = `${imprintSettings.family}/${imprintSettings.variant}`;
+          const picks = RANDOM_POOL.filter(
+            ([f, v]) => `${f}/${v}` !== current
+          );
+          const [family, variant] =
+            picks[(Math.random() * picks.length) | 0]!;
+          void applyImprint(family, variant, { silent: true });
+        }
       } else {
         silenceTime = 0;
+        randomNext = RANDOM_SILENCE_DELAY;
         crystal = Math.max(0, crystal - dt * (0.4 + a.level * 5));
       }
 
@@ -296,6 +508,18 @@ async function boot() {
       renderer.dynamics.cymM = CHLADNI_MODES[cymIdx]![0];
       renderer.dynamics.cymN = CHLADNI_MODES[cymIdx]![1];
     }
+    // The fond imprint is a resting background: the matter breathes alone,
+    // camera and sound barely reach it, nothing crystallizes.
+    const fond = imprintSettings.family === "fond";
+    renderer.dynamics.reactivity = fond ? 0.3 : 1;
+    if (fond) {
+      renderer.dynamics.bass *= FOND_DAMP;
+      renderer.dynamics.treble *= FOND_DAMP;
+      renderer.dynamics.transient *= FOND_DAMP;
+      renderer.dynamics.cymatic *= FOND_DAMP;
+      crystal = Math.max(0, crystal - dt * 1.2);
+    }
+
     // The camera imprint melts while the wordmark takes the matter over.
     crystal = Math.max(0, crystal - dt * renderer.dynamics.titleMode * 0.6);
     renderer.dynamics.crystal = crystal;
@@ -305,6 +529,7 @@ async function boot() {
       const idleFor = (now - lastActivity) / 1000;
       if (
         behavior.titleReturn &&
+        renderer.imprintCount > 0 &&
         motionAvg <= MOTION_STILL &&
         idleFor > IDLE_DELAY &&
         titleTarget === 0
