@@ -64,6 +64,19 @@ struct SimParams {
   margin: f32,          // shadow margin: fond eviction strength around the body
   fondReact: f32,       // how much the fond feels the gesture wind
   push: f32,            // v0.7.1b — body shove: momentum kick + obstacle squeeze
+  // v0.7.1c — the dance: every held imprint is transformed live. Rotation,
+  // scale and a three-lobed radial ripple, integrated on the CPU from the
+  // music (bass pumps, transients kick the spin, treble shimmers); without
+  // music the same fields carry a slow breath.
+  danceCos: f32,
+  danceSin: f32,
+  danceCx: f32,         // imprint center in UV (word center, or 0.5/0.5)
+  danceCy: f32,
+  danceDriftX: f32,     // slow float of the whole imprint
+  danceDriftY: f32,
+  danceScale: f32,
+  danceWarp: f32,
+  danceTime: f32,       // phase of the ripple
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -99,11 +112,32 @@ fn homeOf(i: u32) -> vec2f {
 // actual ink, so only a whisper of jitter is needed to soften them to dust.
 fn titleTargetOf(i: u32) -> vec2f {
   let t = titleTargets[i % u32(max(params.titleCount, 1.0))];
-  let perp = (hash01(i * 5u + 11u) + hash01(i * 5u + 12u) - 1.0) * 0.010;
-  let along = (hash01(i * 5u + 13u) - 0.5) * 0.012;
+  let perp = (hash01(i * 5u + 11u) + hash01(i * 5u + 12u) - 1.0) * 0.005;
+  let along = (hash01(i * 5u + 13u) - 0.5) * 0.006;
   let tangent = vec2f(t.w, -t.z);
   let local = t.xy + t.zw * perp + tangent * along;
   return params.titleOffset + local * params.titleScale;
+}
+
+// The danced target: the held imprint rotates, breathes and ripples around
+// its own center, aspect-corrected so circles stay circles. The wordmark's
+// own idle return (titleMode) keeps the raw target — the name stays put.
+fn danceTargetOf(i: u32) -> vec2f {
+  let raw = titleTargetOf(i);
+  let asp = params.gridCols / max(params.gridRows, 1.0);
+  let center = vec2f(params.danceCx, params.danceCy);
+  var p = (raw - center) * vec2f(asp, 1.0);
+  let r = length(p);
+  if (r > 1e-5) {
+    let ang = atan2(p.y, p.x);
+    let ripple = 1.0 + params.danceWarp * sin(3.0 * ang + params.danceTime);
+    p = vec2f(
+      p.x * params.danceCos - p.y * params.danceSin,
+      p.x * params.danceSin + p.y * params.danceCos,
+    ) * (params.danceScale * ripple);
+  }
+  return p / vec2f(asp, 1.0) + center
+    + vec2f(params.danceDriftX, params.danceDriftY);
 }
 
 // The simulation lives a little wider than the screen: matter drifts out of
@@ -508,8 +542,12 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // imprint — or, in camera mode, to its home cell showing the frozen
   // luminance image. A body walking through the form frees it locally.
   let hold = 1.0 - ero;
-  let ctarget = select(homeOf(i), titleTargetOf(i), params.imprintShape > 0.5);
-  acc += (ctarget - pos) * c2 * 14.0 * hold;
+  // Corps grains ignore the imprint spring: the person and the imprint
+  // share the one reserve — the corps keeps its grains, the imprint takes
+  // the rest. No melting, no fight between the two springs.
+  let cHold = c2 * hold * (1.0 - presW);
+  let ctarget = select(homeOf(i), danceTargetOf(i), params.imprintShape > 0.5);
+  acc += (ctarget - pos) * cHold * 14.0;
   let t2 = tEff * tEff;
   if (tEff > 0.001) {
     acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold;
@@ -546,7 +584,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // Viscosity damps motion; ash, a forming crystal, a held tone or the word
   // damp it much harder. Comets fly nearly free.
   let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
-    + ash * 4.0 + min(cym, 1.0) * 4.0 + (c2 * 22.0 + t2 * 26.0) * hold + presDrag;
+    + ash * 4.0 + min(cym, 1.0) * 4.0 + cHold * 22.0 + t2 * 26.0 * hold + presDrag;
   vel *= exp(-dt * drag);
   let maxSpeed = 0.9 + flight * 0.9;
   let speed = length(vel);
