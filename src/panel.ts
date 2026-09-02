@@ -13,7 +13,14 @@ import { IMPRINT_VARIANTS, type ImprintFamily, type ImprintSettings } from "./im
 import { cloneLookColors, PALETTES, type LookColors, type Rgb } from "./look";
 import { getLang, setLang, t } from "./i18n";
 import type { Midi } from "./midi";
-import { LFO_SHAPES, type LfoShape, type ModLink, type ModMatrix, type ParamRef } from "./modmatrix";
+import {
+  LFO_SHAPES,
+  TEMPO_DIVS,
+  type LfoShape,
+  type ModLink,
+  type ModMatrix,
+  type ParamRef,
+} from "./modmatrix";
 import type { PresetData, Presets } from "./presets";
 import type { Tuning } from "./renderer";
 
@@ -32,6 +39,8 @@ export interface PanelState {
   behavior: {
     imprintReturn: boolean;
     presenceSense: number;
+    /** v0.7.1e — the tempo follows the music's own beats when on. */
+    tempoAuto: boolean;
   };
   imprint: ImprintSettings;
   colors: LookColors;
@@ -200,12 +209,15 @@ export function createPanel(
   const matOptions = () =>
     MATERIAL_KEYS.map((k, i) => ({ value: i, label: t(`mat.${k}`) }));
 
-  // ---- v0.7.1d: the three macro journeys, shown to people ------------------
-  // Each one drives four to six existing defs along composed curves. They
-  // are ordinary registry defs (captured by scenes, traversed by the
-  // crossfade, drawn by Chaos, modulation targets); their writes cascade
-  // through writeDef, and the component defs — written after them in
-  // registry order — always win when both are driven.
+  // ---- v0.7.1e: the three macro journeys, one dimension each ---------------
+  // Marée owns the MOVEMENT (speed, turbulence, weight, sizes), Éclipse the
+  // LIGHT (exposure, contrast, ash, density), Prisme the COLOR AND GEOMETRY
+  // (palette drive, hue, symmetries, depth). Each one pushes at least six
+  // defs over at least 60 % of their range, so 0 vs 1 reads across the room
+  // — measured, not assumed. They are ordinary registry defs (captured by
+  // scenes, traversed by the crossfade, drawn by Chaos, modulation targets);
+  // their writes cascade through writeDef, and the component defs — written
+  // after them in registry order — always win when both are driven.
   const macroValues: Record<string, number> = {
     maree: 0.42,
     eclipse: 0.35,
@@ -213,32 +225,42 @@ export function createPanel(
   };
   const macroTouch: Record<string, number> = {};
   const MACRO_CURVES: Record<string, Record<string, Journey>> = {
-    // Marée — flux : from dead calm through a full tide to the storm.
+    // Marée — mouvement : an oily sea of big slow flakes, the home tide,
+    // then a storm of fine fast spray.
     maree: {
-      force: [[0, 0.45], [0.42, 1.2], [0.72, 2.6], [1, 2.0]],
-      viscosity: [[0, 5.2], [0.42, 2.2], [0.75, 1.2], [1, 0.8]],
-      turbulence: [[0, 0.08], [0.42, 0.55], [0.75, 0.85], [1, 1.8]],
-      trails: [[0, 0.86], [0.42, 0.9], [0.7, 0.95], [1, 0.88]],
-      breath: [[0, 0.3], [0.42, 1], [1, 2]],
-      fondReact: [[0, 0.5], [0.42, 1], [1, 1.9]],
+      force: [[0, 0.25], [0.42, 1.2], [0.75, 2.7], [1, 2.4]],
+      viscosity: [[0, 6.8], [0.42, 2.2], [0.75, 1.1], [1, 0.7]],
+      turbulence: [[0, 0.05], [0.42, 0.55], [0.8, 1.2], [1, 1.95]],
+      size: [[0, 3.6], [0.42, 1.55], [1, 1.0]],
+      breath: [[0, 0.1], [0.42, 1], [1, 1.95]],
+      sediment: [[0, 1.8], [0.42, 0.6], [1, 0.1]],
+      filament: [[0, 1.6], [0.42, 1], [1, 0.15]],
+      trails: [[0, 0.96], [0.42, 0.9], [0.7, 0.6], [1, 0.86]],
+      timeScale: [[0, 0.3], [0.42, 1], [1, 1]],
     },
-    // Éclipse — lumière : daylight, then the corona, then the night with a
-    // rim-lit silhouette.
+    // Éclipse — lumière : washed daylight, the corona, then a contrasted
+    // night bedded in ash.
     eclipse: {
-      exposure: [[0, 2.15], [0.35, 1.6], [0.7, 1.25], [1, 0.6]],
-      halo: [[0, 0], [0.35, 0], [0.62, 0.85], [1, 0.3]],
-      fondVisible: [[0, 0.55], [0.35, 0.35], [1, 0.1]],
-      ashShare: [[0, 0.08], [0.35, 0.15], [1, 0.32]],
-      bodyMargin: [[0, 0.5], [0.35, 1], [1, 2]],
+      exposure: [[0, 2.7], [0.35, 1.6], [0.7, 1.1], [1, 0.55]],
+      compBright: [[0, 1.5], [0.35, 1], [0.62, 1.15], [1, 0.38]],
+      halo: [[0, 0], [0.35, 0], [0.62, 0.9], [1, 0.35]],
+      contrast: [[0, 0], [0.35, 0], [0.7, 0.45], [1, 0.85]],
+      ashShare: [[0, 0.07], [0.35, 0.15], [1, 0.33]],
+      paperGrain: [[0, 0], [0.35, 0], [1, 0.65]],
+      fondVisible: [[0, 0.75], [0.35, 0.35], [1, 0.06]],
+      bodyMargin: [[0, 0.4], [0.35, 1], [1, 1.9]],
     },
-    // Prisme — couleur : depth opens, the color follows the speed, the
-    // light facets and scintillates.
+    // Prisme — couleur et géométrie : the hue turns, the palette follows
+    // the speed, depth opens, then the frame folds into a mandala.
     prisme: {
-      colorDriver: [[0, 0], [0.5, 1], [1, 1.85]],
-      depthAmount: [[0, 0], [0.5, 0.85], [1, 0.55]],
-      dofBlur: [[0, 0], [0.55, 0.3], [1, 0.7]],
+      compHue: [[0, 0], [0.5, 0.35], [1, 0.85]],
+      colorDriver: [[0, 0], [0.45, 1], [1, 1.9]],
+      symMode: [[0, 0], [0.55, 0], [0.75, 3], [1, 4]],
+      symN: [[0, 6], [0.55, 6], [0.75, 3], [1, 11]],
+      depthAmount: [[0, 0], [0.5, 0.8], [1, 0.55]],
+      dofBlur: [[0, 0], [0.55, 0.35], [1, 0.75]],
+      strobe: [[0, 0], [0.7, 0.05], [1, 0.4]],
       focusLayer: [[0, 1], [0.55, 1.7], [1, 0.5]],
-      strobe: [[0, 0], [0.7, 0.06], [1, 0.32]],
     },
   };
   const setMacro = (key: string, v: number) => {
@@ -268,6 +290,12 @@ export function createPanel(
       writeDef("bodyMargin", v * 2);
     }, { transient: true, format: percent }),
     // ---- corps -----------------------------------------------------------
+    // v0.7.1e — who owns the frame: the body or the imprint. One slider,
+    // visible from Umbra, hands the grains and the light from one to the
+    // other (the imprint's budget and glow follow it in the shaders).
+    def("balance", "corps", ["anima", "pro"], 0, 1, 0.01,
+      () => state.tuning.balance, (v) => (state.tuning.balance = v),
+      { format: percent, chaos: [0.15, 0.85], group: "forme" }),
     def("presenceShare", "corps", ["anima", "pro"], 0.1, 1, 0.01,
       () => state.tuning.presenceShare, (v) => (state.tuning.presenceShare = v),
       { format: percent, chaos: [0.35, 1], group: "forme" }),
@@ -327,8 +355,6 @@ export function createPanel(
       { chaos: [0.8, 5.5] }),
     def("mirror", "geste", [], 0, 1, 1,
       () => state.tuning.mirror, (v) => (state.tuning.mirror = v)),
-    def("windOverlay", "geste", [], 0, 1, 0.01,
-      () => state.tuning.windOverlay, (v) => (state.tuning.windOverlay = v)),
     // ---- musique ---------------------------------------------------------
     // Anima sees one knob; Pro splits it into the three bands.
     def("musicReact", "musique", ["anima"], 0, 2, 0.05,
@@ -347,9 +373,6 @@ export function createPanel(
     def("transientGain", "musique", ["pro"], 0, 2, 0.05,
       () => state.audio.transientGain, (v) => (state.audio.transientGain = v),
       { format: (v) => percent(v / 2) }),
-    def("danse", "musique", ["anima", "pro"], 0, 2, 0.05,
-      () => state.tuning.danse, (v) => (state.tuning.danse = v),
-      { format: (v) => percent(v / 2), chaos: [0.3, 1.8] }),
     // v0.7.1d — how visibly each band of the sound registers: bass = mass,
     // low mids = breadth, mids = color, treble = sparkle, accents = shock.
     def("soundFx", "musique", ["anima", "pro"], 0, 2, 0.05,
@@ -429,6 +452,9 @@ export function createPanel(
       () => (state.behavior.imprintReturn ? 1 : 0),
       (v) => (state.behavior.imprintReturn = v > 0.5)),
     // ---- look ------------------------------------------------------------
+    def("compHue", "look", ["anima", "pro"], 0, 1, 0.005,
+      () => state.tuning.compHue, (v) => (state.tuning.compHue = v),
+      { format: (v) => `${Math.round(v * 360)}°`, chaos: [0, 1], group: "teinte" }),
     def("colorDriver", "look", ["anima", "pro"], 0, 3, 1,
       () => state.tuning.colorDriver, (v) => (state.tuning.colorDriver = v),
       {
@@ -479,6 +505,14 @@ export function createPanel(
     def("halo", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.halo, (v) => (state.tuning.halo = v),
       { format: percent, chaos: [0, 0.5], group: "lumiere" }),
+    // v0.7.1e — global composition: four whole-frame handles any LFO,
+    // macro, scene or MIDI knob can drive.
+    def("compBright", "look", ["anima", "pro"], 0.25, 2, 0.01,
+      () => state.tuning.compBright, (v) => (state.tuning.compBright = v),
+      { format: (v) => `×${plain(v)}`, chaos: [0.6, 1.5], group: "lumiere" }),
+    def("contrast", "look", ["anima", "pro"], 0, 1, 0.01,
+      () => state.tuning.contrast, (v) => (state.tuning.contrast = v),
+      { format: percent, chaos: [0, 0.7], group: "lumiere" }),
     def("paperGrain", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.paperGrain, (v) => (state.tuning.paperGrain = v),
       { format: percent, group: "lumiere" }),
@@ -513,6 +547,16 @@ export function createPanel(
     def("dofBlur", "look", ["anima", "pro"], 0, 1, 0.01,
       () => state.tuning.dofBlur, (v) => (state.tuning.dofBlur = v),
       { format: percent, visible: () => state.tuning.depthAmount > 0.001, group: "espace" }),
+    def("compZoom", "look", ["anima", "pro"], 0.6, 1.8, 0.01,
+      () => state.tuning.compZoom, (v) => (state.tuning.compZoom = v),
+      { format: (v) => `×${plain(v)}`, chaos: [0.85, 1.4], group: "espace" }),
+    def("compRot", "look", ["anima", "pro"], -3.1416, 3.1416, 0.01,
+      () => state.tuning.compRot, (v) => (state.tuning.compRot = v),
+      {
+        format: (v) => `${Math.round((v * 180) / Math.PI)}°`,
+        chaos: [-0.8, 0.8],
+        group: "espace",
+      }),
     def("symMode", "look", ["anima", "pro"], 0, 4, 1,
       () => state.tuning.symMode, (v) => (state.tuning.symMode = v),
       {
@@ -558,6 +602,46 @@ export function createPanel(
     def("matBlend", "scenes", [], 0, 1, 0.001,
       () => state.tuning.matBlend, (v) => (state.tuning.matBlend = v),
       { transient: true, hidden: true }),
+    // ---- v0.7.1e — the imprint layer: mode and transform ------------------
+    // Position, rotation and scale are ordinary defs: the music dances them,
+    // LFOs, macros, Chaos, scenes and MIDI drive them like anything else.
+    def("impMode", "empreintes", ["pro"], 0, 2, 1,
+      () => state.tuning.impMode, (v) => (state.tuning.impMode = v),
+      {
+        discrete: true,
+        chaos: [0, 2],
+        chaosSnap: true,
+        group: "reglages",
+        options: () => [
+          { value: 0, label: t("opt.impCreux") },
+          { value: 1, label: t("opt.impMix") },
+          { value: 2, label: t("opt.impLibre") },
+        ],
+      }),
+    def("impX", "empreintes", ["pro"], -0.4, 0.4, 0.005,
+      () => state.tuning.impX, (v) => (state.tuning.impX = v),
+      { format: (v) => percent((v + 0.4) / 0.8), chaos: [-0.22, 0.22], group: "reglages" }),
+    def("impY", "empreintes", ["pro"], -0.35, 0.35, 0.005,
+      () => state.tuning.impY, (v) => (state.tuning.impY = v),
+      { format: (v) => percent((v + 0.35) / 0.7), chaos: [-0.18, 0.18], group: "reglages" }),
+    def("impRot", "empreintes", ["pro"], -3.1416, 3.1416, 0.01,
+      () => state.tuning.impRot, (v) => (state.tuning.impRot = v),
+      {
+        format: (v) => `${Math.round((v * 180) / Math.PI)}°`,
+        chaos: [-1.6, 1.6],
+        group: "reglages",
+      }),
+    def("impScale", "empreintes", ["pro"], 0.35, 2.4, 0.01,
+      () => state.tuning.impScale, (v) => (state.tuning.impScale = v),
+      { format: (v) => `×${plain(v)}`, chaos: [0.6, 1.9], group: "reglages" }),
+    // ---- v0.7.1e — the shared tempo (rendered by the modulation pages) ----
+    def("tempo", "modulation", [], 40, 220, 1,
+      () => hooks.getMod()?.tempo ?? 120,
+      (v) => {
+        const m = hooks.getMod();
+        if (m) m.tempo = v;
+      },
+      { format: (v) => `${Math.round(v)} bpm` }),
     // ---- paramètres fins des empreintes (pro, gated by family) -----------
     def("waveFreq", "empreintes", ["pro"], 0.5, 8, 0.1,
       () => state.imprint.wave.freq, (v) => (state.imprint.wave.freq = v),
@@ -698,6 +782,35 @@ export function createPanel(
   const sensorsBox = document.createElement("div");
   sensorsBox.className = "cinerae-sensors";
   panel.appendChild(sensorsBox);
+
+  // v0.7.1e — the five-band gauge: what the microphone really hears, bar by
+  // bar (graves, bas-médiums, médiums, aigus, attaques). Visible whenever
+  // the mic runs, so a dead capture reads at a glance.
+  const BAND_KEYS = ["bass", "lowMid", "mid", "treble", "hit"] as const;
+  const bandsBox = document.createElement("div");
+  bandsBox.className = "cinerae-bands";
+  panel.appendChild(bandsBox);
+  const bandFills: HTMLElement[] = [];
+  const bandNames: HTMLElement[] = [];
+  for (const key of BAND_KEYS) {
+    const col = document.createElement("span");
+    col.className = "cinerae-band";
+    const track = document.createElement("span");
+    track.className = "cinerae-band-track";
+    const fill = document.createElement("span");
+    fill.className = "cinerae-band-fill";
+    track.appendChild(fill);
+    const name = document.createElement("span");
+    name.className = "cinerae-band-name";
+    name.dataset.key = key;
+    col.append(track, name);
+    bandsBox.appendChild(col);
+    bandFills.push(fill);
+    bandNames.push(name);
+  }
+  const syncBandsVisible = () => {
+    bandsBox.style.display = mode !== "umbra" && sensors.mic ? "" : "none";
+  };
 
   const makeSwitch = (
     labelKey: string,
@@ -1416,14 +1529,6 @@ export function createPanel(
       body,
       "hint.mirror"
     );
-    if (mode !== "pro") return;
-    makeSwitch(
-      "sw.overlay",
-      () => state.tuning.windOverlay > 0.01,
-      (next) => writeDef("windOverlay", next ? 0.85 : 0),
-      body,
-      "hint.windOverlay"
-    );
   }
 
   function renderParticules(body: HTMLElement) {
@@ -1453,28 +1558,59 @@ export function createPanel(
       .filter((d) => d.key !== "xfade" && !d.hidden)
       .map((d) => ({ key: d.key, label: d.label }));
 
+  // Tempo divisions, labeled from a quarter beat to four bars.
+  const DIV_LABELS = ["divQ", "divH", "divB1", "divB2", "divM1", "divM2", "divM4"];
+
+  // Tap tempo: the mean of the recent tap intervals writes the tempo def.
+  let tapTimes: number[] = [];
+  const tapTempo = () => {
+    const now = performance.now();
+    if (tapTimes.length && now - tapTimes[tapTimes.length - 1]! > 2200) {
+      tapTimes = [];
+    }
+    tapTimes.push(now);
+    if (tapTimes.length < 2) return;
+    if (tapTimes.length > 7) tapTimes.shift();
+    let sum = 0;
+    for (let k = 1; k < tapTimes.length; k++) sum += tapTimes[k]! - tapTimes[k - 1]!;
+    const bpm = 60_000 / (sum / (tapTimes.length - 1));
+    writeDef("tempo", Math.min(220, Math.max(40, bpm)));
+    syncKeys(["tempo"]);
+  };
+
+  // v0.7.1e — one LFO page: shape, frequency in Hz or as a tempo division,
+  // amplitude, and ONE target — any registry setting, macros, imprint
+  // transform and the four global composition handles included.
   function renderLfoBlock(body: HTMLElement, i: number) {
     const mod = hooks.getMod()!;
     const lfo = mod.lfos[i]!;
     const shapeRow = document.createElement("div");
     shapeRow.className = "cinerae-chips";
+    shapeRow.dataset.hint = t("hint.lfoShape");
     body.appendChild(shapeRow);
     for (const shape of LFO_SHAPES) {
-      makeChip(shapeRow, shape, lfo.shape === shape, () => {
+      makeChip(shapeRow, t(`lfo.${shape}`), lfo.shape === shape, () => {
         lfo.shape = shape as LfoShape;
         renderMode();
       });
     }
-    makeSliderRow(
+    const keys = ["", ...targetOptions().map((o) => o.key), "xfade"];
+    const { row: targetRow } = makeSelect(
       body,
-      t("ui.lfoRate"),
-      0,
-      1,
-      0.005,
-      () => rateToSlider(lfo.rate),
-      (v) => (lfo.rate = sliderToRate(v)),
-      () => `${lfo.rate.toFixed(2)} Hz`
+      t("ui.lfoTarget"),
+      keys.map((k, idx) => ({
+        value: idx,
+        label: k
+          ? controls.find((d) => d.key === k)?.label ?? k
+          : t("ui.lfoNone"),
+      })),
+      () => Math.max(0, keys.indexOf(lfo.target)),
+      (v) => {
+        mod.setLfoTarget(i, keys[v] ?? "");
+        renderMode();
+      }
     );
+    targetRow.dataset.hint = t("hint.lfoTarget");
     makeSliderRow(
       body,
       t("ui.lfoAmp"),
@@ -1485,6 +1621,49 @@ export function createPanel(
       (v) => (lfo.amp = v),
       percent
     );
+    makeSwitch(
+      "sw.lfoTempo",
+      () => lfo.useTempo,
+      (next) => {
+        lfo.useTempo = next;
+        renderMode();
+      },
+      body,
+      "hint.lfoTempo"
+    );
+    if (lfo.useTempo) {
+      makeSelect(
+        body,
+        t("ui.lfoDiv"),
+        TEMPO_DIVS.map((_, idx) => ({ value: idx, label: t(`div.${DIV_LABELS[idx]}`) })),
+        () => Math.max(0, TEMPO_DIVS.findIndex((d) => d === lfo.div)),
+        (v) => (lfo.div = TEMPO_DIVS[v] ?? 4)
+      );
+      const tempoDef = controls.find((d) => d.key === "tempo")!;
+      renderDefRow(tempoDef, body);
+      const tRow = document.createElement("div");
+      tRow.className = "cinerae-mini-row";
+      body.appendChild(tRow);
+      miniButton(tRow, t("btn.tap"), tapTempo, t("hint.tap"));
+      makeSwitch(
+        "sw.tempoAuto",
+        () => state.behavior.tempoAuto,
+        (next) => (state.behavior.tempoAuto = next),
+        body,
+        "hint.tempoAuto"
+      );
+    } else {
+      makeSliderRow(
+        body,
+        t("ui.lfoRate"),
+        0,
+        1,
+        0.005,
+        () => rateToSlider(lfo.rate),
+        (v) => (lfo.rate = sliderToRate(v)),
+        () => `${lfo.rate.toFixed(2)} Hz`
+      );
+    }
     makeSliderRow(
       body,
       t("ui.lfoPhase"),
@@ -1501,23 +1680,6 @@ export function createPanel(
       (next) => (lfo.sync = next),
       body
     );
-    const lfoBtns = document.createElement("div");
-    lfoBtns.className = "cinerae-mini-row";
-    body.appendChild(lfoBtns);
-    miniButton(lfoBtns, "+ lfo", () => {
-      if (mod.lfos.length < 10) {
-        mod.addLfo();
-        groupOpen.modulation = `lfo${mod.lfos.length}`;
-        renderMode();
-      }
-    });
-    miniButton(lfoBtns, "− lfo", () => {
-      if (mod.lfos.length > 1) {
-        mod.removeLfo();
-        groupOpen.modulation = `lfo${Math.min(i + 1, mod.lfos.length)}`;
-        renderMode();
-      }
-    });
   }
 
   function renderModulation(body: HTMLElement) {
@@ -1862,7 +2024,6 @@ export function createPanel(
       return true;
     }
   })();
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let pointerInside = false;
   let inviteRow: HTMLElement | null = null;
   let inviteTimer: number | undefined;
@@ -1914,7 +2075,8 @@ export function createPanel(
       bassOnlyS += 1;
     else bassOnlyS = 0;
     if (!invitesOn || mode === "pro" || collapsed || pointerInside) return;
-    if (reducedMotion?.matches) return;
+    // Under prefers-reduced-motion the invitation still shows, as a steady
+    // glow instead of a pulse — the CSS carries the difference (v0.7.1e).
     if (document.body.classList.contains("cinerae-idle")) return;
     if (inviteRow || now < inviteCooldownUntil) return;
     const tn = state.tuning;
@@ -1982,6 +2144,35 @@ export function createPanel(
     input.setAttribute("aria-label", t("ctl.umbra"));
     row.dataset.hint = t("hint.umbra");
     row.classList.add("cinerae-umbra-row");
+
+    // v0.7.1e — the second Umbra gesture: who owns the frame, the body or
+    // the imprint. Same ends-labeled slider, driving the balance def.
+    const bal = controls.find((d) => d.key === "balance")!;
+    const balWrap = document.createElement("div");
+    balWrap.className = "cinerae-umbra-slider";
+    umbraBox.appendChild(balWrap);
+    const balEnds = document.createElement("div");
+    balEnds.className = "cinerae-umbra-ends";
+    balEnds.innerHTML = `<span>${t("ui.balL")}</span><span>${t("ui.balR")}</span>`;
+    balWrap.appendChild(balEnds);
+    const balRow = makeSliderRow(
+      balWrap,
+      "",
+      bal.min,
+      bal.max,
+      bal.step,
+      bal.get,
+      (v) => {
+        glideToken++;
+        bal.set(v);
+        hooks.getMod()?.onAuthored(bal.key, v);
+      },
+      () => ""
+    );
+    balRow.input.setAttribute("aria-label", t("ctl.balance"));
+    balRow.row.dataset.hint = t("hint.balance");
+    balRow.row.classList.add("cinerae-umbra-row");
+    rowRefs.push({ def: bal as ControlDef, input: balRow.input, readout: balRow.readout, row: balRow.row });
   }
 
   // ----- glide (Chaos / Reset made visible on the sliders) ------------------
@@ -2060,6 +2251,11 @@ export function createPanel(
     sensorsBox.style.display = minimal ? "none" : "";
     actions.style.display = minimal ? "none" : "";
     crystalBar.style.display = minimal ? "none" : "";
+    syncBandsVisible();
+    bandsBox.dataset.hint = t("hint.bands");
+    bandNames.forEach((el) => {
+      el.textContent = t(`band.${el.dataset.key}`);
+    });
 
     stopInvite();
     rowRefs = [];
@@ -2144,6 +2340,14 @@ export function createPanel(
       sensors = { camera, mic };
       cameraSwitch.sync();
       micSwitch.sync();
+      syncBandsVisible();
+    },
+    /** v0.7.1e — feed the five-band gauge (values 0..1, ~30 Hz). */
+    setBands(values: readonly number[]) {
+      for (let i = 0; i < bandFills.length; i++) {
+        const v = Math.min(1, Math.max(0, values[i] ?? 0));
+        bandFills[i]!.style.height = `${Math.round(v * 100)}%`;
+      }
     },
     /** Reflect externally-driven values (modulation, MIDI) on visible rows,
      * without the change flash — called on a slow cadence by the loop. */

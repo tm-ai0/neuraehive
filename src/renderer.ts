@@ -47,7 +47,6 @@ export interface Tuning {
   trailDecay: number;
   exposure: number;
   fringeTint: number; // 0 warm .. 1 cool
-  windOverlay: number; // 0 off .. 1 full veils
   mirror: number; // 1 = mirrored camera (default)
   count: number;
   emberGain: number; // ember births on strong transients
@@ -60,9 +59,21 @@ export interface Tuning {
   cometGain: number; // camera-tear sensitivity
   gestureGain: number; // manual multiplier over the adaptive gesture gain
   push: number; // v0.7.1b — the body shoves the dust: 0 = it drifts through me
-  danse: number; // v0.7.1c — how much the music animates imprints and symmetry
   rawCam: number; // v0.7.1c — Pro-only raw camera view (transient, never saved)
   soundFx: number; // v0.7.1d — how visibly each band of the sound registers
+  // ---- v0.7.1e — the imprint is a full layer of its own -------------------
+  balance: number; // 0 = the body owns the frame .. 1 = the imprint does
+  impMode: number; // 0 = creux (in the body's hollow), 1 = mélange, 2 = libre
+  impX: number; // imprint offset in UV, music/LFO/macros can move it
+  impY: number;
+  impRot: number; // imprint rotation, radians
+  impScale: number; // imprint scale multiplier
+  // ---- v0.7.1e — global composition (LFO targets, macro components) -------
+  compZoom: number; // whole-frame zoom, 1 = none
+  compRot: number; // whole-frame rotation, radians
+  compBright: number; // final brightness multiplier, 1 = none
+  compHue: number; // final hue rotation, 0..1 = full turn
+  contrast: number; // S-curve strength on the graded image, 0 = none
   // ---- look (all inert at their defaults: the historical render) ----------
   colorDriver: number; // 0 âge, 1 vitesse, 2 densité, 3 profondeur
   blendMode: number; // 0 additif, 1 écran, 2 tamisée, 3 dodge, 4 soustractif
@@ -108,6 +119,7 @@ export interface Dynamics {
   transient: number;
   shockR: number; // v0.7.1d — shockwave ring radius (UV) from the imprint center
   shockAmp: number; // v0.7.1d — shockwave strength, decays after each accent
+  flash: number; // v0.7.1e — whole-frame lightning on each strong accent
   reactivity: number; // 1 = full camera coupling; the fond mode quiets it
   crystal: number;
   titleMode: number;
@@ -148,7 +160,6 @@ export const DEFAULT_TUNING: Tuning = {
   trailDecay: 0.9,
   exposure: 1.6,
   fringeTint: 0.5,
-  windOverlay: 0,
   mirror: 1,
   count: 400_000,
   emberGain: 1,
@@ -161,9 +172,19 @@ export const DEFAULT_TUNING: Tuning = {
   cometGain: 1,
   gestureGain: 1,
   push: 1,
-  danse: 1,
   rawCam: 0,
   soundFx: 1.4,
+  balance: 0.5,
+  impMode: 2,
+  impX: 0,
+  impY: 0,
+  impRot: 0,
+  impScale: 1,
+  compZoom: 1,
+  compRot: 0,
+  compBright: 1,
+  compHue: 0,
+  contrast: 0,
   colorDriver: 0,
   blendMode: 0,
   halo: 0,
@@ -291,6 +312,7 @@ export async function createRenderer(
     transient: 0,
     shockR: 0,
     shockAmp: 0,
+    flash: 0,
     reactivity: 1,
     crystal: 0,
     titleMode: 0,
@@ -356,6 +378,9 @@ export async function createRenderer(
     trailTargets = [makeTrail("a"), makeTrail("b")];
     trailIndex = 0;
     for (const t of previous) t.color.destroy();
+    // The luma history was cropped for the old aspect: re-warm the flow so
+    // the resize never reads as a spurious gust (v0.7.1e).
+    lumaFrames = 0;
   });
 
   // Imprint layout. "uv" clouds already live in screen space; "shape" clouds
@@ -437,9 +462,11 @@ export async function createRenderer(
           params: {
             texel: output.texelSize,
             exposure: tuning.exposure,
-            fringe: dynamics.transient,
+            // The lightning owns the accent: while it flares, the chroma
+            // fringe steps back so blown regions never tear into color.
+            fringe:
+              dynamics.transient * (1 - Math.min(1, dynamics.flash) * 0.75),
             fringeTint: tuning.fringeTint,
-            overlay: tuning.windOverlay,
             time: time.time,
             bg: look.bg,
             grade: look.grade,
@@ -457,6 +484,18 @@ export async function createRenderer(
             camScale,
             camOffset: [(1 - camScale[0]) / 2, (1 - camScale[1]) / 2],
             camMirror: tuning.mirror,
+            // v0.7.1e — global composition: the bass pumps the zoom, the
+            // mids glide the hue; LFOs and macros drive the same knobs.
+            compZoom:
+              tuning.compZoom *
+              (1 + Math.min(1.5, dynamics.bass) * 0.07 * tuning.soundFx),
+            compRot: tuning.compRot,
+            compBright: tuning.compBright,
+            compHue:
+              tuning.compHue +
+              Math.min(1, dynamics.mid) * 0.05 * tuning.soundFx,
+            contrast: tuning.contrast,
+            flash: dynamics.flash,
           },
           trail: trailTex,
           field: fieldTex,
@@ -563,6 +602,10 @@ export async function createRenderer(
           danceScale: dynamics.danceScale,
           danceWarp: dynamics.danceWarp,
           danceTime: dynamics.danceTime,
+          // v0.7.1e — the imprint layer: its own share of the reserve, and
+          // its freedom from the body's hollow (0 creux .. 1 libre).
+          impShare: tuning.balance * 0.55,
+          impFree: Math.min(1, Math.max(0, tuning.impMode * 0.5)),
         },
         src: buffers.read,
         dst: buffers.write,
@@ -578,12 +621,15 @@ export async function createRenderer(
       // for two real frames before declaring the camera to the flow pass.
       const hasCamera = cameraSeen && lumaFrames >= 2 ? 1 : 0;
       if (camera && cameraTexture && cameraSeen) {
+        // Cover-crop toward the SCREEN aspect, not the field's fixed 16:9:
+        // the field is stretched onto the window, so cropping to the window
+        // keeps the silhouette's proportions at any size (v0.7.1e).
         const camAspect = camera.width / camera.height;
-        const fieldAspect = FLOW_W / FLOW_H;
+        const scrAspect = output.size[0] / Math.max(1, output.size[1]);
         const scale: [number, number] =
-          camAspect > fieldAspect
-            ? [fieldAspect / camAspect, 1]
-            : [1, camAspect / fieldAspect];
+          camAspect > scrAspect
+            ? [scrAspect / camAspect, 1]
+            : [1, camAspect / scrAspect];
         lumaEffect.set({
           params: {
             scale,
@@ -704,6 +750,9 @@ export async function createRenderer(
           sparkle: Math.min(1.5, dynamics.treble * tuning.soundFx),
           midTint: Math.min(1, dynamics.mid * tuning.soundFx),
           bassPulse: Math.min(1.5, dynamics.bass * tuning.soundFx),
+          // v0.7.1e — the imprint layer glows on its own budget; the
+          // balance slider hands it the light as it hands it the grains.
+          impBright: 0.55 + tuning.balance * 0.9,
         },
         particles: buffers.read,
         field: fieldPrev,

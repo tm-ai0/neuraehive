@@ -1,10 +1,12 @@
-// Modulation matrix, synth style. Sources: up to ten LFOs (sine, triangle,
-// saw, square, smoothed random — rate, amplitude, phase, transient sync),
-// the sound (bass, treble, transients) and the gesture energy. Targets: any
-// registered panel parameter, the A/B crossfade included. Each link has a
-// depth; the target keeps a center value the modulation breathes around.
-// Everything runs on the CPU in a few dozen operations per frame — the
-// image never pays for it.
+// Modulation matrix, synth style. v0.7.1e — four LFOs, always four, each
+// with a shape (sine, triangle, saw, square, sampled random), a frequency
+// in Hz or as a division of the shared tempo (a quarter beat to four bars),
+// an amplitude and ONE direct target: any registered panel parameter — the
+// macros, the imprint transforms and the four global composition settings
+// (luminosité, zoom, rotation, teinte) included. The links page still wires
+// the sound bands and the gesture to extra targets. Each target keeps a
+// center value the modulation breathes around. Everything runs on the CPU
+// in a few dozen operations per frame — the image never pays for it.
 
 export interface ParamRef {
   key: string;
@@ -42,16 +44,22 @@ export const LFO_SHAPES: LfoShape[] = [
   "aleatoire",
 ];
 
+/** Tempo divisions, in beats per LFO cycle: 1/4 beat up to 4 bars (4/4). */
+export const TEMPO_DIVS = [0.25, 0.5, 1, 2, 4, 8, 16] as const;
+
 export interface Lfo {
   shape: LfoShape;
-  rate: number; // Hz
-  amp: number; // 0..1
+  rate: number; // Hz (free mode)
+  amp: number; // 0..1 — the one amplitude control
   phase: number; // 0..1 offset
   sync: boolean; // retrigger on audio transients
+  useTempo: boolean; // frequency follows the shared tempo
+  div: number; // beats per cycle when useTempo (TEMPO_DIVS)
+  target: string; // ParamRef key, "" = none
 }
 
 export interface ModLink {
-  source: string; // "lfo1".."lfo10" | "basses" | "aigus" | "transitoires" | "geste"
+  source: string; // "lfo1".."lfo4" | "basses" | "aigus" | "transitoires" | "geste"
   target: string; // ParamRef key
   depth: number; // -1..1
 }
@@ -63,49 +71,61 @@ export interface ModSources {
   gesture: number;
 }
 
-export const MAX_LFOS = 10;
+export const LFO_COUNT = 4;
 
 export interface ModMatrixData {
   lfos: Lfo[];
   links: ModLink[];
+  tempo?: number;
 }
 
 const defaultLfo = (): Lfo => ({
   shape: "sinus",
   rate: 0.25,
-  amp: 1,
+  amp: 0.5,
   phase: 0,
   sync: false,
+  useTempo: false,
+  div: 4,
+  target: "",
 });
 
 export function createModMatrix(params: ParamRef[]) {
   const byKey = new Map(params.map((p) => [p.key, p]));
-  // Two LFOs from the start: the Curieux mode plays them without ceremony.
-  const lfos: Lfo[] = [defaultLfo(), defaultLfo()];
+  // Always four LFOs: a fixed rack, no ceremony.
+  const lfos: Lfo[] = Array.from({ length: LFO_COUNT }, defaultLfo);
   const links: ModLink[] = [];
   const centers = new Map<string, number>();
+  let tempo = 120; // BPM, shared by every tempo-synced LFO
 
   // Per-LFO runtime: free-running phase + smoothed-random endpoints.
-  const acc: number[] = Array.from({ length: MAX_LFOS }, () => Math.random());
-  const rndPrev: number[] = Array.from({ length: MAX_LFOS }, () => 0);
+  const acc: number[] = Array.from({ length: LFO_COUNT }, () => Math.random());
+  const rndPrev: number[] = Array.from({ length: LFO_COUNT }, () => 0);
   const rndNext: number[] = Array.from(
-    { length: MAX_LFOS },
+    { length: LFO_COUNT },
     () => Math.random() * 2 - 1
   );
   let prevTransient = 0;
 
-  const linksOf = (key: string) => links.filter((l) => l.target === key);
+  const occupantsOf = (key: string) =>
+    links.filter((l) => l.target === key).length +
+    lfos.filter((l) => l.target === key).length;
 
   function ensureCenter(key: string) {
     if (!centers.has(key)) centers.set(key, byKey.get(key)?.get() ?? 0);
   }
 
   function releaseTarget(key: string) {
-    if (linksOf(key).length > 0) return;
+    if (occupantsOf(key) > 0) return;
     const c = centers.get(key);
     centers.delete(key);
     const def = byKey.get(key);
     if (def && c !== undefined) def.set(Math.min(def.max, Math.max(def.min, c)));
+  }
+
+  function lfoHz(lfo: Lfo): number {
+    if (!lfo.useTempo) return Math.max(0, lfo.rate);
+    return tempo / 60 / Math.max(0.25, lfo.div);
   }
 
   function lfoSignal(i: number): number {
@@ -158,6 +178,12 @@ export function createModMatrix(params: ParamRef[]) {
   return {
     lfos,
     links,
+    get tempo() {
+      return tempo;
+    },
+    set tempo(bpm: number) {
+      tempo = Math.min(220, Math.max(40, bpm));
+    },
     get sourceNames(): string[] {
       return [
         ...lfos.map((_, i) => `lfo${i + 1}`),
@@ -167,22 +193,15 @@ export function createModMatrix(params: ParamRef[]) {
         "geste",
       ];
     },
-    addLfo(): boolean {
-      if (lfos.length >= MAX_LFOS) return false;
-      lfos.push(defaultLfo());
-      return true;
-    },
-    removeLfo() {
-      if (lfos.length <= 1) return;
-      lfos.pop();
-      const gone = `lfo${lfos.length + 1}`;
-      for (let i = links.length - 1; i >= 0; i--) {
-        if (links[i]!.source === gone) {
-          const key = links[i]!.target;
-          links.splice(i, 1);
-          releaseTarget(key);
-        }
-      }
+    /** Point an LFO at a registry key ("" clears it). Centers follow. */
+    setLfoTarget(i: number, target: string) {
+      const lfo = lfos[i];
+      if (!lfo) return;
+      if (target && !byKey.has(target)) return;
+      const old = lfo.target;
+      lfo.target = target;
+      if (old && old !== target) releaseTarget(old);
+      if (target) ensureCenter(target);
     },
     addLink(source: string, target: string): ModLink | undefined {
       if (!byKey.has(target)) return undefined;
@@ -228,31 +247,42 @@ export function createModMatrix(params: ParamRef[]) {
       for (let i = 0; i < lfos.length; i++) {
         const lfo = lfos[i]!;
         if (rising && lfo.sync) acc[i] = 0;
-        const before = acc[i]!;
-        acc[i] = before + dt * Math.max(0, lfo.rate);
+        acc[i] = acc[i]! + dt * lfoHz(lfo);
         if (acc[i]! >= 1) {
           acc[i] = acc[i]! % 1;
           rndPrev[i] = rndNext[i]!;
           rndNext[i] = Math.random() * 2 - 1;
         }
       }
-      if (links.length === 0) return false;
+
+      // Sum every contribution per target: the LFOs' direct targets first,
+      // then the wired links — both breathe around the same center.
+      const delta = new Map<string, number>();
+      for (let i = 0; i < lfos.length; i++) {
+        const key = lfos[i]!.target;
+        if (!key) continue;
+        delta.set(key, (delta.get(key) ?? 0) + lfoSignal(i));
+      }
+      for (const link of links) {
+        delta.set(
+          link.target,
+          (delta.get(link.target) ?? 0) +
+            link.depth * sourceSignal(link.source, sources)
+        );
+      }
+      if (delta.size === 0) return false;
 
       // The crossfade first: its write cascades into other targets' centers.
-      const keys = [...centers.keys()].sort((a, b) =>
+      const keys = [...delta.keys()].sort((a, b) =>
         a === "xfade" ? -1 : b === "xfade" ? 1 : 0
       );
       let imprintTouched = false;
       for (const key of keys) {
         const def = byKey.get(key);
         if (!def) continue;
-        const own = linksOf(key);
-        if (own.length === 0) continue;
-        let v = centers.get(key)!;
+        ensureCenter(key);
         const span = (def.max - def.min) * 0.5;
-        for (const link of own) {
-          v += link.depth * sourceSignal(link.source, sources) * span;
-        }
+        const v = centers.get(key)! + delta.get(key)! * span;
         def.set(Math.min(def.max, Math.max(def.min, v)));
         if (def.imprint) imprintTouched = true;
       }
@@ -262,6 +292,7 @@ export function createModMatrix(params: ParamRef[]) {
       return {
         lfos: lfos.map((l) => ({ ...l })),
         links: links.map((l) => ({ ...l })),
+        tempo,
       };
     },
     load(data: ModMatrixData | undefined) {
@@ -269,10 +300,14 @@ export function createModMatrix(params: ParamRef[]) {
         centers.delete(key);
       }
       links.length = 0;
-      lfos.length = 0;
-      const inLfos = data?.lfos?.length ? data.lfos : [defaultLfo(), defaultLfo()];
-      for (const l of inLfos.slice(0, MAX_LFOS)) lfos.push({ ...defaultLfo(), ...l });
-      if (lfos.length < 2) lfos.push(defaultLfo());
+      tempo = Math.min(220, Math.max(40, data?.tempo ?? 120));
+      for (let i = 0; i < LFO_COUNT; i++) {
+        const src = data?.lfos?.[i];
+        lfos[i] = { ...defaultLfo(), ...src };
+        if (lfos[i]!.target && !byKey.has(lfos[i]!.target)) lfos[i]!.target = "";
+        if (lfos[i]!.target) ensureCenter(lfos[i]!.target);
+        acc[i] = Math.random();
+      }
       for (const l of data?.links ?? []) {
         if (!byKey.has(l.target)) continue;
         ensureCenter(l.target);

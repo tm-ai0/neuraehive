@@ -149,7 +149,7 @@ silence, teinte de la frange, braises, cymatique, respiration), **Pro**
 (+ taille des grains, nombre exact de particules, exposition, gains
 basses/aigus/transitoires, part de cendre, cycle de la matière,
 sédimentation, filaments, seuil tonal, comètes, gain du geste, durée du
-silence, overlay du champ de vent en voiles chauds, interrupteur
+silence, interrupteur
 **« retour de l'empreinte »** — actif par défaut, il autorise la
 recristallisation au silence et la recomposition complète après 40 s
 d'immobilité ; coupé, la matière ne revient jamais toute seule). Plus : toggles

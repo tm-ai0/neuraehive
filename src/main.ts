@@ -122,6 +122,7 @@ async function boot() {
   const behavior = {
     imprintReturn: true,
     presenceSense: 0.5,
+    tempoAuto: false,
   };
   const presenceThreshold = () =>
     0.0015 * Math.pow(4, 0.5 - behavior.presenceSense);
@@ -148,6 +149,16 @@ async function boot() {
   let dancePhase = 0;
   let dancePump = 0;
   let symAngle = 0;
+  // v0.7.1e — the music MOVES the imprint, not only its contours: a springy
+  // sway fed by the low mids, a jolt on each accent that springs back.
+  let swayX = 0;
+  let swayY = 0;
+  let joltX = 0;
+  let joltVX = 0;
+  // The lightning: one whole-frame flash per strong accent, fast decay.
+  let flashEnv = 0;
+  // Tempo detection: recent strong-onset times, folded into 70-180 BPM.
+  let beatTimes: number[] = [];
   // v0.7.1d — the imprint life, integrated every frame from the bands and
   // read by the generators at each 7 Hz re-sampling. Every field is smooth.
   const life: ImprintLife = restingLife(0);
@@ -234,14 +245,18 @@ async function boot() {
         }
       },
       onReset() {
-        // The sliders glide home from the panel; here only the matter and
-        // the non-slider fields come back to their defaults.
+        // The sliders glide home from the panel; here everything else comes
+        // back to the full opening state — LFOs, links, tempo, macros,
+        // imprint, colors. Only the learned MIDI bindings survive (v0.7.1e).
         renderer.resetMatter();
         crystal = 0;
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
-        renderer.tuning.windOverlay = DEFAULT_TUNING.windOverlay;
         renderer.tuning.rawCam = 0;
         behavior.imprintReturn = true;
+        behavior.presenceSense = 0.5;
+        behavior.tempoAuto = false;
+        mod?.load(undefined);
+        beatTimes = [];
         applyPalette(renderer.look, PALETTES[0]!);
         Object.assign(
           imprintSettings,
@@ -683,7 +698,19 @@ async function boot() {
   let last = performance.now();
   let panelSyncAcc = 0;
   let guideAcc = 0;
+  let bandsAcc = 0;
   let lastSoundAt = performance.now();
+  // v0.7.1e — ?debug measurement harness state (filled below when DEBUG).
+  const kickState: {
+    until: number;
+    prev?: ImageData;
+    countdown: number;
+    best: number;
+    results: number[];
+    grab?: () => ImageData;
+    diff?: (a: ImageData, b: ImageData) => number;
+  } = { until: 0, countdown: 0, best: 0, results: [] };
+  let kickPrevT = 0;
   const tick = () => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1);
@@ -853,28 +880,53 @@ async function boot() {
       void applyImprint(family, variant, { silent: true });
     }
 
-    // v0.7.1c — the dance envelope. Without music: a slow turn, a gentle
+    // v0.7.1c/e — the dance envelope. Without music: a slow turn, a gentle
     // breath, a faint ripple. With music: bass pumps the scale, transients
-    // kick the spin, treble shimmers the ripple — all scaled by the danse
-    // setting, all smooth, integrated so the crossfade can traverse it.
+    // kick the spin, treble shimmers the ripple — and the whole imprint
+    // MOVES: the low mids sway it, each accent jolts it sideways and the
+    // spring brings it back. "Intensité son" is the one dose since v0.7.1e;
+    // the authored imprint transform (impX/impY/impRot/impScale — registry
+    // defs, so LFOs, macros, Chaos, scenes and MIDI drive them) composes
+    // with the danced motion here, on the CPU, at zero shader cost.
     {
       const d = renderer.dynamics;
-      const danse = renderer.tuning.danse;
+      const tn = renderer.tuning;
+      const mus = tn.soundFx * 0.75;
       danceKick = Math.max(danceKick * Math.exp(-dt * 3), d.transient * 1.1);
-      danceAngle += dt * (0.03 + (d.bass * 0.4 + danceKick * 0.9) * danse);
-      dancePhase += dt * (0.25 + d.treble * 2.0 * danse);
+      danceAngle += dt * (0.03 + (d.bass * 0.4 + danceKick * 0.9) * mus);
+      dancePhase += dt * (0.25 + d.treble * 2.0 * mus);
       dancePump +=
-        (d.bass * 0.09 * danse - dancePump) * (1 - Math.exp(-dt / 0.12));
-      d.danceCos = Math.cos(danceAngle);
-      d.danceSin = Math.sin(danceAngle);
-      d.danceScale = 1 + Math.sin((now / 1000) * 0.45) * 0.02 + dancePump
-        + life.amp * 0.05;
-      d.danceWarp = 0.012 + d.treble * 0.05 * danse;
+        (d.bass * 0.09 * mus - dancePump) * (1 - Math.exp(-dt / 0.12));
+      const swayTX =
+        Math.sin((now / 1000) * 0.9 + dancePhase * 0.13) *
+        0.055 * Math.min(1, d.lowMid * 1.3) * mus;
+      const swayTY =
+        Math.cos((now / 1000) * 0.7 + dancePhase * 0.09) *
+        0.04 * Math.min(1, d.lowMid * 1.3) * mus;
+      swayX += (swayTX - swayX) * (1 - Math.exp(-dt / 0.35));
+      swayY += (swayTY - swayY) * (1 - Math.exp(-dt / 0.35));
+      // Accent jolt: a damped spring, knocked in the life block below.
+      joltVX += (-joltX * 28 - joltVX * 5.5) * dt;
+      joltX += joltVX * dt;
+      const ang = danceAngle + tn.impRot;
+      d.danceCos = Math.cos(ang);
+      d.danceSin = Math.sin(ang);
+      d.danceScale =
+        (1 + Math.sin((now / 1000) * 0.45) * 0.02 + dancePump + life.amp * 0.05)
+        * tn.impScale;
+      d.danceWarp = 0.012 + (d.treble * 0.05 + d.lowMid * 0.04) * mus;
       d.danceTime = dancePhase;
-      d.danceDriftX = Math.sin((now / 1000) * 0.11) * 0.012 * (1 + danse * 0.5);
-      d.danceDriftY = Math.cos((now / 1000) * 0.13) * 0.01 * (1 + danse * 0.5);
+      const clampDrift = (v: number) => Math.max(-0.45, Math.min(0.45, v));
+      d.danceDriftX = clampDrift(
+        Math.sin((now / 1000) * 0.11) * 0.012 * (1 + mus * 0.5)
+        + tn.impX + swayX + joltX
+      );
+      d.danceDriftY = clampDrift(
+        Math.cos((now / 1000) * 0.13) * 0.01 * (1 + mus * 0.5)
+        + tn.impY + swayY
+      );
       // The radial fold turns with the same pulse: Transe rotates on the music.
-      symAngle += dt * danse * (0.04 + d.bass * 0.45 + danceKick * 0.8);
+      symAngle += dt * mus * (0.04 + d.bass * 0.45 + danceKick * 0.8);
       d.symSpin = symAngle;
     }
 
@@ -901,7 +953,45 @@ async function boot() {
       if (rising) {
         lifeTiltVel += (Math.floor(life.spin * 7) % 2 === 0 ? 1 : -1)
           * Math.min(1, d.transient) * 2.6 * sfx;
+        // v0.7.1e — the same accent jolts the imprint sideways...
+        joltVX += (Math.floor(life.spin * 13) % 2 === 0 ? 1 : -1)
+          * Math.min(1, d.transient) * 0.9 * sfx;
+        // ...and lights the whole frame: the lightning envelope.
+        flashEnv = Math.max(
+          flashEnv,
+          Math.min(1.25, d.transient * 0.85 * sfx)
+        );
+        // Tempo detection: strong onsets, folded into 70-180 BPM.
+        if (behavior.tempoAuto && d.transient > 0.6) {
+          beatTimes.push(now);
+          if (beatTimes.length > 12) beatTimes.shift();
+          const bpms: number[] = [];
+          for (let k = 1; k < beatTimes.length; k++) {
+            const iv = beatTimes[k]! - beatTimes[k - 1]!;
+            if (iv < 180 || iv > 4000) continue;
+            let bpm = 60_000 / iv;
+            while (bpm < 70) bpm *= 2;
+            while (bpm > 180) bpm /= 2;
+            bpms.push(bpm);
+          }
+          if (bpms.length >= 5) {
+            bpms.sort((a, b) => a - b);
+            const med = bpms[bpms.length >> 1]!;
+            const close = bpms.filter((x) => Math.abs(x - med) < med * 0.08);
+            if (close.length >= 4) {
+              const bpm = close.reduce((a, b) => a + b, 0) / close.length;
+              const tempoDef = panel.defs.find((p) => p.key === "tempo");
+              if (tempoDef && Math.abs(tempoDef.get() - bpm) > 1.5) {
+                writeParam(tempoDef, bpm);
+              }
+            }
+          }
+        }
       }
+      // The lightning decays in a breath — one or two bright frames, a
+      // short tail the present pass turns into a full-frame flash.
+      flashEnv *= Math.exp(-dt * 8);
+      d.flash = flashEnv;
       lifeTiltVel += ((life.breath * 0.35 - life.tilt) * 3 - lifeTiltVel * 2.2) * dt;
       life.tilt += lifeTiltVel * dt;
       // Wind: a springy sway fed by the bass, always at least a breeze.
@@ -1067,6 +1157,45 @@ async function boot() {
       });
     }
 
+    // v0.7.1e — the five-band gauge: what the microphone really hears.
+    bandsAcc += dt;
+    if (bandsAcc > 0.033) {
+      bandsAcc = 0;
+      const d = renderer.dynamics;
+      panel.setBands([
+        Math.min(1, d.bass),
+        Math.min(1, d.lowMid),
+        Math.min(1, d.mid),
+        Math.min(1, d.treble),
+        Math.min(1, d.transient),
+      ]);
+    }
+
+    // ?debug — kick watcher: around each rising accent, measure the share
+    // of pixels that change between consecutive frames (the proof that a
+    // kick reads on screen).
+    if (DEBUG && now < kickState.until && kickState.grab && kickState.diff) {
+      const img = kickState.grab();
+      const t = renderer.dynamics.transient;
+      const risingK = t > 0.6 && kickPrevT <= 0.6;
+      if (kickState.prev) {
+        if (risingK) {
+          kickState.countdown = 3;
+          kickState.best = 0;
+        }
+        if (kickState.countdown > 0) {
+          kickState.best = Math.max(
+            kickState.best,
+            kickState.diff(kickState.prev, img)
+          );
+          kickState.countdown--;
+          if (kickState.countdown === 0) kickState.results.push(kickState.best);
+        }
+      }
+      kickState.prev = img;
+      kickPrevT = t;
+    }
+
     panel.setFps(renderer.fps);
     panel.setCrystal(Math.max(crystal, renderer.dynamics.titleMode));
     if (renderer.failure) {
@@ -1077,6 +1206,77 @@ async function boot() {
   };
   requestAnimationFrame(tick);
   updateStatus();
+
+  // v0.7.1e — ?debug only: the measurement harness behind every visual
+  // claim. window.__cinerae.grab("a") snapshots the canvas (480×270),
+  // diff("a","b") returns the percentage of pixels whose any channel moved
+  // by more than the threshold, kick(s) arms the consecutive-frame watcher
+  // around each strong accent. Measured, never estimated.
+  if (DEBUG) {
+    const W = 480;
+    const H = 270;
+    const cv = document.createElement("canvas");
+    cv.width = W;
+    cv.height = H;
+    const cx = cv.getContext("2d", { willReadFrequently: true })!;
+    const shots = new Map<string, ImageData>();
+    const grabNow = (): ImageData => {
+      cx.drawImage(canvas, 0, 0, W, H);
+      return cx.getImageData(0, 0, W, H);
+    };
+    // A WebGPU canvas is cleared outside its frame task: a snapshot must run
+    // inside a rAF callback (after the renderer's), and retry if it caught
+    // the cleared buffer.
+    const grabReal = async (): Promise<ImageData> => {
+      let img: ImageData = grabNow();
+      for (let k = 0; k < 5; k++) {
+        img = await new Promise<ImageData>((resolve) =>
+          requestAnimationFrame(() => resolve(grabNow()))
+        );
+        let s = 0;
+        for (let i = 0; i < img.data.length; i += 4 * 199) s += img.data[i]!;
+        if (s > 0) return img;
+      }
+      return img;
+    };
+    const diffPct = (a: ImageData, b: ImageData, thr = 10): number => {
+      let changed = 0;
+      const n = W * H;
+      for (let i = 0; i < n; i++) {
+        const j = i * 4;
+        const d = Math.max(
+          Math.abs(a.data[j]! - b.data[j]!),
+          Math.abs(a.data[j + 1]! - b.data[j + 1]!),
+          Math.abs(a.data[j + 2]! - b.data[j + 2]!)
+        );
+        if (d > thr) changed++;
+      }
+      return Math.round((changed / n) * 1000) / 10;
+    };
+    kickState.grab = grabNow;
+    kickState.diff = (a, b) => diffPct(a, b, 10);
+    (window as unknown as Record<string, unknown>).__cinerae = {
+      async grab(tag: string) {
+        shots.set(tag, await grabReal());
+        return tag;
+      },
+      diff(a: string, b: string, thr = 10) {
+        const ia = shots.get(a);
+        const ib = shots.get(b);
+        if (!ia || !ib) return -1;
+        return diffPct(ia, ib, thr);
+      },
+      kick(seconds = 12) {
+        kickState.until = performance.now() + seconds * 1000;
+        kickState.results.length = 0;
+        kickState.prev = undefined;
+        return "armed";
+      },
+      kickResults() {
+        return [...kickState.results];
+      },
+    };
+  }
 }
 
 void boot();
