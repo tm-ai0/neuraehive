@@ -33,6 +33,7 @@ declare global {
   interface Window {
     __sentir?: {
       fps: number;
+      gpu: string;
       silhouette: SentirSignal;
       corps: SentirSignal;
       mains: SentirSignal;
@@ -104,7 +105,8 @@ function majAffichage(): void {
     jauge("pince", meilleure?.pince ?? 0);
   }
   if (on.visage) {
-    statsTexte("visage", face.meter.hz, face.meter.ms);
+    const b = face.brut;
+    statsTexte("visage", face.meter.hz, face.meter.ms, ` · bouche ${nb(b.pucker)} ${nb(b.funnel)} ${nb(b.joues)} ${nb(b.machoire)}`);
     jauge("souffle", face.souffle);
     jauge("lumiere", face.lumiere);
     jauge("clin", face.clin);
@@ -119,6 +121,7 @@ function majAffichage(): void {
 function publier(): void {
   window.__sentir = {
     fps,
+    gpu,
     silhouette: { on: on.silhouette, aire: pose.aire, hauteur: pose.boiteHauteur, hz: pose.meter.hz, ms: pose.meter.ms, detail: pose.detail },
     corps: { on: on.corps, presence: pose.presence, points: pose.landmarks?.length ?? 0, hz: pose.meter.hz, ms: pose.meter.ms },
     mains: {
@@ -127,7 +130,7 @@ function publier(): void {
       hz: hands.meter.hz,
       ms: hands.meter.ms,
     },
-    visage: { on: on.visage, souffle: face.souffle, lumiere: face.lumiere, clin: face.clin, hz: face.meter.hz, ms: face.meter.ms },
+    visage: { on: on.visage, souffle: face.souffle, lumiere: face.lumiere, clin: face.clin, brut: face.brut, hz: face.meter.hz, ms: face.meter.ms },
     profondeur: { on: on.profondeur, mode: depth.mode, precision: depth.precision, proche: depth.proche, hz: depth.meter.hz, ms: depth.meter.ms },
   };
 }
@@ -158,6 +161,16 @@ function boucle(now: number): void {
   }
 }
 requestAnimationFrame(boucle);
+
+// Quel GPU rend vraiment (mesuré ici : Chrome partait sur l'Intel intégré au lieu
+// de la RTX tant que Windows ne l'avait pas réglé en « haute performance »).
+const gpu = (() => {
+  const gl = document.createElement("canvas").getContext("webgl2");
+  const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+  const brut = gl && ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "gpu inconnu";
+  return brut.replace(/^ANGLE \((\w+), /, "").replace(/ \(0x[0-9A-Fa-f]+\).*$/, "");
+})();
+$("#note").textContent = `${gpu} · chaque signal s'active un par un ; modèles servis en local, rien n'est envoyé`;
 
 const btnCam = $("#btnCam") as HTMLButtonElement;
 const btnVoir = $("#btnVoir") as HTMLButtonElement;

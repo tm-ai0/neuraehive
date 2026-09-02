@@ -55,6 +55,11 @@
 ## Notes d'environnement (vérification navigateur)
 - Edge bloque les téléchargements automatiques multiples de localhost : accepter une fois l'invite « Download multiple files », sinon PNG/webm/preset restent en .crdownload (le contenu des fichiers est complet et valide).
 
+## SENTIR (laboratoire vision, lab/sentir.html — signaux 0-1 sur window.__sentir)
+- Fait (commits « sentir: laboratoire vision » puis « sentir: cadence gpu, profondeur, souffle ») : masque + 33 points (Pose Landmarker lite), 21 points par main + gestes pousser/tirer/serrer/lâcher, blendshapes réduits souffle/lumière/clin, profondeur Depth Anything V3 (essai étagé mesuré q8 → v3 fp32 → v2 fp16 → v2 q8 → imité, gagnant en localStorage), un Web Worker PAR tâche, GPU réel affiché dans l'en-tête, ?cam=<nom> pour choisir la caméra, ?on=all pour tout activer.
+- Mesuré le 2026-09-02 (personne dans le champ via caméra factice, ce laptop) : Chrome rend sur l'Intel UHD intégré tant que Windows ne le règle pas en « haute performance » — Intel : silhouette seule 12 Hz, masque + mains 6,8 / 5,8 Hz, tout 3,3 / 2,4 Hz ; RTX 4060 : 24 Hz, 23 / 19 Hz, 13 / 8 Hz, profondeur v3 fp32 4 Hz. Le limiteur est le GPU, pas le code. Le visage tourne en partie sur CPU (XNNPACK) mais tient 30-49 Hz.
+- Reste : régler chrome.exe en « haute performance » (Paramètres Windows > Système > Affichage > Cartes graphiques) et re-mesurer devant une vraie personne ; calibrer le souffle avec les composantes brutes affichées (pucker / funnel / joues / mâchoire) — la formule actuelle (max − 0,02) × 3 est une hypothèse ; vérifier que « proche » monte en avançant (polarité V3 inversée sur capture, pas encore vue en mouvement) ; mesurer sur Redmi Pad Pro (masque + mains seuls, profondeur en imité) ; les 340 Mo de modèles dans public/models sont commités en local — avant tout push GitHub, passer en Git LFS ou en téléchargement hors repo (script vers public/models, dossier ignoré) ; brancher les signaux au moteur (P2 « MediaPipe corps et mains » devient : consommer __sentir).
+
 ## P1
 - SOURCES : sélecteur de caméra et de micro, sortie scène, miroir retardé. Ajoutera sa page d'aide dans la section aide (prévu pour).
 - JEUX : périmètre à écrire avec Thomas. Ajoutera sa page d'aide dans la section aide.

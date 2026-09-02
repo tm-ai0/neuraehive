@@ -1,17 +1,20 @@
-// Côté fil principal : un seul worker vision, une frame en vol par tâche au plus.
+// Côté fil principal : UN worker par tâche (pose, mains, visage tournent en parallèle
+// au lieu de s'attendre dans une file), une frame en vol par tâche au plus.
 import type { Quoi, MsgDuWorker, ResPose, ResMains, ResVisage } from "./worker";
 
 type Res = ResPose | ResMains | ResVisage;
 
-let worker: Worker | null = null;
+const workers = new Map<Quoi, Worker>();
 const prets = new Map<Quoi, { resolve: () => void; reject: (e: Error) => void }>();
 const initPromesses = new Map<Quoi, Promise<void>>(); // init idempotente : silhouette, corps et profondeur partagent la pose
 const enVol = new Set<Quoi>();
 const handlers = new Map<Quoi, (r: Res) => void>();
 
-function leWorker(): Worker {
+function leWorker(quoi: Quoi): Worker {
+  let worker = workers.get(quoi);
   if (!worker) {
     worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    workers.set(quoi, worker);
     worker.onmessage = (e: MessageEvent<MsgDuWorker>) => {
       const m = e.data;
       if (m.type === "pret") {
@@ -34,7 +37,7 @@ export function initTache(quoi: Quoi): Promise<void> {
   if (!p) {
     p = new Promise<void>((resolve, reject) => {
       prets.set(quoi, { resolve, reject });
-      leWorker().postMessage({ type: "init", quoi });
+      leWorker(quoi).postMessage({ type: "init", quoi });
     });
     initPromesses.set(quoi, p);
     p.catch(() => initPromesses.delete(quoi)); // un échec permet de retenter
@@ -58,6 +61,6 @@ export function envoyer(quoi: Quoi, video: HTMLVideoElement, t: number): void {
   const w = LARGEURS[quoi];
   const h = Math.round((w * video.videoHeight) / Math.max(1, video.videoWidth));
   createImageBitmap(video, { resizeWidth: w, resizeHeight: h })
-    .then((bitmap) => leWorker().postMessage({ type: "frame", quoi, bitmap, t }, [bitmap]))
+    .then((bitmap) => leWorker(quoi).postMessage({ type: "frame", quoi, bitmap, t }, [bitmap]))
     .catch(() => enVol.delete(quoi));
 }
