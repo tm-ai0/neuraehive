@@ -141,7 +141,8 @@ const SECTION_GROUPS: Partial<Record<SectionId, string[]>> = {
   corps: ["forme", "tenue"],
   particules: ["grains", "temps"],
   look: ["teinte", "degrade", "fond", "lumiere", "espace"],
-  aide: ["modes", "macros", "clavier", "gestes", "camext", "liens"],
+  // v0.7.1g — the aide left the accordion: it lives in a side drawer with
+  // a vertical scroll (the one sanctioned exception), no sub-tabs.
 };
 
 // v0.7.1d — a macro is a journey, not a volume: from 0 to 1 each composed
@@ -222,7 +223,7 @@ export function createPanel(
   // after them in registry order — always win when both are driven.
   const macroValues: Record<string, number> = {
     maree: 0.42,
-    eclipse: 0.35,
+    eclipse: 0.65,
     prisme: 0,
   };
   const macroTouch: Record<string, number> = {};
@@ -240,29 +241,25 @@ export function createPanel(
       trails: [[0, 0.96], [0.42, 0.9], [0.7, 0.6], [1, 0.86]],
       timeScale: [[0, 0.3], [0.42, 1], [1, 1]],
     },
-    // Éclipse — lumière : washed daylight, the corona, then a contrasted
-    // night bedded in ash.
+    // Éclipse — lumière : v0.7.1g, it reads like an exposure. 0 = night
+    // bedded in ash, the home daylight at 0.65 (the corona on the way up),
+    // 1 = washed full day. Same arc as before, mirrored.
     eclipse: {
-      exposure: [[0, 2.7], [0.35, 1.6], [0.7, 1.1], [1, 0.55]],
-      compBright: [[0, 1.5], [0.35, 1], [0.62, 1.15], [1, 0.38]],
-      halo: [[0, 0], [0.35, 0], [0.62, 0.9], [1, 0.35]],
-      contrast: [[0, 0], [0.35, 0], [0.7, 0.45], [1, 0.85]],
-      ashShare: [[0, 0.07], [0.35, 0.15], [1, 0.33]],
-      paperGrain: [[0, 0], [0.35, 0], [1, 0.65]],
-      fondVisible: [[0, 0.75], [0.35, 0.35], [1, 0.06]],
-      bodyMargin: [[0, 0.4], [0.35, 1], [1, 1.9]],
+      exposure: [[0, 0.55], [0.3, 1.1], [0.65, 1.6], [1, 2.7]],
+      compBright: [[0, 0.38], [0.38, 1.15], [0.65, 1], [1, 1.5]],
+      halo: [[0, 0.35], [0.38, 0.9], [0.65, 0], [1, 0]],
+      contrast: [[0, 0.85], [0.3, 0.45], [0.65, 0], [1, 0]],
+      ashShare: [[0, 0.33], [0.65, 0.15], [1, 0.07]],
+      paperGrain: [[0, 0.65], [0.65, 0], [1, 0]],
+      fondVisible: [[0, 0.06], [0.65, 0.35], [1, 0.75]],
+      bodyMargin: [[0, 1.9], [0.65, 1], [1, 0.4]],
     },
-    // Prisme — couleur et géométrie : the hue turns, the palette follows
-    // the speed, depth opens, then the frame folds into a mandala.
+    // Prisme — couleur : v0.7.1g, it only colors. The hue turns the whole
+    // frame, the driver changes what paints each grain. The folds moved to
+    // the miroir slider; depth and blur stay individual settings.
     prisme: {
       compHue: [[0, 0], [0.5, 0.35], [1, 0.85]],
       colorDriver: [[0, 0], [0.45, 1], [1, 1.9]],
-      symMode: [[0, 0], [0.55, 0], [0.75, 3], [1, 4]],
-      symN: [[0, 6], [0.55, 6], [0.75, 3], [1, 11]],
-      depthAmount: [[0, 0], [0.5, 0.8], [1, 0.55]],
-      dofBlur: [[0, 0], [0.55, 0.35], [1, 0.75]],
-      strobe: [[0, 0], [0.7, 0.05], [1, 0.4]],
-      focusLayer: [[0, 1], [0.55, 1.7], [1, 0.5]],
     },
   };
   const setMacro = (key: string, v: number) => {
@@ -283,7 +280,10 @@ export function createPanel(
     // ---- the three macros first: on a preset or crossfade write, their
     // cascade lands before the component defs' own values overwrite it ----
     macroDef("maree", [0.1, 0.95]),
-    macroDef("eclipse", [0.05, 0.9]),
+    // v0.7.1g — Chaos draws lumière inside the measured readable range:
+    // outside it the frame blows to white or sinks to black (harness,
+    // mean luminance at 480×270 — see the v0.7.1g report).
+    macroDef("eclipse", [0.15, 0.85]),
     macroDef("prisme", [0, 0.9]),
     // ---- umbra macro: one slider that doses the body's push --------------
     def("umbra", "corps", [], 0, 1, 0.01, () => umbraValue, (v) => {
@@ -560,31 +560,48 @@ export function createPanel(
         chaos: [-0.8, 0.8],
         group: "espace",
       }),
-    def("symMode", "look", ["anima", "pro"], 0, 4, 1,
+    // v0.7.1g — miroir: the one fold slider, its value the number of axes.
+    // 0 none, 1 one axis, 2 quadrants, 3..12 the radial mandala. Continuous
+    // in between (the shaders blend fractional folds, so the crossfade and
+    // the LFOs never jump); the hidden symMode/symN below stay the engine
+    // components and, written after this def, always win when a scene
+    // carries them.
+    def("miroir", "look", ["anima", "pro"], 0, 12, 1,
+      () => {
+        const m = state.tuning.symMode;
+        if (m >= 4) return Math.max(3, state.tuning.symN);
+        if (m > 3) return 2 + (m - 3);
+        if (m > 1) return 1 + (m - 1) / 2;
+        return m;
+      },
+      (v) => {
+        if (v <= 1) {
+          state.tuning.symMode = v;
+        } else if (v <= 2) {
+          state.tuning.symMode = 1 + (v - 1) * 2;
+        } else if (v <= 3) {
+          state.tuning.symMode = 3 + (v - 2);
+          state.tuning.symN = 3;
+        } else {
+          state.tuning.symMode = 4;
+          state.tuning.symN = Math.min(12, v);
+        }
+      },
+      {
+        chaos: [0, 9],
+        chaosSnap: true,
+        group: "espace",
+        format: (v) =>
+          v < 0.5
+            ? t("val.mirNone")
+            : `${Math.round(v)} ${Math.round(v) > 1 ? t("val.axes") : t("val.axe")}`,
+      }),
+    def("symMode", "look", [], 0, 4, 0.01,
       () => state.tuning.symMode, (v) => (state.tuning.symMode = v),
-      {
-        discrete: true,
-        chaos: [0, 4],
-        chaosSnap: true,
-        reveals: true,
-        group: "espace",
-        options: () => [
-          { value: 0, label: t("opt.symNone") },
-          { value: 1, label: t("opt.symH") },
-          { value: 2, label: t("opt.symV") },
-          { value: 3, label: t("opt.symQuad") },
-          { value: 4, label: t("opt.symRadial") },
-        ],
-      }),
-    def("symN", "look", ["anima", "pro"], 3, 12, 1,
+      { hidden: true }),
+    def("symN", "look", [], 3, 12, 0.01,
       () => state.tuning.symN, (v) => (state.tuning.symN = v),
-      {
-        format: (v) => String(Math.round(v)),
-        visible: () => state.tuning.symMode > 3.5,
-        chaos: [3, 9],
-        chaosSnap: true,
-        group: "espace",
-      }),
+      { hidden: true }),
     // ---- crossfade (rendered by the scenes section, target like any) -----
     def("xfade", "scenes", [], 0, 1, 0.005,
       () => hooks.getXfade(), (v) => hooks.onCrossfade(v),
@@ -924,13 +941,25 @@ export function createPanel(
   const cameraSwitch = makeSwitch(
     "sw.camera",
     () => sensors.camera,
-    (next) => hooks.onSensor("camera", next)
+    (next) => hooks.onSensor("camera", next),
+    sensorsBox,
+    "hint.swCamera"
   );
   const micSwitch = makeSwitch(
     "sw.mic",
     () => sensors.mic,
-    (next) => hooks.onSensor("mic", next)
+    (next) => hooks.onSensor("mic", next),
+    sensorsBox,
+    "hint.swMic"
   );
+  // v0.7.1g — the sensor switches call for the hand until they are on: the
+  // invitation pulse language, steady glow under prefers-reduced-motion,
+  // quiet the moment the sensor runs.
+  const syncAttend = () => {
+    cameraSwitch.row.classList.toggle("cinerae-attend", !sensors.camera);
+    micSwitch.row.classList.toggle("cinerae-attend", !sensors.mic);
+  };
+  syncAttend();
   // v0.7.1f — the raw camera lives on the sensor line, Pro only.
   const rawSwitch = makeSwitch(
     "sw.rawCam",
@@ -944,12 +973,8 @@ export function createPanel(
   actions.className = "cinerae-actions";
   panel.appendChild(actions);
 
-  const crystalBar = document.createElement("div");
-  crystalBar.className = "cinerae-crystal";
-  crystalBar.innerHTML = `<span class="cinerae-crystal-label"></span><span class="cinerae-crystal-track"><span class="cinerae-crystal-fill"></span></span>`;
-  panel.appendChild(crystalBar);
-  const crystalFill = crystalBar.querySelector(".cinerae-crystal-fill") as HTMLElement;
-  const crystalLabel = crystalBar.querySelector(".cinerae-crystal-label") as HTMLElement;
+  // v0.7.1g — the mute crystal gauge under Chaos is gone: it named nothing
+  // the hand could act on. Every remaining bar is a real, labeled fader.
 
   // ----- chaos & reset: registry-driven, with an undo history ---------------
   const writeDef = (key: string, v: number) => {
@@ -2108,11 +2133,24 @@ export function createPanel(
   }
 
   // ----- aide ---------------------------------------------------------------
-  // Short and airy: one page per topic, terms on the left, plain words on
-  // the right. Each future chantier adds its own page here.
+  // v0.7.1g — the aide is a side drawer with a vertical scroll: the one
+  // sanctioned exception to the zero-scroll rule, so no line is ever cut.
+  // One column, short sections, terms left, plain words right.
+  const aideDrawer = document.createElement("aside");
+  aideDrawer.className = "cinerae-aide-drawer";
+  root.appendChild(aideDrawer);
+  // The drawer routes its hints to the panel's reserved slot, like any row.
+  aideDrawer.addEventListener("mouseover", (e) => showHint(e.target));
+  aideDrawer.addEventListener("mouseleave", () => (hintBar.textContent = ""));
+  aideDrawer.addEventListener("focusin", (e) => showHint(e.target));
+
   function renderAide(body: HTMLElement) {
-    const groups = SECTION_GROUPS.aide!.map((g) => ({ key: g, label: t(`grp.${g}`) }));
-    const active = renderGroupTabs("aide", groups, body);
+    const head = (label: string) => {
+      const h = document.createElement("div");
+      h.className = "cinerae-aide-head";
+      h.textContent = label;
+      body.appendChild(h);
+    };
     const item = (term: string, text: string) => {
       const row = document.createElement("div");
       row.className = "cinerae-aide-item";
@@ -2125,53 +2163,55 @@ export function createPanel(
       row.append(dt, dd);
       body.appendChild(row);
     };
-    if (active === "modes") {
-      item("Umbra", t("aide.umbra"));
-      item("Anima", t("aide.anima"));
-      item("Pro", t("aide.pro"));
-    } else if (active === "macros") {
-      item(t("aide.macroTitle"), t("aide.macros"));
-      item(t("aide.pulseTitle"), t("aide.pulse"));
-      makeSwitch(
-        "sw.invites",
-        () => invitesOn,
-        (next) => {
-          invitesOn = next;
-          if (!next) stopInvite();
-          try {
-            localStorage.setItem(INVITE_STORE, next ? "on" : "off");
-          } catch {}
-        },
-        body,
-        "hint.invites"
-      );
-    } else if (active === "clavier") {
-      const keys: [string, string][] = [
-        ["F", "aide.key.f"],
-        ["C", "aide.key.c"],
-        ["Z", "aide.key.z"],
-        ["R", "aide.key.r"],
-        ["P", "aide.key.p"],
-        ["V", "aide.key.v"],
-        [t("aide.kspace"), "aide.key.space"],
-        [t("aide.kesc"), "aide.key.esc"],
-      ];
-      for (const [k, label] of keys) {
-        item(`<kbd>${k}</kbd>`, t(label));
-      }
-    } else if (active === "gestes") {
-      item(t("aide.touchTitle"), t("aide.touch"));
-      item(t("aide.undoTitle"), t("aide.undo"));
-    } else if (active === "camext") {
-      item(t("aide.ndiTitle"), t("aide.ndi"));
-    } else {
-      const links = document.createElement("div");
-      links.className = "cinerae-aide-links";
-      links.innerHTML =
-        `<a href="https://nh.thomasmaury.fr" target="_blank" rel="noopener">nh.thomasmaury.fr</a>` +
-        `<a class="cinerae-linktree" href="https://linktr.ee/thomasmaury" target="_blank" rel="noopener" aria-label="${t("aide.linktree")}" title="${t("aide.linktree")}">${LINKTREE_ICON}</a>`;
-      body.appendChild(links);
+    head(t("grp.modes"));
+    item("Umbra", t("aide.umbra"));
+    item("Anima", t("aide.anima"));
+    item("Pro", t("aide.pro"));
+    head(t("grp.curseurs"));
+    item(t("ctl.maree"), t("aide.maree"));
+    item(t("ctl.eclipse"), t("aide.eclipse"));
+    item(t("ctl.prisme"), t("aide.prisme"));
+    item(t("ctl.miroir"), t("aide.miroir"));
+    item(t("aide.pulseTitle"), t("aide.pulse"));
+    makeSwitch(
+      "sw.invites",
+      () => invitesOn,
+      (next) => {
+        invitesOn = next;
+        if (!next) stopInvite();
+        try {
+          localStorage.setItem(INVITE_STORE, next ? "on" : "off");
+        } catch {}
+      },
+      body,
+      "hint.invites"
+    );
+    head(t("grp.clavier"));
+    const keys: [string, string][] = [
+      ["F", "aide.key.f"],
+      ["C", "aide.key.c"],
+      ["Z", "aide.key.z"],
+      ["R", "aide.key.r"],
+      ["P", "aide.key.p"],
+      ["V", "aide.key.v"],
+      [t("aide.kspace"), "aide.key.space"],
+      [t("aide.kesc"), "aide.key.esc"],
+    ];
+    for (const [k, label] of keys) {
+      item(`<kbd>${k}</kbd>`, t(label));
     }
+    head(t("grp.gestes"));
+    item(t("aide.touchTitle"), t("aide.touch"));
+    item(t("aide.undoTitle"), t("aide.undo"));
+    head(t("grp.camext"));
+    item(t("aide.ndiTitle"), t("aide.ndi"));
+    head(t("grp.liens"));
+    const links = document.createElement("div");
+    links.className = "cinerae-aide-links";
+    links.innerHTML =
+      `<a href="https://nh.thomasmaury.fr" target="_blank" rel="noopener">nh.thomasmaury.fr</a>` +
+      `<a class="cinerae-linktree" href="https://linktr.ee/thomasmaury" target="_blank" rel="noopener" aria-label="${t("aide.linktree")}" title="${t("aide.linktree")}">${LINKTREE_ICON}</a>`;
+    body.appendChild(links);
   }
 
   // ----- macros: the three journeys, rendered in every mode -----------------
@@ -2321,6 +2361,10 @@ export function createPanel(
     input.setAttribute("aria-label", t("ctl.umbra"));
     row.dataset.hint = t("hint.umbra");
     row.classList.add("cinerae-umbra-row");
+    // v0.7.1g — the miroir lives in Umbra too: the fold is a first-class
+    // gesture, its value the number of axes.
+    const mir = controls.find((d) => d.key === "miroir")!;
+    renderDefRow(mir, umbraBox);
   }
 
   // v0.7.1f — the share slider lives in the command block, in every mode:
@@ -2421,7 +2465,6 @@ export function createPanel(
     openButton.setAttribute("aria-label", t("ui.openPanel"));
     closeButton.setAttribute("aria-label", t("ui.closePanel"));
     handle.setAttribute("aria-label", t("ui.togglePanel"));
-    crystalLabel.textContent = t("ui.crystal");
     chaosButton.textContent = t("btn.chaos");
     undoButton.dataset.hint = t("hint.undo");
     undoButton.setAttribute("aria-label", t("btn.undo"));
@@ -2491,13 +2534,21 @@ export function createPanel(
       else if (id === "empreintes") renderImprints(body);
       else if (id === "modulation") renderModulation(body);
       else if (id === "midi") renderMidi(body);
-      else if (id === "aide") renderAide(body);
+      // aide renders in its side drawer below, never in the stack.
     }
+
+    // v0.7.1g — the aide drawer follows its accordion head.
+    const aideOpen = openSection === "aide" && !collapsed;
+    aideDrawer.classList.toggle("open", aideOpen);
+    aideDrawer.replaceChildren();
+    if (aideOpen) renderAide(aideDrawer);
   }
 
   function applyCollapsed() {
     panel.classList.toggle("collapsed", collapsed);
     openButton.classList.toggle("visible", collapsed);
+    // Folding the panel folds the aide drawer with it.
+    aideDrawer.classList.toggle("open", !collapsed && openSection === "aide");
   }
   const setCollapsed = (next: boolean) => {
     collapsed = next;
@@ -2544,14 +2595,12 @@ export function createPanel(
     setStatus(text: string) {
       statusLine.textContent = text;
     },
-    setCrystal(value: number) {
-      crystalFill.style.width = `${Math.round(value * 100)}%`;
-    },
     setSensors(camera: boolean, mic: boolean) {
       sensors = { camera, mic };
       cameraSwitch.sync();
       micSwitch.sync();
       syncBandsVisible();
+      syncAttend();
     },
     /** v0.7.1e — feed the five-band gauge (values 0..1, ~30 Hz). */
     setBands(values: readonly number[]) {

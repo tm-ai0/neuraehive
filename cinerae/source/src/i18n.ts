@@ -44,7 +44,7 @@ const DICT: Record<string, [string, string]> = {
   "sec.midi": ["midi", "midi"],
   "sec.aide": ["aide", "help"],
   // ---- controls: short, concrete, three words at most ----------------------
-  // v0.7.1f — the three macros say what they move, nothing poetic.
+  // v0.7.1f/g — the three journey sliders say what they move, nothing else.
   "ctl.maree": ["mouvement", "motion"],
   "hint.maree": [
     "tout ce qui bouge : vitesse, turbulence, poids, tailles",
@@ -52,14 +52,22 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.eclipse": ["lumière", "light"],
   "hint.eclipse": [
-    "toute la lumière : exposition, contraste, cendre, densité",
-    "all the light: exposure, contrast, ash, density",
+    "0 = nuit, 100 = plein jour — comme une exposition",
+    "0 = night, 100 = full day — like an exposure",
   ],
   "ctl.prisme": ["couleur", "colour"],
   "hint.prisme": [
-    "couleur et géométrie : teinte, symétries, profondeur",
-    "colour and geometry: hue, symmetries, depth",
+    "ne fait que colorer : la teinte tourne, le pilote change",
+    "only colors: the hue turns, the driver changes",
   ],
+  "ctl.miroir": ["miroir", "mirror"],
+  "hint.miroir": [
+    "l'image se replie — 1 axe, 2, jusqu'au mandala à 12",
+    "the image folds — 1 axis, 2, up to the 12-axis mandala",
+  ],
+  "val.mirNone": ["aucun", "none"],
+  "val.axe": ["axe", "axis"],
+  "val.axes": ["axes", "axes"],
   "ctl.umbra": ["frôler ◀▶ bousculer", "graze ◀▶ shove"],
   "hint.umbra": [
     "à gauche la poussière me traverse, à droite mon corps la laboure",
@@ -447,11 +455,6 @@ const DICT: Record<string, [string, string]> = {
   "opt.layerFar": ["lointaine", "far"],
   "opt.layerMid": ["moyenne", "middle"],
   "opt.layerNear": ["proche", "near"],
-  "opt.symNone": ["aucune", "none"],
-  "opt.symH": ["miroir horizontal", "horizontal mirror"],
-  "opt.symV": ["miroir vertical", "vertical mirror"],
-  "opt.symQuad": ["quatre quadrants", "four quadrants"],
-  "opt.symRadial": ["radiale (mandala)", "radial (mandala)"],
   // ---- verbal values -------------------------------------------------------
   "val.holdFree": ["poussière libre", "free dust"],
   "val.holdSoft": ["souple", "loose"],
@@ -466,9 +469,17 @@ const DICT: Record<string, [string, string]> = {
   "val.neutral": ["neutre", "neutral"],
   // ---- switches ------------------------------------------------------------
   "sw.camera": ["caméra", "camera"],
+  "hint.swCamera": [
+    "la caméra souffle sur la poussière et me dessine — jamais affichée",
+    "the camera blows on the dust and draws me — never displayed",
+  ],
   "sw.mic": ["micro", "microphone"],
+  "hint.swMic": [
+    "le micro fait danser la matière — rien n'est enregistré",
+    "the microphone makes the matter dance — nothing is recorded",
+  ],
   "sw.auto": ["qualité auto", "auto quality"],
-  "sw.mirror": ["miroir", "mirror"],
+  "sw.mirror": ["sens du geste", "gesture direction"],
   "sw.randomImprint": ["au silence", "when silent"],
   "hint.randomImprint": [
     "au long silence, la pièce tire une empreinte toute seule",
@@ -531,8 +542,8 @@ const DICT: Record<string, [string, string]> = {
     "the shape of the repeated motion",
   ],
   "hint.lfoTarget": [
-    "le réglage que ce LFO anime — macros et cadre compris",
-    "the setting this LFO animates — macros and frame included",
+    "le réglage que ce LFO anime — tous les curseurs, cadre compris",
+    "the setting this LFO animates — every slider, frame included",
   ],
   "lfo.sinus": ["sinus", "sine"],
   "lfo.triangle": ["triangle", "triangle"],
@@ -594,7 +605,6 @@ const DICT: Record<string, [string, string]> = {
     "Ouvrir ou fermer les réglages",
     "Open or close the settings",
   ],
-  "ui.crystal": ["empreinte", "imprint"],
   // ---- sub-tab groups ------------------------------------------------------
   "grp.forme": ["forme", "shape"],
   "grp.tenue": ["tenue", "hold"],
@@ -607,7 +617,7 @@ const DICT: Record<string, [string, string]> = {
   "grp.espace": ["espace", "space"],
   "grp.reglages": ["réglages", "settings"],
   "grp.modes": ["modes", "modes"],
-  "grp.macros": ["macros", "macros"],
+  "grp.curseurs": ["curseurs", "sliders"],
   "grp.clavier": ["clavier", "keys"],
   "grp.gestes": ["gestes", "touch"],
   "grp.camext": ["caméra", "camera"],
@@ -743,10 +753,21 @@ const DICT: Record<string, [string, string]> = {
     "tout, plus les scènes, le crossfade, la matrice et le MIDI",
     "everything, plus scenes, crossfade, the matrix and MIDI",
   ],
-  "aide.macroTitle": ["macros", "macros"],
-  "aide.macros": [
-    "<b>mouvement</b> : calme → tempête. <b>lumière</b> : jour → nuit. <b>couleur</b> : teinte → mandala. 0 à 1 est un chemin, pas un volume.",
-    "<b>motion</b>: calm → storm. <b>light</b>: day → night. <b>colour</b>: hue → mandala. 0 to 1 is a path, not a volume.",
+  "aide.maree": [
+    "de la mer d'huile à la tempête — 0 à 1 est un chemin, pas un volume",
+    "from oily calm to storm — 0 to 1 is a path, not a volume",
+  ],
+  "aide.eclipse": [
+    "de la nuit au plein jour, comme une exposition",
+    "from night to full day, like an exposure",
+  ],
+  "aide.prisme": [
+    "ne fait que colorer : la teinte tourne, le pilote change",
+    "only colors: the hue turns, the driver changes",
+  ],
+  "aide.miroir": [
+    "replie l'image — 1 axe, 2, jusqu'au mandala à 12 branches",
+    "folds the image — 1 axis, 2, up to the 12-branch mandala",
   ],
   "aide.undoTitle": ["annuler", "undo"],
   "aide.undo": [

@@ -55,11 +55,17 @@ fn grain(uv: vec2f) -> f32 {
 }
 
 // Static hash noise: the tooth of a paper sheet, anchored to the screen.
+// v0.7.1g — procedural per-pixel hash (Hoskins style): the old sin() hash
+// degenerates at large coordinates into a woven, repeating corduroy. No
+// repeated texture anywhere, ever.
+fn hash12(p: vec2f) -> f32 {
+  var p3 = fract(vec3f(p.x, p.y, p.x) * 0.1031);
+  p3 = p3 + vec3f(dot(p3, vec3f(p3.y, p3.z, p3.x) + vec3f(33.33)));
+  return fract((p3.x + p3.y) * p3.z);
+}
 fn paperNoise(uv: vec2f) -> f32 {
-  let p = uv / params.texel * 0.5;
-  let h1 = fract(sin(dot(floor(p), vec2f(127.1, 311.7))) * 43758.5453);
-  let h2 = fract(sin(dot(floor(p * 0.31), vec2f(69.7, 251.3))) * 24634.6345);
-  return h1 * 0.6 + h2 * 0.4;
+  let p = floor(uv / params.texel);
+  return hash12(p) * 0.65 + hash12(floor(p * 0.23) + vec2f(157.0)) * 0.35;
 }
 
 // Symmetry fold for one whole mode: where this pixel reads the trail from.

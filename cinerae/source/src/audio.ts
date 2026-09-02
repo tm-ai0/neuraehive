@@ -135,6 +135,18 @@ export async function requestMicrophone(): Promise<MicSource> {
   // it keeps the difference-function loop cheap enough for every frame.
   const half = new Float32Array(analyser.fftSize >> 1);
 
+  // v0.7.1g — noise-floor calibration: the first ~1.2 s after the mic wakes
+  // listen to the room (ventilation, hum) and set a per-band floor;
+  // whatever sits below it reads as silence. Capped so a noisy boot can
+  // never mute the piece; re-run every time the microphone is switched on.
+  const CAL_FRAMES = 70;
+  const BAND_CAP = 0.35;
+  const LEVEL_CAP = 0.04;
+  let calFrames = 0;
+  const floor = { bass: 0, lowMid: 0, mid: 0, treble: 0, level: 0 };
+  const defloor = (v: number, f: number) =>
+    Math.max(0, (v - f) / Math.max(0.2, 1 - f));
+
   return {
     update(dt: number): AudioFrame {
       analyser.getByteFrequencyData(freq);
@@ -167,12 +179,31 @@ export async function requestMicrophone(): Promise<MicSource> {
         tonality = found.clarity;
       }
 
+      const rawBass = Math.min(1, band(40, 250) * 1.4);
+      const rawLowMid = Math.min(1, band(250, 700) * 1.6);
+      const rawMid = Math.min(1, band(700, 2000) * 1.8);
+      const rawTreble = Math.min(1, band(2000, 10000) * 2.2);
+
+      if (calFrames < CAL_FRAMES) {
+        calFrames++;
+        floor.bass = Math.min(BAND_CAP, Math.max(floor.bass, rawBass * 1.25));
+        floor.lowMid = Math.min(BAND_CAP, Math.max(floor.lowMid, rawLowMid * 1.25));
+        floor.mid = Math.min(BAND_CAP, Math.max(floor.mid, rawMid * 1.25));
+        floor.treble = Math.min(BAND_CAP, Math.max(floor.treble, rawTreble * 1.25));
+        floor.level = Math.min(LEVEL_CAP, Math.max(floor.level, level * 1.15));
+        // While calibrating, the piece hears silence — a breath, not a wait.
+        return {
+          bass: 0, lowMid: 0, mid: 0, treble: 0,
+          level: 0, transient: 0, pitch: 0, tonality: 0,
+        };
+      }
+
       return {
-        bass: Math.min(1, band(40, 250) * 1.4),
-        lowMid: Math.min(1, band(250, 700) * 1.6),
-        mid: Math.min(1, band(700, 2000) * 1.8),
-        treble: Math.min(1, band(2000, 10000) * 2.2),
-        level,
+        bass: defloor(rawBass, floor.bass),
+        lowMid: defloor(rawLowMid, floor.lowMid),
+        mid: defloor(rawMid, floor.mid),
+        treble: defloor(rawTreble, floor.treble),
+        level: Math.max(0, level - floor.level),
         transient,
         pitch,
         tonality,

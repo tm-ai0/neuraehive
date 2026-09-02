@@ -178,6 +178,10 @@ async function boot() {
   let windAuto = 1;
   let presenceEnv = 0;
   let presenceSeen = -Infinity;
+  // v0.7.1g — the welcome: armed when the camera wakes, fired on the first
+  // presence seen — two seconds where all the dust rushes to the body.
+  let welcomeArmed = false;
+  let welcomeStart = -Infinity;
   let handTarget = 0;
   const cameraMoving = () =>
     motionAvg > MOTION_STILL || motionArea > MOTION_AREA_PLAY;
@@ -509,6 +513,7 @@ async function boot() {
     try {
       cameraSource = await requestCamera();
       renderer.attachCamera(cameraSource);
+      welcomeArmed = true;
     } catch (error) {
       console.warn("[cinerae] caméra refusée ou indisponible:", error);
       panel.setStatus(t("st.camRefused"));
@@ -522,6 +527,7 @@ async function boot() {
     motionAvg = 0;
     motionArea = 0;
     windAuto = 1;
+    welcomeArmed = false;
     updateStatus();
   }
   async function startMic() {
@@ -563,6 +569,7 @@ async function boot() {
     overlay.classList.add("gone");
     titleTarget = 0;
     titleSpeed = 1 / DISSOLVE_TIME;
+    renderer.dynamics.touchStrength = 0; // a lingering intro hover never seeds
     markActivity();
     overlayError.textContent = "";
     panel.collapse();
@@ -575,10 +582,13 @@ async function boot() {
   document.getElementById("start-audio")!.addEventListener("click", () => beginLive(false));
 
   // ----- touch dust ---------------------------------------------------------
+  // v0.7.1g — during the intro the pointer needs no press: hovering the
+  // wordmark parts the grains like a hand in ash (the shader gates that
+  // force to the title). Live keeps the historical press-to-seed behavior.
   const setTouch = (event: PointerEvent, strength: number) => {
     renderer.dynamics.touchX = event.clientX / window.innerWidth;
     renderer.dynamics.touchY = event.clientY / window.innerHeight;
-    renderer.dynamics.touchStrength = phase === "live" ? strength : 0;
+    renderer.dynamics.touchStrength = strength;
   };
   canvas.addEventListener("pointerdown", (event) => {
     markActivity();
@@ -586,7 +596,9 @@ async function boot() {
     setTouch(event, 1);
   });
   canvas.addEventListener("pointermove", (event) => {
-    if (renderer.dynamics.touchStrength > 0) {
+    if (phase === "intro") {
+      setTouch(event, 0.9);
+    } else if (renderer.dynamics.touchStrength > 0) {
       markActivity();
       setTouch(event, 1);
     }
@@ -596,6 +608,7 @@ async function boot() {
   };
   canvas.addEventListener("pointerup", endTouch);
   canvas.addEventListener("pointercancel", endTouch);
+  canvas.addEventListener("pointerleave", endTouch);
 
   // ----- keyboard shortcuts (documented in the panel's help) ---------------
   let timeBefore = 1;
@@ -718,18 +731,33 @@ async function boot() {
     // Presence envelope: someone stands in the frame when the moving area
     // crossed the threshold recently. The asymmetric smoothing gathers the
     // portrait in about a second and disperses it gently, and keeps sensor
-    // noise from flickering it. The fond imprint stays pure abstract dust.
+    // noise from flickering it. v0.7.1g — the fond family no longer mutes
+    // it: fond is the opening default since v0.7.1f, and the piece must
+    // show the visitor from the first second without touching a slider.
     const present =
       cameraSource !== undefined &&
-      imprintSettings.family !== "fond" &&
       (now - presenceSeen) / 1000 < presenceDelay();
     const presTau = present ? 0.45 : 1.4;
     presenceEnv += ((present ? 1 : 0) - presenceEnv) * (1 - Math.exp(-dt / presTau));
+    // v0.7.1g — the welcome, the piece's first gesture: on the first
+    // presence after the camera wakes, the whole reserve rushes onto the
+    // body for two seconds, then lets go (the renderer widens the corps
+    // share by this envelope, all on the CPU).
+    if (welcomeArmed && present) {
+      welcomeStart = now;
+      welcomeArmed = false;
+    }
+    const wT = (now - welcomeStart) / 1000;
+    const welcome =
+      wT < 2
+        ? smooth01(Math.min(1, wT / 0.3))
+        : Math.max(0, 1 - smooth01(Math.min(1, (wT - 2) / 1.2)));
+    renderer.dynamics.welcome = welcome;
     // v0.7.1c — presence and imprint cohabit: the corps keeps its grains,
     // the imprint takes the rest (the shader splits them), so the envelope
     // no longer dies when the crystal holds.
     renderer.dynamics.presence =
-      presenceEnv * (1 - renderer.dynamics.titleMode);
+      Math.max(presenceEnv, welcome) * (1 - renderer.dynamics.titleMode);
     // Hands ride the presence: fast small motion warms and brightens where
     // it happens, and fades out in under a second when the hands rest.
     renderer.dynamics.hand +=
@@ -1189,7 +1217,6 @@ async function boot() {
     }
 
     panel.setFps(renderer.fps);
-    panel.setCrystal(Math.max(crystal, renderer.dynamics.titleMode));
     if (renderer.failure) {
       fail("Le rendu GPU s'est arrêté — voir la console pour le détail.");
       return;
