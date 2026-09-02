@@ -322,6 +322,120 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+
+      /* ---- v0.7.1f: the command block ---- */
+      /* Double marker: the thin tick is the authored value; the bright
+         2px thumb of the range input is the value really played. */
+      .cinerae-tick {
+        position: absolute;
+        top: 3px;
+        bottom: 3px;
+        width: 1px;
+        background: rgba(232, 221, 204, 0.55);
+        pointer-events: none;
+      }
+      .cinerae-partage {
+        flex: none;
+        margin-bottom: 2px;
+      }
+      .cinerae-matter {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.45rem;
+        flex: none;
+      }
+      .cinerae-matter-item {
+        display: flex;
+        gap: 0.3rem;
+        font-size: 0.55rem;
+        letter-spacing: 0.06em;
+        color: var(--ink-dim);
+      }
+      .cinerae-matter-val {
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+      .cinerae-tempo {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        height: 26px;
+        margin-bottom: 0.35rem;
+        flex: none;
+      }
+      .cinerae-tempo-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 4px;
+        background: var(--ink-bright);
+        animation: cinerae-beat 0.5s linear infinite;
+        flex: none;
+      }
+      @keyframes cinerae-beat {
+        0%, 18% { opacity: 1; }
+        45%, 100% { opacity: 0.12; }
+      }
+      .cinerae-tempo-bpm {
+        font-size: 0.62rem;
+        letter-spacing: 0.08em;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+        min-width: 52px;
+      }
+      .cinerae-tempo-chips {
+        margin-left: auto;
+        display: flex;
+        gap: 0.3rem;
+      }
+      /* Family line: nine underlined tabs hold one row. */
+      .cinerae-subtabs.cinerae-famline {
+        flex-wrap: nowrap;
+        overflow: hidden;
+        gap: 0;
+      }
+      .cinerae-subtabs.cinerae-famline button {
+        font-size: 0.5rem;
+        padding: 0.2rem 0.1rem 0.25rem;
+        letter-spacing: 0;
+        text-transform: lowercase;
+      }
+      /* LFO summary lines: number, target, speed — click to unfold. */
+      .cinerae-lfoline {
+        appearance: none;
+        display: flex;
+        align-items: center;
+        width: 100%;
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--ink-faint);
+        color: var(--ink-dim);
+        font-size: 0.58rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        min-height: 20px;
+        padding: 0 0.1rem;
+        cursor: pointer;
+        text-align: left;
+        margin-bottom: 2px;
+      }
+      button.cinerae-lfoline:hover {
+        color: var(--ink);
+      }
+      .cinerae-lfoline.open {
+        color: var(--ink-bright);
+        cursor: default;
+        border-bottom-color: rgba(232, 221, 204, 0.5);
+      }
+      .cinerae-status:empty {
+        display: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cinerae-tempo-dot {
+          animation: none;
+          opacity: 0.6;
+        }
+      }
       .cinerae-switch {
         appearance: none;
         background: transparent;

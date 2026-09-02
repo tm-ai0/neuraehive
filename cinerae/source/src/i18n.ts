@@ -44,21 +44,21 @@ const DICT: Record<string, [string, string]> = {
   "sec.midi": ["midi", "midi"],
   "sec.aide": ["aide", "help"],
   // ---- controls: short, concrete, three words at most ----------------------
-  // v0.7.1d — the three macro journeys shown to people.
-  "ctl.maree": ["Marée", "Tide"],
+  // v0.7.1f — the three macros say what they move, nothing poetic.
+  "ctl.maree": ["mouvement", "motion"],
   "hint.maree": [
-    "un seul geste : du calme plat à la tempête",
-    "one gesture: from dead calm to the storm",
+    "tout ce qui bouge : vitesse, turbulence, poids, tailles",
+    "everything that moves: speed, turbulence, weight, sizes",
   ],
-  "ctl.eclipse": ["Éclipse", "Eclipse"],
+  "ctl.eclipse": ["lumière", "light"],
   "hint.eclipse": [
-    "la lumière se voile : plein jour, couronne, nuit",
-    "the light veils over: daylight, corona, night",
+    "toute la lumière : exposition, contraste, cendre, densité",
+    "all the light: exposure, contrast, ash, density",
   ],
-  "ctl.prisme": ["Prisme", "Prism"],
+  "ctl.prisme": ["couleur", "colour"],
   "hint.prisme": [
-    "la couleur se disperse : profondeur, facettes, scintillement",
-    "color disperses: depth, facets, scintillation",
+    "couleur et géométrie : teinte, symétries, profondeur",
+    "colour and geometry: hue, symmetries, depth",
   ],
   "ctl.umbra": ["frôler ◀▶ bousculer", "graze ◀▶ shove"],
   "hint.umbra": [
@@ -257,10 +257,10 @@ const DICT: Record<string, [string, string]> = {
     "le temps que la cendre met à oublier",
     "the time the ash takes to forget",
   ],
-  "ctl.imprintReturn": ["retour du titre", "title return"],
-  "hint.imprintReturn": [
-    "au long calme, le nom Cineræ se recompose seul",
-    "after a long lull, the Cineræ name re-forms on its own",
+  "ctl.silenceDelay": ["délai", "delay"],
+  "hint.silenceDelay": [
+    "le temps de silence complet avant qu'une nouvelle empreinte se tire",
+    "the stretch of full silence before a new imprint is drawn",
   ],
   "ctl.fondMat": ["matière", "matter"],
   "hint.fondMat": [
@@ -372,14 +372,14 @@ const DICT: Record<string, [string, string]> = {
     "tout glisse d'un état à l'autre, sans à-coup, couleurs comprises",
     "everything glides between two states, colors included, no jump",
   ],
-  "ctl.impMode": ["place", "placement"],
+  "ctl.impMode": ["où", "where"],
   "hint.impMode": [
-    "où l'empreinte vit : dans le creux du corps, sur tout le cadre, ou les deux",
-    "where the imprint lives: in the body's hollow, across the frame, or both",
+    "à gauche l'empreinte vit dans le corps, à droite partout — au milieu, les deux",
+    "left, the imprint lives in the body — right, everywhere; middle, both",
   ],
-  "opt.impCreux": ["dans le corps", "in the body"],
-  "opt.impMix": ["mélange", "mixed"],
-  "opt.impLibre": ["tout le cadre", "whole frame"],
+  "val.ouCorps": ["corps", "body"],
+  "val.ouMix": ["mélange", "mixed"],
+  "val.ouPartout": ["partout", "everywhere"],
   "ctl.impX": ["position x", "position x"],
   "hint.impX": [
     "l'empreinte glisse à gauche ou à droite — la musique la balance aussi",
@@ -469,8 +469,11 @@ const DICT: Record<string, [string, string]> = {
   "sw.mic": ["micro", "microphone"],
   "sw.auto": ["qualité auto", "auto quality"],
   "sw.mirror": ["miroir", "mirror"],
-  "sw.imprintReturn": ["retour du titre", "title return"],
-  "sw.randomImprint": ["aléatoire au calme", "random when calm"],
+  "sw.randomImprint": ["au silence", "when silent"],
+  "hint.randomImprint": [
+    "au long silence, la pièce tire une empreinte toute seule",
+    "after a long silence, the piece draws an imprint on its own",
+  ],
   "sw.lfoSync": ["sync attaques", "sync to attacks"],
   "sw.lfoTempo": ["suivre le tempo", "follow the tempo"],
   "hint.lfoTempo": [
@@ -568,6 +571,22 @@ const DICT: Record<string, [string, string]> = {
   "ui.pushR": ["bousculer", "shove"],
   "ui.balL": ["corps", "body"],
   "ui.balR": ["empreinte", "imprint"],
+  "ui.ouL": ["corps", "body"],
+  "ui.ouR": ["partout", "everywhere"],
+  "ui.matCorps": ["corps", "body"],
+  "ui.matEmp": ["empreinte", "imprint"],
+  "ui.matFond": ["fond", "field"],
+  "hint.matter": [
+    "à qui vont les grains, en pourcentage du budget",
+    "who the grains go to, as a share of the budget",
+  ],
+  "ui.tempoMusic": ["musique", "music"],
+  "hint.tempoMusic": [
+    "la pièce écoute les coups et cale le tempo toute seule",
+    "the piece listens to the hits and locks the tempo on its own",
+  ],
+  "ui.tempoBeat": ["le temps bat ici", "the beat blinks here"],
+  "ui.lfoSummary": ["LFO", "LFO"],
   "ui.langSwitch": ["Switch to English", "Passer en français"],
   "ui.openPanel": ["Ouvrir les réglages", "Open the settings"],
   "ui.closePanel": ["Replier les réglages", "Collapse the settings"],
@@ -634,7 +653,7 @@ const DICT: Record<string, [string, string]> = {
   "fam.texte": ["texte", "text"],
   "fam.camera": ["caméra", "camera"],
   "fam.multi": ["multi", "multi"],
-  "fam.image": ["image…", "image…"],
+  "fam.image": ["image", "image"],
   "var.sphere": ["sphère", "sphere"],
   "var.cube": ["cube", "cube"],
   "var.cone": ["cône", "cone"],
@@ -713,8 +732,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   // ---- aide ----------------------------------------------------------------
   "aide.umbra": [
-    "deux curseurs — la poussée du corps, la part de l'empreinte — et les teintes",
-    "two sliders — the body's push, the imprint's share — plus the tints",
+    "le bloc commandes, les teintes et la poussée du corps",
+    "the command block, the tints and the body's push",
   ],
   "aide.anima": [
     "cinq sections : corps, geste, musique, particules, look",
@@ -726,13 +745,18 @@ const DICT: Record<string, [string, string]> = {
   ],
   "aide.macroTitle": ["macros", "macros"],
   "aide.macros": [
-    "Trois voyages en tête du panneau : <b>Marée</b>, du calme plat à la tempête ; <b>Éclipse</b>, du plein jour à la nuit ; <b>Prisme</b>, la couleur dispersée en facettes. Chacun combine plusieurs réglages : 0 à 1 est un chemin, pas un volume.",
-    "Three journeys at the head of the panel: <b>Tide</b>, dead calm to storm; <b>Eclipse</b>, daylight to night; <b>Prism</b>, color dispersed into facets. Each drives several settings: 0 to 1 is a path, not a volume.",
+    "<b>mouvement</b> : calme → tempête. <b>lumière</b> : jour → nuit. <b>couleur</b> : teinte → mandala. 0 à 1 est un chemin, pas un volume.",
+    "<b>motion</b>: calm → storm. <b>light</b>: day → night. <b>colour</b>: hue → mandala. 0 to 1 is a path, not a volume.",
+  ],
+  "aide.undoTitle": ["annuler", "undo"],
+  "aide.undo": [
+    "<kbd>Z</kbd> et ↶ reculent d'un geste — curseur, bouton, empreinte, Chaos — jusqu'à vingt. Double-clic sur un curseur : sa valeur dans la scène en cours.",
+    "<kbd>Z</kbd> and ↶ step one gesture back — slider, button, imprint, Chaos — up to twenty. Double-click a slider: its value in the current scene.",
   ],
   "aide.pulseTitle": ["pulsations", "pulses"],
   "aide.pulse": [
-    "Quand la pièce attend — long silence, image sombre, rien touché — un seul curseur pulse quelques secondes : une invitation, jamais une consigne.",
-    "When the piece is waiting — long silence, dark image, nothing touched — one slider pulses for a few seconds: an invitation, never an instruction.",
+    "Quand la pièce attend, un seul curseur pulse quelques secondes : une invitation, jamais une consigne.",
+    "When the piece is waiting, one slider pulses for a few seconds: an invitation, never an instruction.",
   ],
   "aide.key.f": ["plein écran", "fullscreen"],
   "aide.key.c": ["chaos", "chaos"],
