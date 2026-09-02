@@ -1,0 +1,6 @@
+{
+  "model_type": "depth_anything",
+  "transformers.js_config": {
+    "dtype": "q8"
+  }
+}
