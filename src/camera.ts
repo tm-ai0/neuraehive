@@ -10,13 +10,24 @@ export interface CameraSource {
   dispose(): void;
 }
 
-export async function requestCamera(): Promise<CameraSource> {
+/** v0.7.2 — which camera: "user" (front) or "environment" (rear, the
+ * tablet's demo side). Asked as ideal: a machine without that side falls
+ * back to whatever camera it has. */
+export type CameraFacing = "user" | "environment";
+
+export async function requestCamera(
+  facing: CameraFacing = "user"
+): Promise<CameraSource> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("getUserMedia indisponible dans ce navigateur.");
   }
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: {
+      facingMode: { ideal: facing },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    },
   });
 
   const video = document.createElement("video");

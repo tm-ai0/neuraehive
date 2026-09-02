@@ -1,6 +1,6 @@
 // Two languages, one dictionary. Every visible word of the piece goes
 // through t(); the choice is remembered locally, the browser's language is
-// the default. v0.7.1c: labels are short and concrete — three words at
+// the default. v0.7.1c: labels are short and concrete, three words at
 // most, never a metaphor; the hint carries the one-line explanation.
 
 export type Lang = "fr" | "en";
@@ -29,22 +29,134 @@ export function setLang(next: Lang) {
 // [fr, en]
 const DICT: Record<string, [string, string]> = {
   // ---- modes ---------------------------------------------------------------
-  "mode.umbra": ["Umbra", "Umbra"],
-  "mode.anima": ["Anima", "Anima"],
+  "mode.demo": ["Démo", "Demo"],
   "mode.pro": ["Pro", "Pro"],
+  "btn.aide": ["Aide", "Help"],
+  "btn.garder": ["Garder", "Keep"],
+  "hint.garder": [
+    "figer l'image, enregistrer une image et une boucle de 4 s avec le QR",
+    "freeze the image, save a picture and a 4 s loop with the QR",
+  ],
+  "btn.resume": ["Reprendre", "Resume"],
+  "keep.recording": ["Boucle de 4 s en cours…", "Recording the 4 s loop…"],
+  "keep.saving": ["Enregistrement…", "Saving…"],
+  "keep.saved": ["Image et boucle 4 s enregistrées", "Picture and 4 s loop saved"],
+  "keep.savedPng": ["Image enregistrée, boucle impossible ici", "Picture saved, no loop on this browser"],
+  "keep.failed": ["Enregistrement impossible", "Saving failed"],
   // ---- sections ------------------------------------------------------------
-  "sec.scenes": ["scènes", "scenes"],
   "sec.corps": ["corps", "body"],
-  "sec.geste": ["geste", "gesture"],
-  "sec.musique": ["musique", "music"],
-  "sec.particules": ["particules", "particles"],
-  "sec.look": ["look", "look"],
-  "sec.empreintes": ["empreintes", "imprints"],
+  "sec.empreinte": ["empreinte", "imprint"],
+  "sec.son": ["son", "sound"],
+  "sec.scenes": ["scènes", "scenes"],
   "sec.modulation": ["modulation", "modulation"],
   "sec.midi": ["midi", "midi"],
-  "sec.aide": ["aide", "help"],
+  "sec.camera": ["caméra", "camera"],
+  "sec.reglages": ["réglages", "settings"],
+  // ---- the four demo sliders: named by what they do ------------------------
+  "ctl.matiere": ["matière", "matter"],
+  "hint.matiere": [
+    "ce dont le corps est fait : poussière libre, fumée, encre, cristal",
+    "what the body is made of: free dust, smoke, ink, crystal",
+  ],
+  "end.poussiere": ["poussière", "dust"],
+  "end.fumee": ["fumée", "smoke"],
+  "end.encre": ["encre", "ink"],
+  "end.cristal": ["cristal", "crystal"],
+  "end.nuit": ["nuit", "night"],
+  "end.jour": ["jour", "day"],
+  "end.aucun": ["aucun", "none"],
+  "end.axes8": ["8 axes", "8 axes"],
+  "end.instantane": ["instantané", "instant"],
+  "end.sediment": ["sédiment", "sediment"],
+  "ctl.memoire": ["mémoire", "memory"],
+  "hint.memoire": [
+    "la lumière s'attarde, la cendre se souvient et se dépose",
+    "light lingers, ash remembers and settles",
+  ],
+  "ui.sceneNone": ["aucune", "none"],
+  "ui.midiNone": ["non relié", "unbound"],
+  "ui.bindings": ["liaisons", "bindings"],
+  "ui.yes": ["oui", "yes"],
+  "ui.no": ["non", "no"],
+  "ui.langue": ["langue", "language"],
+  "cam.user": ["avant", "front"],
+  "cam.environment": ["arrière", "rear"],
+  "hint.facing": [
+    "quelle caméra : avant pour se voir, arrière pour filmer la salle",
+    "which camera: front to see yourself, rear to film the room",
+  ],
+  "sw.vitrine": ["vitrine après 20 s", "showcase after 20 s"],
+  "hint.vitrine": [
+    "sans toucher pendant 20 s, les scènes défilent sous le titre, avec le QR",
+    "untouched for 20 s, the scenes cycle under the title, with the QR",
+  ],
+  "grp.geste": ["geste", "gesture"],
+  "grp.systeme": ["système", "system"],
+  // ---- aide: five short pages ----------------------------------------------
+  "aide.tab.demo": ["démo", "demo"],
+  "aide.tab.gestes": ["gestes", "touch"],
+  "aide.tab.garder": ["garder", "keep"],
+  "aide.tab.pro": ["pro", "pro"],
+  "aide.tab.liens": ["liens", "links"],
+  "aide.demo.intro": [
+    "Quatre curseurs, chacun fait une seule chose à l'image. Le trait clair est la valeur jouée.",
+    "Four sliders, each does one thing to the image. The bright line is the value played.",
+  ],
+  "aide.demo.matiere": [
+    "de la poussière libre à la fumée, à l'encre, au cristal",
+    "from free dust to smoke, to ink, to crystal",
+  ],
+  "aide.demo.lumiere": ["de la nuit au plein jour, comme une exposition", "from night to full day, like an exposure"],
+  "aide.demo.miroir": ["replie l'image, d'aucun axe à huit", "folds the image, from no axis to eight"],
+  "aide.demo.memoire": ["de l'instantané au sédiment : traînées et cendre", "from instant to sediment: trails and ash"],
+  "aide.demo.chaos": ["tire tous les réglages au hasard", "draws every setting at random"],
+  "aide.demo.undo": ["recule d'un geste, jusqu'à vingt", "steps one gesture back, up to twenty"],
+  "aide.demo.garder": ["fige l'image et fabrique le souvenir", "freezes the image and makes the souvenir"],
+  "aide.gestes.intro": [
+    "L'image elle-même se joue au doigt.",
+    "The image itself is played by finger.",
+  ],
+  "aide.gestes.toucherT": ["toucher", "touch"],
+  "aide.gestes.toucher": ["la main écarte la poussière comme dans la cendre", "the hand parts the dust like ash"],
+  "aide.gestes.pincerT": ["pincer", "pinch"],
+  "aide.gestes.pincer": ["deux doigts écartés plient le miroir", "two fingers spread fold the mirror"],
+  "aide.gestes.glisserT": ["glisser", "drag"],
+  "aide.gestes.glisser": ["un doigt de bas en haut règle la lumière", "one finger bottom to top sets the light"],
+  "aide.gestes.panneauT": ["panneau", "panel"],
+  "aide.gestes.panneau": [
+    "balayer depuis le bord droit l'ouvre ; balayer vers la droite ou toucher l'image le ferme",
+    "swipe from the right edge to open it; swipe right or touch the image to close it",
+  ],
+  "aide.gestes.vitrineT": ["vitrine", "showcase"],
+  "aide.gestes.vitrine": [
+    "sans toucher pendant 20 s, les scènes défilent ; toucher en sort",
+    "untouched for 20 s, the scenes cycle; a touch leaves it",
+  ],
+  "aide.garder.intro": [
+    "Garder fige l'image et fabrique un souvenir à emporter.",
+    "Keep freezes the image and makes a souvenir to take away.",
+  ],
+  "aide.garder.png": ["l'image figée, avec le lettrage et le QR", "the frozen picture, with the mark and the QR"],
+  "aide.garder.webm": ["4 secondes de poussière vivante, mêmes marques", "4 seconds of living dust, same marks"],
+  "aide.garder.qr": ["mène à linktr.ee/thomasmaury", "leads to linktr.ee/thomasmaury"],
+  "aide.garder.local": [
+    "Les deux fichiers tombent dans les téléchargements de l'appareil. Rien n'est envoyé.",
+    "Both files land in the device's downloads. Nothing is sent.",
+  ],
+  "aide.pro.intro": [
+    "Pro garde les quatre curseurs et déplie tout le reste, section par section.",
+    "Pro keeps the four sliders and unfolds everything else, section by section.",
+  ],
+  "aide.perf": [
+    "sur PC, mettre Chrome en haute performance dans les réglages graphiques Windows, sinon la caméra est lente",
+    "on PC, set Chrome to high performance in the Windows graphics settings, otherwise the camera is slow",
+  ],
+  "aide.liens.intro": [
+    "Tout reste local : caméra jamais affichée, rien n'est enregistré ni envoyé.",
+    "Everything stays local: the camera is never shown, nothing is recorded or sent.",
+  ],
   // ---- controls: short, concrete, three words at most ----------------------
-  // v0.7.1f/g — the three journey sliders say what they move, nothing else.
+  // v0.7.1f/g, the three journey sliders say what they move, nothing else.
   "ctl.maree": ["mouvement", "motion"],
   "hint.maree": [
     "tout ce qui bouge : vitesse, turbulence, poids, tailles",
@@ -52,8 +164,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.eclipse": ["lumière", "light"],
   "hint.eclipse": [
-    "0 = nuit, 100 = plein jour — comme une exposition",
-    "0 = night, 100 = full day — like an exposure",
+    "0 = nuit, 100 = plein jour, comme une exposition",
+    "0 = night, 100 = full day, like an exposure",
   ],
   "ctl.prisme": ["couleur", "colour"],
   "hint.prisme": [
@@ -62,17 +174,12 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.miroir": ["miroir", "mirror"],
   "hint.miroir": [
-    "l'image se replie — 1 axe, 2, jusqu'au mandala à 12",
-    "the image folds — 1 axis, 2, up to the 12-axis mandala",
+    "l'image se replie, 1 axe, 2, jusqu'au mandala à 12",
+    "the image folds, 1 axis, 2, up to the 12-axis mandala",
   ],
   "val.mirNone": ["aucun", "none"],
   "val.axe": ["axe", "axis"],
   "val.axes": ["axes", "axes"],
-  "ctl.umbra": ["frôler ◀▶ bousculer", "graze ◀▶ shove"],
-  "hint.umbra": [
-    "à gauche la poussière me traverse, à droite mon corps la laboure",
-    "left, the dust drifts through me — right, my body plows it",
-  ],
   "ctl.presenceShare": ["part du corps", "body share"],
   "hint.presenceShare": [
     "combien de grains quittent le fond pour former la personne",
@@ -90,13 +197,13 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.presenceHold": ["serrage", "grip"],
   "hint.presenceHold": [
-    "ce qui tient le portrait serré — parler le desserre",
-    "what holds the portrait together — speaking loosens it",
+    "ce qui tient le portrait serré, parler le desserre",
+    "what holds the portrait together, speaking loosens it",
   ],
   "ctl.elastic": ["élastique", "stretch"],
   "hint.elastic": [
-    "le bras écarte les grains, ils reviennent — voilà jusqu'où",
-    "an arm scatters the grains, they come back — this is how far",
+    "le bras écarte les grains, ils reviennent, voilà jusqu'où",
+    "an arm scatters the grains, they come back, this is how far",
   ],
   "ctl.presenceTrail": ["traînée", "wake"],
   "hint.presenceTrail": [
@@ -116,7 +223,7 @@ const DICT: Record<string, [string, string]> = {
   "ctl.push": ["poussée", "push"],
   "hint.push": [
     "mon bras repousse les grains devant lui, ils roulent en sillage derrière",
-    "my arm shoves the grains ahead of it — they roll off in a wake behind",
+    "my arm shoves the grains ahead of it, they roll off in a wake behind",
   ],
   "ctl.gesture": ["vent", "wind"],
   "hint.gesture": [
@@ -148,11 +255,6 @@ const DICT: Record<string, [string, string]> = {
     "mon geste à droite pousse la poussière à droite",
     "my move to the right pushes the dust to the right",
   ],
-  "ctl.musicReact": ["réactivité", "reactivity"],
-  "hint.musicReact": [
-    "combien la musique secoue la poussière — graves, aigus, attaques",
-    "how much the music shakes the dust — bass, highs, attacks",
-  ],
   "ctl.bassGain": ["graves", "bass"],
   "hint.bassGain": [
     "les basses poussent la matière comme une pression sourde",
@@ -168,10 +270,10 @@ const DICT: Record<string, [string, string]> = {
     "un claquement ou un beat disperse tout d'un coup",
     "a clap or a beat scatters everything at once",
   ],
-  "ctl.balance": ["corps / empreinte", "body / imprint"],
+  "ctl.balance": ["partage", "share"],
   "hint.balance": [
     "à gauche le corps prend les grains, à droite l'empreinte les prend",
-    "left, the body takes the grains — right, the imprint does",
+    "left, the body takes the grains, right, the imprint does",
   ],
   "ctl.soundFx": ["intensité son", "sound intensity"],
   "hint.soundFx": [
@@ -205,8 +307,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.count": ["grains", "grains"],
   "hint.count": [
-    "toute la réserve, jusqu'au million — la qualité auto veille",
-    "the whole reserve, up to a million — auto quality watches over it",
+    "toute la réserve, jusqu'au million, la qualité auto veille",
+    "the whole reserve, up to a million, auto quality watches over it",
   ],
   "ctl.countCap": ["plafond grains", "grain ceiling"],
   "hint.countCap": [
@@ -242,23 +344,23 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.lifeCycle": ["cycle de vie", "life cycle"],
   "hint.lifeCycle": [
-    "braise, blanc, cendre, retour — la durée d'une vie de grain",
-    "ember, white, ash, return — the length of a grain's life",
+    "braise, blanc, cendre, retour, la durée d'une vie de grain",
+    "ember, white, ash, return, the length of a grain's life",
   ],
   "ctl.timeScale": ["temps", "time"],
   "hint.timeScale": [
-    "du gel au retour arrière — le temps de la matière",
-    "from freeze to rewind — the matter's time",
+    "du gel au retour arrière, le temps de la matière",
+    "from freeze to rewind, the matter's time",
   ],
   "ctl.trails": ["traînées", "trails"],
   "hint.trails": [
     "la lumière s'attarde derrière chaque grain, plus ou moins longtemps",
     "light lingers behind each grain, for longer or shorter",
   ],
-  "ctl.memoryGain": ["mémoire", "memory"],
+  "ctl.memoryGain": ["lit de cendre", "ash bed"],
   "hint.memoryGain": [
-    "là où l'on a bougé, un lit de cendre se souvient — un claquement l'efface",
-    "where things moved, a bed of ash remembers — a clap wipes it",
+    "là où l'on a bougé, un lit de cendre se souvient, un claquement l'efface",
+    "where things moved, a bed of ash remembers, a clap wipes it",
   ],
   "ctl.memorySeconds": ["durée mémoire", "memory length"],
   "hint.memorySeconds": [
@@ -282,13 +384,13 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.fondReact": ["suit le geste", "follows gestures"],
   "hint.fondReact": [
-    "le vent du geste traverse aussi le fond — ou pas",
-    "the gesture's wind also sweeps the field — or not",
+    "le vent du geste traverse aussi le fond, ou pas",
+    "the gesture's wind also sweeps the field, or not",
   ],
   "ctl.ghost": ["fantôme", "ghost"],
   "hint.ghost": [
-    "un voile à peine visible de l'image caméra — coupé par défaut",
-    "a barely-there veil of the camera image — off by default",
+    "un voile à peine visible de l'image caméra, coupé par défaut",
+    "a barely-there veil of the camera image, off by default",
   ],
   "ctl.colorDriver": ["la couleur suit", "color follows"],
   "hint.colorDriver": [
@@ -297,8 +399,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.blendMode": ["fusion", "blend"],
   "hint.blendMode": [
-    "comment les grains s'additionnent — jusqu'à l'encre sur papier",
-    "how grains add up — all the way to ink on paper",
+    "comment les grains s'additionnent, jusqu'à l'encre sur papier",
+    "how grains add up, all the way to ink on paper",
   ],
   "ctl.halo": ["halo", "halo"],
   "hint.halo": [
@@ -327,8 +429,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.compBright": ["luminosité", "brightness"],
   "hint.compBright": [
-    "toute l'image, après le grade — une poignée pour les LFO",
-    "the whole image, after the grade — a handle for the LFOs",
+    "toute l'image, après le grade, une poignée pour les LFO",
+    "the whole image, after the grade, a handle for the LFOs",
   ],
   "ctl.contrast": ["contraste", "contrast"],
   "hint.contrast": [
@@ -342,8 +444,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.compZoom": ["zoom", "zoom"],
   "hint.compZoom": [
-    "toute la composition avance ou recule — les basses la pompent",
-    "the whole composition breathes in and out — the bass pumps it",
+    "toute la composition avance ou recule, les basses la pompent",
+    "the whole composition breathes in and out, the bass pumps it",
   ],
   "ctl.compRot": ["rotation cadre", "frame rotation"],
   "hint.compRot": [
@@ -358,22 +460,12 @@ const DICT: Record<string, [string, string]> = {
   "ctl.focusLayer": ["couche nette", "focus layer"],
   "hint.focusLayer": [
     "celle qui reste au point, les autres s'adoucissent",
-    "the one in focus — the others soften",
+    "the one in focus, the others soften",
   ],
   "ctl.dofBlur": ["flou", "blur"],
   "hint.dofBlur": [
     "les couches hors point fondent en disques doux",
     "out-of-focus layers melt into soft discs",
-  ],
-  "ctl.symMode": ["symétrie", "symmetry"],
-  "hint.symMode": [
-    "l'image se replie — miroir, quadrants, mandala",
-    "the image folds — mirror, quadrants, mandala",
-  ],
-  "ctl.symN": ["branches", "branches"],
-  "hint.symN": [
-    "le nombre de pétales du mandala",
-    "how many petals the mandala grows",
   ],
   "ctl.xfade": ["crossfade A ↔ B", "crossfade A ↔ B"],
   "hint.xfade": [
@@ -382,16 +474,16 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.impMode": ["où", "where"],
   "hint.impMode": [
-    "à gauche l'empreinte vit dans le corps, à droite partout — au milieu, les deux",
-    "left, the imprint lives in the body — right, everywhere; middle, both",
+    "à gauche l'empreinte vit dans le corps, à droite partout, au milieu, les deux",
+    "left, the imprint lives in the body, right, everywhere; middle, both",
   ],
   "val.ouCorps": ["corps", "body"],
   "val.ouMix": ["mélange", "mixed"],
   "val.ouPartout": ["partout", "everywhere"],
   "ctl.impX": ["position x", "position x"],
   "hint.impX": [
-    "l'empreinte glisse à gauche ou à droite — la musique la balance aussi",
-    "the imprint slides left or right — the music sways it too",
+    "l'empreinte glisse à gauche ou à droite, la musique la balance aussi",
+    "the imprint slides left or right, the music sways it too",
   ],
   "ctl.impY": ["position y", "position y"],
   "hint.impY": [
@@ -400,18 +492,18 @@ const DICT: Record<string, [string, string]> = {
   ],
   "ctl.impRot": ["rotation", "rotation"],
   "hint.impRot": [
-    "l'empreinte tourne sur elle-même — la danse s'y ajoute",
-    "the imprint turns on itself — the dance adds to it",
+    "l'empreinte tourne sur elle-même, la danse s'y ajoute",
+    "the imprint turns on itself, the dance adds to it",
   ],
   "ctl.impScale": ["échelle", "scale"],
   "hint.impScale": [
-    "l'empreinte grandit ou se resserre — les basses la pompent",
-    "the imprint grows or tightens — the bass pumps it",
+    "l'empreinte grandit ou se resserre, les basses la pompent",
+    "the imprint grows or tightens, the bass pumps it",
   ],
   "ctl.tempo": ["tempo", "tempo"],
   "hint.tempo": [
-    "le pouls partagé des LFO synchronisés — tap ou détection auto",
-    "the shared pulse of synced LFOs — tap it or let it listen",
+    "le pouls partagé des LFO synchronisés, tap ou détection auto",
+    "the shared pulse of synced LFOs, tap it or let it listen",
   ],
   "ctl.waveFreq": ["fréquence", "frequency"],
   "hint.waveFreq": ["des ondulations plus serrées", "tighter undulations"],
@@ -470,13 +562,13 @@ const DICT: Record<string, [string, string]> = {
   // ---- switches ------------------------------------------------------------
   "sw.camera": ["caméra", "camera"],
   "hint.swCamera": [
-    "la caméra souffle sur la poussière et me dessine — jamais affichée",
-    "the camera blows on the dust and draws me — never displayed",
+    "la caméra souffle sur la poussière et me dessine, jamais affichée",
+    "the camera blows on the dust and draws me, never displayed",
   ],
   "sw.mic": ["micro", "microphone"],
   "hint.swMic": [
-    "le micro fait danser la matière — rien n'est enregistré",
-    "the microphone makes the matter dance — nothing is recorded",
+    "le micro fait danser la matière, rien n'est enregistré",
+    "the microphone makes the matter dance, nothing is recorded",
   ],
   "sw.auto": ["qualité auto", "auto quality"],
   "sw.mirror": ["sens du geste", "gesture direction"],
@@ -485,34 +577,23 @@ const DICT: Record<string, [string, string]> = {
     "au long silence, la pièce tire une empreinte toute seule",
     "after a long silence, the piece draws an imprint on its own",
   ],
-  "sw.lfoSync": ["sync attaques", "sync to attacks"],
   "sw.lfoTempo": ["suivre le tempo", "follow the tempo"],
   "hint.lfoTempo": [
     "la vitesse devient une division du tempo, du quart de temps à 4 mesures",
     "the rate becomes a tempo division, from a quarter beat to 4 bars",
   ],
-  "sw.tempoAuto": ["tempo auto", "auto tempo"],
-  "hint.tempoAuto": [
-    "la pièce écoute les coups et cale le tempo toute seule",
-    "the piece listens to the hits and locks the tempo on its own",
-  ],
   "sw.midiLearn": ["apprentissage", "learn"],
-  "sw.invites": ["invitations", "invitations"],
-  "hint.invites": [
-    "quand la pièce attend, un curseur pulse quelques secondes — une invitation",
-    "when the piece is waiting, one slider pulses for a few seconds — an invitation",
-  ],
   "sw.rawCam": ["caméra brute", "raw camera"],
   "hint.rawCam": [
-    "l'image caméra sans effets, pour calibrer — Pro seulement, jamais en public",
-    "the plain camera image, for calibration — Pro only, never for the public",
+    "l'image caméra sans effets, pour calibrer, Pro seulement, jamais en public",
+    "the plain camera image, for calibration, Pro only, never for the public",
   ],
   // ---- buttons -------------------------------------------------------------
   "btn.chaos": ["Chaos", "Chaos"],
-  "btn.undo": ["Annuler le dernier chaos", "Undo the last chaos"],
+  "btn.undo": ["Annuler le dernier geste", "Undo the last gesture"],
   "hint.undo": [
-    "revenir au réglage d'avant le dernier tirage — touche Z",
-    "go back to before the last draw — Z key",
+    "revenir d'un geste en arrière, touche Z",
+    "step one gesture back, Z key",
   ],
   "btn.reset": ["Reset", "Reset"],
   "btn.save": ["sauver", "save"],
@@ -521,8 +602,8 @@ const DICT: Record<string, [string, string]> = {
   "btn.midiOn": ["activer le midi", "enable midi"],
   "btn.tap": ["tap", "tap"],
   "hint.tap": [
-    "taper le rythme — la moyenne des frappes écrit le tempo",
-    "tap the beat — the mean of your taps writes the tempo",
+    "taper le rythme, la moyenne des frappes écrit le tempo",
+    "tap the beat, the mean of your taps writes the tempo",
   ],
   // ---- small UI ------------------------------------------------------------
   "ui.modulated": ["modulé", "modulated"],
@@ -532,7 +613,6 @@ const DICT: Record<string, [string, string]> = {
   "ui.shadow": ["ombre", "shadow"],
   "ui.lfoRate": ["vitesse", "rate"],
   "ui.lfoAmp": ["ampleur", "amount"],
-  "ui.lfoPhase": ["phase", "phase"],
   "ui.lfoTarget": ["cible", "target"],
   "ui.lfoNone": ["aucune", "none"],
   "ui.lfoDiv": ["division", "division"],
@@ -542,8 +622,8 @@ const DICT: Record<string, [string, string]> = {
     "the shape of the repeated motion",
   ],
   "hint.lfoTarget": [
-    "le réglage que ce LFO anime — tous les curseurs, cadre compris",
-    "the setting this LFO animates — every slider, frame included",
+    "le réglage que ce LFO anime, tous les curseurs, cadre compris",
+    "the setting this LFO animates, every slider, frame included",
   ],
   "lfo.sinus": ["sinus", "sine"],
   "lfo.triangle": ["triangle", "triangle"],
@@ -578,33 +658,26 @@ const DICT: Record<string, [string, string]> = {
     "bindings are saved with scenes",
   ],
   "ui.freeText": ["texte libre…", "free text…"],
-  "ui.pushL": ["frôler", "graze"],
-  "ui.pushR": ["bousculer", "shove"],
   "ui.balL": ["corps", "body"],
   "ui.balR": ["empreinte", "imprint"],
   "ui.ouL": ["corps", "body"],
   "ui.ouR": ["partout", "everywhere"],
-  "ui.matCorps": ["corps", "body"],
-  "ui.matEmp": ["empreinte", "imprint"],
-  "ui.matFond": ["fond", "field"],
   "hint.matter": [
     "à qui vont les grains, en pourcentage du budget",
     "who the grains go to, as a share of the budget",
   ],
+  "ui.matCorps": ["corps", "body"],
+  "ui.matEmp": ["empreinte", "imprint"],
+  "ui.matFond": ["fond", "field"],
   "ui.tempoMusic": ["musique", "music"],
   "hint.tempoMusic": [
     "la pièce écoute les coups et cale le tempo toute seule",
     "the piece listens to the hits and locks the tempo on its own",
   ],
   "ui.tempoBeat": ["le temps bat ici", "the beat blinks here"],
-  "ui.lfoSummary": ["LFO", "LFO"],
   "ui.langSwitch": ["Switch to English", "Passer en français"],
   "ui.openPanel": ["Ouvrir les réglages", "Open the settings"],
   "ui.closePanel": ["Replier les réglages", "Collapse the settings"],
-  "ui.togglePanel": [
-    "Ouvrir ou fermer les réglages",
-    "Open or close the settings",
-  ],
   // ---- sub-tab groups ------------------------------------------------------
   "grp.forme": ["forme", "shape"],
   "grp.tenue": ["tenue", "hold"],
@@ -615,13 +688,6 @@ const DICT: Record<string, [string, string]> = {
   "grp.fond": ["fond", "field"],
   "grp.lumiere": ["lumière", "light"],
   "grp.espace": ["espace", "space"],
-  "grp.reglages": ["réglages", "settings"],
-  "grp.modes": ["modes", "modes"],
-  "grp.curseurs": ["curseurs", "sliders"],
-  "grp.clavier": ["clavier", "keys"],
-  "grp.gestes": ["gestes", "touch"],
-  "grp.camext": ["caméra", "camera"],
-  "grp.liens": ["liens", "links"],
   // ---- hints for rows without a def ---------------------------------------
   "hint.teinte": [
     "une teinte : la couleur de la poussière, de son fond à sa lumière",
@@ -653,7 +719,6 @@ const DICT: Record<string, [string, string]> = {
     "the dust's gradient, 2 to 5 colors",
   ],
   // ---- imprint families and variants --------------------------------------
-  "fam.titre": ["titre", "title"],
   "fam.fond": ["fond", "field"],
   "fam.volume": ["volumes", "volumes"],
   "fam.forme": ["formes", "shapes"],
@@ -679,8 +744,6 @@ const DICT: Record<string, [string, string]> = {
   "var.chladni": ["chladni", "chladni"],
   "var.arbre": ["arbre", "tree"],
   "var.julia": ["julia", "julia"],
-  "var.fougere": ["fougère", "fern"],
-  "var.dragon": ["dragon", "dragon"],
   "var.sinus": ["sinus", "sine"],
   "var.triangle": ["triangle", "triangle"],
   "var.melange": ["mélange", "blend"],
@@ -702,27 +765,24 @@ const DICT: Record<string, [string, string]> = {
   "scene.pulsar": ["Pulsar", "Pulsar"],
   "scene.canopee": ["Canopée", "Canopy"],
   // ---- statuses ------------------------------------------------------------
-  "st.waiting": ["en attente", "waiting"],
-  "st.camOn": ["caméra active", "camera on"],
   "st.camOff": ["sans caméra", "no camera"],
-  "st.micOn": ["micro actif", "microphone on"],
   "st.micOff": ["sans micro", "no microphone"],
-  "st.camRefused": ["caméra refusée — mode audio seul", "camera refused — audio only"],
+  "st.camRefused": ["caméra refusée, mode audio seul", "camera refused, audio only"],
   "st.micRefused": [
-    "micro refusé — matière libre, non réactive",
-    "microphone refused — free, non-reactive matter",
+    "micro refusé, matière libre, non réactive",
+    "microphone refused, free, non-reactive matter",
   ],
   "st.badPreset": ["scène illisible", "unreadable scene"],
   "st.captureFail": ["capture impossible", "capture failed"],
   "st.camInactive": [
-    "caméra inactive — silhouette indisponible",
-    "camera off — silhouette unavailable",
+    "caméra inactive, silhouette indisponible",
+    "camera off, silhouette unavailable",
   ],
   "st.noSilhouette": [
-    "silhouette introuvable — rien devant la caméra ?",
-    "no silhouette found — nothing in front of the camera?",
+    "silhouette introuvable, rien devant la caméra ?",
+    "no silhouette found, nothing in front of the camera?",
   ],
-  "st.emptyText": ["texte vide — rien à cristalliser", "empty text — nothing to crystallize"],
+  "st.emptyText": ["texte vide, rien à cristalliser", "empty text, nothing to crystallize"],
   "st.dropImage": [
     "déposer une image sur la scène, ou passer par image…",
     "drop an image on the stage, or use image…",
@@ -732,74 +792,30 @@ const DICT: Record<string, [string, string]> = {
   // ---- overlay -------------------------------------------------------------
   "overlay.intro": [
     "Poussière de lumière pilotée par le mouvement et le son. La caméra n'est jamais affichée : seul son mouvement souffle sur les particules. La musique anime la matière, le corps la sculpte. Tout reste local, rien n'est enregistré ni envoyé.",
-    "Dust of light driven by movement and sound. The camera is never shown: only its motion blows on the particles. Music animates the matter, the body sculpts it. Everything stays local — nothing is recorded or sent.",
+    "Dust of light driven by movement and sound. The camera is never shown: only its motion blows on the particles. Music animates the matter, the body sculpts it. Everything stays local, nothing is recorded or sent.",
   ],
   "overlay.startFull": ["Activer caméra + micro", "Enable camera + microphone"],
   "overlay.startAudio": ["Micro seul", "Microphone only"],
   "overlay.drop": [
-    "déposer l'image — tout reste local",
-    "drop the image — everything stays local",
+    "déposer l'image, tout reste local",
+    "drop the image, everything stays local",
   ],
   // ---- aide ----------------------------------------------------------------
-  "aide.umbra": [
-    "le bloc commandes, les teintes et la poussée du corps",
-    "the command block, the tints and the body's push",
-  ],
-  "aide.anima": [
-    "cinq sections : corps, geste, musique, particules, look",
-    "five sections: body, gesture, music, particles, look",
-  ],
-  "aide.pro": [
-    "tout, plus les scènes, le crossfade, la matrice et le MIDI",
-    "everything, plus scenes, crossfade, the matrix and MIDI",
-  ],
-  "aide.maree": [
-    "de la mer d'huile à la tempête — 0 à 1 est un chemin, pas un volume",
-    "from oily calm to storm — 0 to 1 is a path, not a volume",
-  ],
-  "aide.eclipse": [
-    "de la nuit au plein jour, comme une exposition",
-    "from night to full day, like an exposure",
-  ],
-  "aide.prisme": [
-    "ne fait que colorer : la teinte tourne, le pilote change",
-    "only colors: the hue turns, the driver changes",
-  ],
-  "aide.miroir": [
-    "replie l'image — 1 axe, 2, jusqu'au mandala à 12 branches",
-    "folds the image — 1 axis, 2, up to the 12-branch mandala",
-  ],
-  "aide.undoTitle": ["annuler", "undo"],
-  "aide.undo": [
-    "<kbd>Z</kbd> et ↶ reculent d'un geste — curseur, bouton, empreinte, Chaos — jusqu'à vingt. Double-clic sur un curseur : sa valeur dans la scène en cours.",
-    "<kbd>Z</kbd> and ↶ step one gesture back — slider, button, imprint, Chaos — up to twenty. Double-click a slider: its value in the current scene.",
-  ],
-  "aide.pulseTitle": ["pulsations", "pulses"],
-  "aide.pulse": [
-    "Quand la pièce attend, un seul curseur pulse quelques secondes : une invitation, jamais une consigne.",
-    "When the piece is waiting, one slider pulses for a few seconds: an invitation, never an instruction.",
-  ],
   "aide.key.f": ["plein écran", "fullscreen"],
   "aide.key.c": ["chaos", "chaos"],
-  "aide.key.z": ["annule le dernier chaos", "undoes the last chaos"],
+  "aide.key.z": ["annule le dernier geste", "undoes the last gesture"],
   "aide.key.r": ["reset", "reset"],
   "aide.key.p": ["image PNG", "PNG image"],
   "aide.key.v": ["vidéo webm", "webm video"],
   "aide.key.space": ["gèle le temps", "freezes time"],
-  "aide.key.esc": ["replie le panneau", "folds the panel"],
+  "aide.key.esc": ["ouvre ou ferme le panneau", "opens or closes the panel"],
   "aide.kspace": ["Espace", "Space"],
   "aide.kesc": ["Échap", "Esc"],
-  "aide.touchTitle": ["tablette", "tablet"],
-  "aide.touch": [
-    "Toucher l'écran sème de la poussière sous le doigt ; glisser souffle un vent.",
-    "Touching the screen seeds dust under your finger; dragging blows a wind.",
-  ],
   "aide.ndiTitle": ["NDI, capture, OBS", "NDI, capture, OBS"],
   "aide.ndi": [
-    "Une caméra NDI ou un flux OBS peut jouer ici : installer <a href=\"https://ndi.video/tools/\" target=\"_blank\" rel=\"noopener\">NDI Tools</a> (Windows), lancer l'outil <b>Webcam Input</b>, choisir la source — elle apparaît alors comme une webcam que la pièce peut ouvrir. Une carte de capture HDMI se présente déjà comme une webcam, rien à faire.",
-    "An NDI camera or an OBS feed can play here: install <a href=\"https://ndi.video/tools/\" target=\"_blank\" rel=\"noopener\">NDI Tools</a> (Windows), run the <b>Webcam Input</b> tool, pick the source — it then shows up as a webcam the piece can open. An HDMI capture card already shows up as a webcam, nothing to do.",
+    "Une caméra NDI ou un flux OBS peut jouer ici : installer <a href=\"https://ndi.video/tools/\" target=\"_blank\" rel=\"noopener\">NDI Tools</a> (Windows), lancer l'outil <b>Webcam Input</b>, choisir la source, elle apparaît alors comme une webcam que la pièce peut ouvrir. Une carte de capture HDMI se présente déjà comme une webcam, rien à faire.",
+    "An NDI camera or an OBS feed can play here: install <a href=\"https://ndi.video/tools/\" target=\"_blank\" rel=\"noopener\">NDI Tools</a> (Windows), run the <b>Webcam Input</b> tool, pick the source, it then shows up as a webcam the piece can open. An HDMI capture card already shows up as a webcam, nothing to do.",
   ],
-  "aide.linktree": ["Linktree — Thomas Maury", "Linktree — Thomas Maury"],
 };
 
 export function t(key: string): string {

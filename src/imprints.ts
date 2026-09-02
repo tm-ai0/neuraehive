@@ -78,7 +78,7 @@ export const IMPRINT_VARIANTS: Partial<Record<ImprintFamily, string[]>> = {
   volume: ["sphere", "cube", "cone", "tore"],
   forme: ["cercle", "anneau", "carre", "croix", "spirale", "etoile"],
   math: ["lissajous", "attracteur", "chladni", "arbre"],
-  fractale: ["julia", "fougere", "dragon"],
+  fractale: ["julia"],
   ondes: ["sinus", "triangle", "carre", "melange"],
   camera: ["gelee", "silhouette"],
 };
@@ -701,126 +701,6 @@ function juliaCloud(time: number, life: ImprintLife): ImprintCloud {
   return c;
 }
 
-// Barnsley fern: each point runs its own hashed IFS walk — deterministic per
-// index, so re-samplings keep every grain on its frond. The bass carries a
-// wind through it: the fronds bend by height, tips first, with a gust
-// ripple rolling up the stem.
-function fougereCloud(life: ImprintLife): ImprintCloud {
-  const count = 8192;
-  const raw = new Float32Array(count * 2);
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (let i = 0; i < count; i++) {
-    let x = 0;
-    let y = 0;
-    for (let k = 0; k < 34; k++) {
-      const r = hash01(i * 101 + k * 9 + 3);
-      let nx: number;
-      let ny: number;
-      if (r < 0.01) {
-        nx = 0;
-        ny = 0.16 * y;
-      } else if (r < 0.86) {
-        nx = 0.85 * x + 0.04 * y;
-        ny = -0.04 * x + 0.85 * y + 1.6;
-      } else if (r < 0.93) {
-        nx = 0.2 * x - 0.26 * y;
-        ny = 0.23 * x + 0.22 * y + 1.6;
-      } else {
-        nx = -0.15 * x + 0.28 * y;
-        ny = 0.26 * x + 0.24 * y + 0.44;
-      }
-      x = nx;
-      y = ny;
-    }
-    raw[i * 2] = x;
-    raw[i * 2 + 1] = y;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-  const unit = Math.max(1e-4, maxY - minY);
-  const c = makeCloud(count, "shape", {
-    stagger: 0.35,
-    coverage: 0.68,
-    aspect: (maxX - minX) / unit,
-  });
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  for (let i = 0; i < count; i++) {
-    const an = hash01(i * 17 + 7) * TAU;
-    // Screen y grows downward: flip so the fern stands upright.
-    const px = (raw[i * 2]! - cx) / unit;
-    const py = -(raw[i * 2 + 1]! - cy) / unit;
-    const h = Math.min(1, Math.max(0, 0.5 - py)); // height above the root
-    put(
-      c,
-      i,
-      px + life.wind * (0.22 * h * h + 0.05 * h * Math.sin(h * 3.1 - life.windPhase)),
-      py,
-      Math.cos(an) * 0.5,
-      Math.sin(an) * 0.5
-    );
-  }
-  return c;
-}
-
-// Heighway dragon: an ordered turtle walk along the curve, so the stagger
-// draws it stroke by stroke as it condenses. The turn angle is the fold:
-// at 1 every crease is a right angle — the true dragon — and every accent
-// slackens it, the curve unfolding for a beat before creasing back. The
-// position of each step is continuous in the fold, so the whole spine
-// rolls open and shut without a grain ever jumping.
-function dragonCloud(life: ImprintLife): ImprintCloud {
-  const steps = 8192;
-  const theta = (Math.PI / 2) * Math.min(1, Math.max(0.55, life.fold));
-  const xs = new Float32Array(steps + 1);
-  const ys = new Float32Array(steps + 1);
-  let x = 0;
-  let y = 0;
-  let heading = 0;
-  let minX = 0;
-  let maxX = 0;
-  let minY = 0;
-  let maxY = 0;
-  for (let k = 1; k <= steps; k++) {
-    x += Math.cos(heading);
-    y += Math.sin(heading);
-    xs[k] = x;
-    ys[k] = y;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-    // Turn direction of the dragon sequence at step k, scaled by the fold.
-    const left = (((k & -k) << 1) & k) === 0;
-    heading += left ? theta : -theta;
-  }
-  const count = 8192;
-  const unit = Math.max(1e-4, maxY - minY);
-  const c = makeCloud(count, "shape", {
-    stagger: 0.6,
-    coverage: 0.6,
-    aspect: (maxX - minX) / unit,
-  });
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  for (let i = 0; i < count; i++) {
-    const t = ((i + hash01(i * 3 + 1)) / count) * (steps - 1);
-    const k = Math.min(steps - 1, Math.floor(t));
-    const u = t - k;
-    const px = xs[k]! + (xs[k + 1]! - xs[k]!) * u;
-    const py = ys[k]! + (ys[k + 1]! - ys[k]!) * u;
-    const sx = xs[k + 1]! - xs[k]!;
-    const sy = ys[k + 1]! - ys[k]!;
-    const l = Math.hypot(sx, sy) || 1;
-    put(c, i, (px - cx) / unit, (py - cy) / unit, sy / l, -sx / l);
-  }
-  return c;
-}
 
 // ---- ondes (uv space, animated drift) -------------------------------------
 
@@ -1154,8 +1034,6 @@ export function generateImprint(
       if (s.variant === "arbre") return arbreCloud(life);
       return lissajousCloud(Math.round(s.lissa.a), Math.round(s.lissa.b), life);
     case "fractale":
-      if (s.variant === "fougere") return fougereCloud(life);
-      if (s.variant === "dragon") return dragonCloud(life);
       return juliaCloud(ctx.time, life);
     case "ondes":
       return ondesCloud({ ...s.wave, shape: (s.variant as ImprintSettings["wave"]["shape"]) || s.wave.shape }, life);

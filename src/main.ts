@@ -1,10 +1,12 @@
 // Boot and orchestration. The piece opens on the wordmark: particles converge
 // from chaos and crystallize CINERÆ — the first crystallization. A choice
-// dissolves everything; matter takes over. After long total stillness the
-// title slowly re-forms on its own, and melts at the first sign of life.
-// Sensors start only from an explicit user gesture, never automatically.
+// dissolves everything; matter takes over. v0.7.2 — the stage itself is an
+// instrument (touch parts the ash, a pinch folds the mirror, a vertical
+// drag sets the light), GARDER makes a souvenir (PNG + 4 s loop + QR) and
+// after 20 s without a touch the showcase cycles the scenes under the
+// wordmark. Sensors start only from an explicit user gesture.
 import { requestMicrophone, type MicSource } from "./audio";
-import { requestCamera, type CameraSource } from "./camera";
+import { requestCamera, type CameraFacing, type CameraSource } from "./camera";
 import {
   DEFAULT_IMPRINT_SETTINGS,
   IMPRINT_VARIANTS,
@@ -22,11 +24,12 @@ import {
 } from "./imprints";
 import { capturePng, createRecorder, createStage } from "./capture";
 import { t } from "./i18n";
+import { createKeep } from "./keep";
 import { applyPalette, PALETTES } from "./look";
 import { createMidi, type Midi } from "./midi";
 import { createModMatrix, type ModMatrix, type ParamRef } from "./modmatrix";
 import { createPanel } from "./panel";
-import { createPresets, type Presets } from "./presets";
+import { createPresets, type PresetData, type Presets } from "./presets";
 import { createRenderer, DEFAULT_TUNING, type Renderer } from "./renderer";
 import { sampleWordmark } from "./wordmark";
 
@@ -55,6 +58,12 @@ const WIND_AREA_REF = 0.09; // moving area of a full sweep at arm's length
 const WIND_AUTO_MAX = 4;
 const MOTION_PROBE_MS = 250;
 const DEBUG = new URLSearchParams(location.search).has("debug");
+// v0.7.2 — the showcase: after this long without a touch (and nobody in
+// front of the camera) the scenes cycle on their own, one every period.
+const VITRINE_IDLE_MS = 20_000;
+const VITRINE_PERIOD_MS = 20_000;
+const KEEP_URL = "https://linktr.ee/thomasmaury";
+const CAM_STORE = "cinerae-camera";
 
 const AUDIO_DEFAULTS = {
   silenceThreshold: 0.02,
@@ -122,6 +131,16 @@ async function boot() {
     // v0.7.1f — "au silence": seconds of full silence before the piece
     // draws a new imprint on its own (the switch lives in scènes).
     silenceDelay: 24,
+    // v0.7.2 — front or rear camera, remembered locally (the tablet demo
+    // films with the rear one); the showcase switch.
+    cameraFacing: ((): CameraFacing => {
+      try {
+        return localStorage.getItem(CAM_STORE) === "environment" ? "environment" : "user";
+      } catch {
+        return "user";
+      }
+    })(),
+    vitrine: true,
   };
   const presenceThreshold = () =>
     0.0015 * Math.pow(4, 0.5 - behavior.presenceSense);
@@ -142,6 +161,10 @@ async function boot() {
   let cameraSource: CameraSource | undefined;
   let crystal = 0;
   let lastActivity = performance.now();
+  // v0.7.2 — the last TOUCH (stage, panel, keys): what the showcase waits
+  // on. Sound and camera motion never count, a noisy hall must not keep
+  // the showcase from starting, a visitor in front must (presence gate).
+  let lastTouch = performance.now();
   // v0.7.1c — the dance: rotation/scale/ripple state integrated from music.
   let danceAngle = 0;
   let danceKick = 0;
@@ -203,6 +226,101 @@ async function boot() {
   const markActivity = () => {
     lastActivity = performance.now();
   };
+  const markTouch = () => {
+    lastActivity = performance.now();
+    lastTouch = lastActivity;
+    if (vitrineOn) leaveVitrine();
+  };
+
+  // ----- GARDER: the souvenir -----------------------------------------------
+  // The stage keeps living for the 4 s loop, then freezes; the mark and the
+  // QR sit on the frozen image until REPRENDRE. Both files land in the
+  // local downloads, nothing leaves the machine.
+  const keep = createKeep(canvas, { url: KEEP_URL, mark: "cineræ", loopSeconds: 4 });
+  const keepBox = document.createElement("section");
+  keepBox.className = "cinerae-keep";
+  keepBox.setAttribute("aria-label", "Cineræ");
+  keepBox.innerHTML =
+    `<div class="cinerae-toast" role="status"><span class="cinerae-toast-text"></span><button type="button" class="cinerae-toast-btn"></button></div>` +
+    `<div class="cinerae-mark" aria-hidden="true">cineræ</div>` +
+    `<div class="cinerae-qr">${keep.qrSvg()}<span>linktr.ee/thomasmaury</span></div>`;
+  document.body.appendChild(keepBox);
+  const keepText = keepBox.querySelector(".cinerae-toast-text") as HTMLElement;
+  const keepResume = keepBox.querySelector(".cinerae-toast-btn") as HTMLButtonElement;
+  let keepActive = false;
+  let keepTimeBefore = 1;
+  const applyKeepLanguage = () => {
+    keepResume.textContent = t("btn.resume");
+  };
+  keepResume.addEventListener("click", () => {
+    if (!keepActive) return;
+    keepActive = false;
+    keepBox.classList.remove("on");
+    panel.writeDef("timeScale", keepTimeBefore || 1);
+    panel.refresh();
+    markTouch();
+  });
+  async function keepSouvenir() {
+    if (keepActive) return;
+    keepActive = true;
+    if (vitrineOn) leaveVitrine();
+    panel.collapse();
+    keepBox.classList.remove("vitrine");
+    keepBox.classList.add("on");
+    keepResume.style.display = "none";
+    keepText.textContent = t("keep.recording");
+    const result = await keep.capture((phase) => {
+      if (phase === "saving") {
+        // The loop is in the can: freeze the image the PNG will keep.
+        keepTimeBefore = renderer.tuning.timeScale;
+        panel.writeDef("timeScale", 0);
+        keepText.textContent = t("keep.saving");
+      }
+    });
+    if (!keepActive) return; // resumed meanwhile
+    keepText.textContent = result.png && result.webm
+      ? t("keep.saved")
+      : result.png
+        ? t("keep.savedPng")
+        : t("keep.failed");
+    keepResume.style.display = "";
+  }
+
+  // ----- VITRINE: the showcase ---------------------------------------------
+  // Twenty seconds without a touch and nobody in front: the scenes cycle,
+  // one every twenty seconds, the wordmark held in the dust, the QR as a
+  // watermark. Any touch leaves it and gives the imprint back.
+  let vitrineOn = false;
+  const vitrineTitle: ImprintCloud = { ...titleImprint, coverage: 0.3, offsetY: 0.5 };
+  let vitrineNext = 0;
+  let vitrineIdx = 0;
+  let vitrineImprint: { family: ImprintFamily; variant: string } | undefined;
+  const enterVitrine = () => {
+    vitrineOn = true;
+    vitrineImprint = { family: imprintSettings.family, variant: imprintSettings.variant };
+    keepBox.classList.add("vitrine", "on");
+    panel.collapse();
+    vitrineStep();
+  };
+  const vitrineStep = () => {
+    const scenes = presets?.builtIns ?? [];
+    if (scenes.length) {
+      const scene = scenes[vitrineIdx % scenes.length]!;
+      vitrineIdx++;
+      presets?.apply(structuredClone(scene) as PresetData);
+    }
+    // The title in dust: the wordmark is the imprint of the showcase.
+    void applyImprint("titre", "", { silent: true });
+    vitrineNext = performance.now() + VITRINE_PERIOD_MS;
+  };
+  const leaveVitrine = () => {
+    vitrineOn = false;
+    keepBox.classList.remove("vitrine");
+    if (!keepActive) keepBox.classList.remove("on");
+    const back = vitrineImprint ?? { family: "fond" as ImprintFamily, variant: "" };
+    vitrineImprint = undefined;
+    void applyImprint(back.family, back.variant, { silent: true });
+  };
 
   // ----- engines (created after the panel; hooks close over these) ---------
   let mod: ModMatrix | undefined;
@@ -238,6 +356,17 @@ async function boot() {
         if (kind === "camera") void (enabled ? startCamera() : stopCamera());
         else void (enabled ? startMic() : stopMic());
       },
+      onCameraFacing(facing) {
+        try {
+          localStorage.setItem(CAM_STORE, facing);
+        } catch {}
+        if (cameraSource) {
+          void stopCamera().then(() => startCamera());
+        }
+      },
+      onKeep() {
+        void keepSouvenir();
+      },
       onChaos() {
         chaosStart = performance.now();
         // One time out of two, chaos also draws a new imprint.
@@ -258,6 +387,7 @@ async function boot() {
         behavior.presenceSense = 0.5;
         behavior.tempoAuto = false;
         behavior.silenceDelay = 24;
+        behavior.vitrine = true;
         mod?.load(undefined);
         beatTimes = [];
         applyPalette(renderer.look, PALETTES[0]!);
@@ -268,7 +398,7 @@ async function boot() {
         textImprint = undefined;
         void applyImprint("fond", "");
       },
-      onInteraction: markActivity,
+      onInteraction: markTouch,
       onImprintSelect(family, variant) {
         void applyImprint(family, variant);
       },
@@ -390,7 +520,9 @@ async function boot() {
     if (family === "titre") {
       s.family = "titre";
       s.variant = "";
-      renderer.setImprint(titleImprint, "shape");
+      // The showcase spreads the word over a third of the screen height:
+      // an imprint's grain budget on the intro's small cap blows to white.
+      renderer.setImprint(vitrineOn ? vitrineTitle : titleImprint, "shape");
     } else if (family === "camera" && variant === "silhouette") {
       if (!cameraSource) {
         panel.setStatus(t("st.camInactive"));
@@ -504,6 +636,7 @@ async function boot() {
     document.getElementById("start-full")!.textContent = t("overlay.startFull");
     document.getElementById("start-audio")!.textContent = t("overlay.startAudio");
     document.getElementById("drop-hint")!.textContent = t("overlay.drop");
+    applyKeepLanguage();
   };
   applyLanguage();
 
@@ -511,7 +644,7 @@ async function boot() {
   async function startCamera() {
     if (cameraSource) return;
     try {
-      cameraSource = await requestCamera();
+      cameraSource = await requestCamera(behavior.cameraFacing);
       renderer.attachCamera(cameraSource);
       welcomeArmed = true;
     } catch (error) {
@@ -570,7 +703,7 @@ async function boot() {
     titleTarget = 0;
     titleSpeed = 1 / DISSOLVE_TIME;
     renderer.dynamics.touchStrength = 0; // a lingering intro hover never seeds
-    markActivity();
+    markTouch();
     overlayError.textContent = "";
     panel.collapse();
     void (async () => {
@@ -581,39 +714,103 @@ async function boot() {
   document.getElementById("start-full")!.addEventListener("click", () => beginLive(true));
   document.getElementById("start-audio")!.addEventListener("click", () => beginLive(false));
 
-  // ----- touch dust ---------------------------------------------------------
-  // v0.7.1g — during the intro the pointer needs no press: hovering the
-  // wordmark parts the grains like a hand in ash (the shader gates that
-  // force to the title). Live keeps the historical press-to-seed behavior.
-  const setTouch = (event: PointerEvent, strength: number) => {
-    renderer.dynamics.touchX = event.clientX / window.innerWidth;
-    renderer.dynamics.touchY = event.clientY / window.innerHeight;
+  // ----- stage gestures -----------------------------------------------------
+  // v0.7.2 — the stage is an instrument. One finger: a hand in the ash, the
+  // grains part under it (the shader's radial shove, now on the whole
+  // screen, live included). Two fingers: a pinch folds the mirror, its
+  // spread the number of axes. One finger dragged vertically: the light,
+  // night at the bottom, day at the top. Every gesture is one journal
+  // entry, so ↶ and Z bring the image back.
+  const setTouch = (x: number, y: number, strength: number) => {
+    renderer.dynamics.touchX = x / window.innerWidth;
+    renderer.dynamics.touchY = y / window.innerHeight;
     renderer.dynamics.touchStrength = strength;
   };
+  const pointers = new Map<number, { x: number; y: number; x0: number; y0: number }>();
+  let pinch: { d0: number; base: number } | undefined;
+  let drag: { base: number } | undefined;
+  let gestureArmed = false;
+  const EDGE_PX = 28;
+  const readDef = (key: string) => panel.defs.find((d) => d.key === key)?.get() ?? 0;
   canvas.addEventListener("pointerdown", (event) => {
-    markActivity();
-    canvas.setPointerCapture(event.pointerId);
-    setTouch(event, 1);
+    markTouch();
+    // The right edge belongs to the panel's swipe: never a touch there.
+    if (event.clientX > window.innerWidth - EDGE_PX) return;
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {}
+    pointers.set(event.pointerId, {
+      x: event.clientX, y: event.clientY, x0: event.clientX, y0: event.clientY,
+    });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d0: Math.max(24, Math.hypot(a!.x - b!.x, a!.y - b!.y)), base: readDef("miroir") };
+      drag = undefined;
+      renderer.dynamics.touchStrength = 0;
+      if (!gestureArmed) {
+        panel.pushGesture();
+        gestureArmed = true;
+      }
+    } else if (pointers.size === 1) {
+      setTouch(event.clientX, event.clientY, 1);
+    }
   });
   canvas.addEventListener("pointermove", (event) => {
     if (phase === "intro") {
-      setTouch(event, 0.9);
-    } else if (renderer.dynamics.touchStrength > 0) {
-      markActivity();
-      setTouch(event, 1);
+      setTouch(event.clientX, event.clientY, 0.9);
+      return;
+    }
+    const p = pointers.get(event.pointerId);
+    if (!p) return;
+    markTouch();
+    p.x = event.clientX;
+    p.y = event.clientY;
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+      // Spreading two fingers over ~a third of the screen adds 8 axes.
+      const axes = pinch.base + ((d - pinch.d0) / (window.innerWidth * 0.35)) * 8;
+      panel.gestureWrite("miroir", Math.max(0, Math.min(8, axes)));
+      return;
+    }
+    if (pointers.size === 1) {
+      setTouch(event.clientX, event.clientY, 1);
+      const dy = p.y0 - p.y;
+      const dx = Math.abs(p.x - p.x0);
+      if (!drag && Math.abs(dy) > 30 && Math.abs(dy) > 1.5 * dx) {
+        drag = { base: readDef("eclipse") };
+        if (!gestureArmed) {
+          panel.pushGesture();
+          gestureArmed = true;
+        }
+      }
+      if (drag) {
+        // The full light range over ~60 % of the screen height.
+        const v = drag.base + dy / (window.innerHeight * 0.6);
+        panel.gestureWrite("eclipse", Math.max(0, Math.min(1, v)));
+      }
     }
   });
-  const endTouch = () => {
-    renderer.dynamics.touchStrength = 0;
+  const endTouch = (event: PointerEvent) => {
+    pointers.delete(event.pointerId);
+    if (pointers.size < 2) pinch = undefined;
+    if (pointers.size === 0) {
+      drag = undefined;
+      gestureArmed = false;
+      renderer.dynamics.touchStrength = 0;
+    }
   };
   canvas.addEventListener("pointerup", endTouch);
   canvas.addEventListener("pointercancel", endTouch);
-  canvas.addEventListener("pointerleave", endTouch);
+  canvas.addEventListener("pointerleave", (event) => {
+    if (phase === "intro") renderer.dynamics.touchStrength = 0;
+    else endTouch(event);
+  });
 
   // ----- keyboard shortcuts (documented in the panel's help) ---------------
   let timeBefore = 1;
   window.addEventListener("keydown", (event) => {
-    markActivity();
+    markTouch();
     const el = event.target as HTMLElement | null;
     if (el && ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) return;
     if (phase !== "live") return;
@@ -709,9 +906,7 @@ async function boot() {
   // ----- per-frame orchestration -------------------------------------------
   let last = performance.now();
   let panelSyncAcc = 0;
-  let guideAcc = 0;
   let bandsAcc = 0;
-  let lastSoundAt = performance.now();
   // v0.7.1e — ?debug measurement harness state (filled below when DEBUG).
   const kickState: {
     until: number;
@@ -778,10 +973,7 @@ async function boot() {
         1.5,
         a.transient * audioState.transientGain
       );
-      if (a.level >= audioState.silenceThreshold) {
-        markActivity();
-        lastSoundAt = now;
-      }
+      if (a.level >= audioState.silenceThreshold) markActivity();
 
       // Voice envelope: speaking loosens the corps' grip in a quarter of a
       // second; going quiet lets it tighten back over a slow breath.
@@ -935,7 +1127,9 @@ async function boot() {
       // Accent jolt: a damped spring, knocked in the life block below.
       joltVX += (-joltX * 28 - joltVX * 5.5) * dt;
       joltX += joltVX * dt;
-      const ang = danceAngle + tn.impRot;
+      // The wordmark never dances (v0.7.1c): as the showcase's imprint it
+      // holds its angle, the music still breathes its scale and sway.
+      const ang = (imprintSettings.family === "titre" ? 0 : danceAngle) + tn.impRot;
       d.danceCos = Math.cos(ang);
       d.danceSin = Math.sin(ang);
       d.danceScale =
@@ -1154,18 +1348,21 @@ async function boot() {
       }
     }
 
-    // v0.7.1d — the panel guides without speaking: once a second it hears
-    // what the room is doing and may pulse one slider as an invitation.
-    guideAcc += dt;
-    if (guideAcc > 1) {
-      guideAcc = 0;
-      panel.guide({
-        micOn: Boolean(mic),
-        silenceS: (now - lastSoundAt) / 1000,
-        bass: renderer.dynamics.bass,
-        mid: renderer.dynamics.mid,
-        treble: renderer.dynamics.treble,
-      });
+    // v0.7.2 — the showcase: no touch for 20 s, nobody in front, not
+    // keeping, the switch on. Then a scene every 20 s until a touch.
+    if (phase === "live" && !keepActive) {
+      if (!vitrineOn) {
+        if (
+          behavior.vitrine &&
+          now - lastTouch > VITRINE_IDLE_MS &&
+          presenceEnv < 0.3 &&
+          document.visibilityState === "visible"
+        ) {
+          enterVitrine();
+        }
+      } else if (now >= vitrineNext) {
+        vitrineStep();
+      }
     }
 
     // v0.7.1e — the five-band gauge: what the microphone really hears.
@@ -1274,6 +1471,44 @@ async function boot() {
     };
     kickState.grab = grabNow;
     kickState.diff = (a, b) => diffPct(a, b, 10);
+    // v0.7.2 — the souvenir probe: every blob handed to a download link is
+    // measured (size, type, PNG dimensions, and the brightness of the QR
+    // corner against the frame) so GARDER is verified even where the
+    // browser never materializes the files on disk.
+    const downloads: Record<string, unknown>[] = [];
+    const anchorClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (this.download && this.href.startsWith("blob:")) {
+        const name = this.download;
+        void fetch(this.href)
+          .then((r) => r.blob())
+          .then(async (b) => {
+            const entry: Record<string, unknown> = { name, size: b.size, type: b.type };
+            if (b.type === "image/png") {
+              const bmp = await createImageBitmap(b);
+              entry.w = bmp.width;
+              entry.h = bmp.height;
+              const c = document.createElement("canvas");
+              c.width = bmp.width;
+              c.height = bmp.height;
+              const g = c.getContext("2d", { willReadFrequently: true })!;
+              g.drawImage(bmp, 0, 0);
+              const mean = (x: number, y: number, w: number, h: number) => {
+                const d = g.getImageData(x, y, w, h).data;
+                let sum = 0;
+                for (let i = 0; i < d.length; i += 4) sum += d[i]! + d[i + 1]! + d[i + 2]!;
+                return sum / (d.length / 4) / 3;
+              };
+              const qr = Math.round(bmp.height * 0.11);
+              const m = Math.round(bmp.height * 0.03);
+              entry.frameMean = Math.round(mean(0, 0, bmp.width, bmp.height));
+              entry.qrMean = Math.round(mean(bmp.width - m - qr, bmp.height - m - qr, qr, qr));
+            }
+            downloads.push(entry);
+          });
+      }
+      return anchorClick.call(this);
+    };
     (window as unknown as Record<string, unknown>).__cinerae = {
       async grab(tag: string) {
         shots.set(tag, await grabReal());
@@ -1293,6 +1528,9 @@ async function boot() {
       },
       kickResults() {
         return [...kickState.results];
+      },
+      downloads() {
+        return [...downloads];
       },
     };
   }

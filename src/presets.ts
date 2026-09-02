@@ -213,7 +213,7 @@ export function createPresets(
         fondVisible: 0.3,
         colorDriver: 0,
       },
-      { family: "fractale", variant: "fougere", text: "lumière", random: false }
+      { family: "math", variant: "arbre", text: "lumière", random: false }
     ),
     // Encre — ink body on a dimmed paper field, long brush strokes.
     builtIn(

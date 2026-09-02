@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cineræ ; mockup panneau Démo / Pro (v0.7.2)</title>
+<style>
+  /* 1rem = 10 css px sur 1280 css px de large (Redmi Pad Pro 12.1 : 2560 px physiques, DPR 2).
+     Charte = mockup panneau v0.7.1f validé le 02/09 : #161412 / #e8e2d6 / #a89f90, blanc = actif, filets 0,5 px, rayons 4 px. */
+  html { font-size: calc(100vw / 128); }
+  :root {
+    --bg: #161412;
+    --panel: rgba(22, 20, 18, 0.96);
+    --sl-bg: #221f1b;
+    --sl-fill: #302b25;
+    --tg-bg: #3a342d;
+    --line: #2e2924;
+    --border: #4a433b;
+    --text: #e8e2d6;
+    --text-2: #a89f90;
+    --r: 0.4rem;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 1.8rem; line-height: 1.3;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 0.2rem solid var(--text); outline-offset: 0.2rem; }
+
+  /* ===== Scène simulée ===== */
+  .scene { position: fixed; inset: 0; background: radial-gradient(120vw 90vh at 30% 55%, #3a332c 0%, #201c18 45%, #0f0d0b 100%); }
+  .scene::after {
+    content: ""; position: absolute; inset: 0; opacity: 0.55; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.85 0 0 0 0 0.78 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .scene .silhouette, .keep .silhouette {
+    position: absolute; left: 22%; bottom: 0; width: 26vw; height: 78vh;
+    background: radial-gradient(60% 40% at 50% 12%, rgba(232,226,214,0.55), transparent 70%),
+                radial-gradient(90% 60% at 50% 70%, rgba(232,226,214,0.35), transparent 72%);
+    filter: blur(1.2rem);
+  }
+  .scene .title { position: absolute; left: 3rem; bottom: 2.4rem; font-size: 2rem; letter-spacing: 0.14em; color: var(--text-2); }
+
+  /* ===== Panneau droit ===== */
+  .panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 34vw;
+    background: var(--panel); border-inline-start: 0.5px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  .grip { position: absolute; left: 1.2rem; top: 50%; translate: 0 -50%; width: 0.4rem; height: 7rem; border-radius: 0.2rem; background: var(--border); }
+  .panel-head { display: flex; align-items: center; gap: 1.6rem; padding: 2rem 3.2rem 1.6rem 4rem; border-bottom: 0.5px solid var(--line); }
+  .seg { display: flex; flex: 1; border: 0.5px solid var(--border); border-radius: var(--r); overflow: hidden; }
+  .panel-head .seg button { flex: 1; min-width: 0; }
+  .tempo .seg { flex: none; }
+  .seg button {
+    min-width: 12rem; height: 5.6rem; padding: 0 2rem; border: 0; background: transparent;
+    font-size: 1.7rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-2);
+    transition-property: background-color, color; transition-duration: 120ms;
+  }
+  .seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+  .seg button:active { scale: 0.96; }
+  .head-spacer { flex: 1; }
+  .btn-help { height: 5.6rem; padding: 0 2.4rem; border: 0.5px solid var(--border); background: transparent; border-radius: var(--r); font-size: 1.7rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+  .btn-help:active { scale: 0.96; }
+  .panel-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 1.6rem 3.2rem 2.4rem 4rem; }
+
+  /* ===== Curseurs : barre pleine, nom + valeur dedans, extrémités dessous ===== */
+  .sliders { display: grid; gap: 1.2rem; }
+  .slider { display: grid; gap: 0.3rem; }
+  .slider .bar { position: relative; height: 5.6rem; }
+  .slider input[type="range"] {
+    -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+    background: linear-gradient(to right, var(--sl-fill) var(--fill), var(--sl-bg) var(--fill)); border-radius: var(--r);
+  }
+  .slider input[type="range"]::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+  .slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 0.3rem; height: 5.6rem; margin-top: 0; background: var(--text); border: 0; border-radius: 0; }
+  .slider input[type="range"]::-moz-range-track { height: 100%; background: transparent; }
+  .slider input[type="range"]::-moz-range-thumb { width: 0.3rem; height: 5.6rem; background: var(--text); border: 0; border-radius: 0; }
+  .slider .in { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1.6rem; pointer-events: none; }
+  .slider label { font-size: 2rem; font-weight: 500; }
+  .slider output { font-size: 1.8rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .ends { display: flex; justify-content: space-between; font-size: 1.5rem; line-height: 1.2; color: var(--text-2); letter-spacing: 0.04em; padding: 0 0.2rem; }
+
+  /* Démo : les 4 curseurs occupent le panneau, doigt d'abord */
+  .panel-body[data-mode="demo"] .sliders { gap: 2.4rem; }
+  .panel-body[data-mode="demo"] .slider .bar { height: 8rem; }
+  .panel-body[data-mode="demo"] .slider input[type="range"]::-webkit-slider-thumb { height: 8rem; }
+  .panel-body[data-mode="demo"] .slider label { font-size: 2.4rem; }
+  .panel-body[data-mode="demo"] .slider output { font-size: 2rem; }
+  .panel-body[data-mode="demo"] .ends { font-size: 1.7rem; }
+
+  /* ===== Pied : Chaos / Garder ===== */
+  .panel-foot { padding: 1.6rem 3.2rem 2rem 4rem; border-top: 0.5px solid var(--line); }
+  .actions { display: flex; align-items: center; gap: 1.2rem; }
+  .btn-row {
+    flex: 1; height: 5.6rem; border: 0.5px solid #6a6157; background: transparent; border-radius: var(--r);
+    font-size: 1.8rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    transition-property: background-color, color; transition-duration: 120ms;
+  }
+  .btn-row.undo { flex: 0 0 7.2rem; letter-spacing: 0; font-size: 2.4rem; font-weight: 400; }
+  .btn-row:active { scale: 0.96; background: var(--text); color: var(--bg); }
+
+  /* ===== Sections Pro ===== */
+  .pro-sections { margin-top: 2rem; display: grid; }
+  .pro-sections[hidden] { display: none; }
+  details { border-top: 0.5px solid var(--line); }
+  summary { list-style: none; display: flex; align-items: center; gap: 1.6rem; min-height: 5.6rem; padding: 0 0.4rem; cursor: pointer; }
+  summary::-webkit-details-marker { display: none; }
+  summary .name { font-size: 1.6rem; letter-spacing: 0.1em; text-transform: lowercase; color: var(--text-2); }
+  details[open] summary .name { color: var(--text); }
+  summary .state { flex: 1; text-align: end; font-size: 1.6rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  summary .chev { width: 1.8rem; height: 1.8rem; color: var(--text-2); transition-property: rotate; transition-duration: 120ms; }
+  details[open] summary .chev { rotate: 180deg; }
+  .sec-body { padding: 0.4rem 0.4rem 2rem; display: grid; gap: 1.6rem; }
+  .sec-body .slider .bar { height: 4.8rem; }
+  .sec-body .slider input[type="range"]::-webkit-slider-thumb { height: 4.8rem; }
+  .sec-body .slider label { font-size: 1.8rem; }
+
+  .bands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.2rem; align-items: end; height: 8rem; }
+  .band { display: grid; gap: 0.6rem; align-content: end; height: 100%; }
+  .band i { display: block; width: 100%; height: var(--h); border-radius: 0.2rem 0.2rem 0 0; background: var(--text); align-self: end; }
+  .band span { font-size: 1.4rem; color: var(--text-2); text-align: center; letter-spacing: 0.04em; }
+  .tempo { display: flex; align-items: center; gap: 1.6rem; }
+  .tempo .seg button { min-width: 9rem; height: 4.8rem; font-size: 1.6rem; }
+  .dot { width: 1rem; height: 1rem; border-radius: 50%; background: var(--text); }
+  .mono { font-size: 1.6rem; color: var(--text-2); margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+  .chip { height: 4.8rem; padding: 0 1.8rem; border: 0.5px solid var(--border); background: transparent; border-radius: var(--r); font-size: 1.6rem; color: var(--text-2); }
+  .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .chip:active { scale: 0.96; }
+
+  /* ===== Écran Garder ===== */
+  .keep { position: fixed; inset: 0; display: none; background: radial-gradient(120vw 90vh at 30% 55%, #3a332c 0%, #201c18 45%, #0f0d0b 100%); }
+  .keep[data-on="true"] { display: block; }
+  .keep .silhouette { left: 34%; width: 30vw; height: 84vh; }
+  .keep .mark { position: absolute; left: 4rem; bottom: 4rem; font-size: 2.2rem; letter-spacing: 0.16em; color: var(--text-2); }
+  .keep .qr { position: absolute; right: 4rem; bottom: 4rem; display: grid; gap: 0.8rem; justify-items: center; }
+  .keep .qr svg { width: 12rem; height: 12rem; opacity: 0.85; }
+  .keep .qr span { font-size: 1.4rem; color: var(--text-2); letter-spacing: 0.04em; }
+  .keep .toast {
+    position: absolute; left: 50%; top: 3.2rem; translate: -50% 0;
+    display: flex; align-items: center; gap: 2.4rem;
+    padding: 1.2rem 1.2rem 1.2rem 2.4rem; border-radius: var(--r);
+    background: var(--panel); border: 0.5px solid var(--border); font-size: 1.8rem;
+  }
+  .keep .toast button { height: 4.8rem; padding: 0 2rem; border: 0.5px solid #6a6157; border-radius: var(--r); background: transparent; color: var(--text); font-size: 1.6rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+  .keep .toast button:active { scale: 0.96; }
+
+  /* ===== Barre mockup (hors produit) ===== */
+  .mock {
+    position: fixed; left: 1.6rem; top: 1.6rem; z-index: 10; display: flex; align-items: center; gap: 0.8rem;
+    padding: 0.6rem 0.6rem 0.6rem 1.4rem; border-radius: var(--r);
+    background: rgba(0,0,0,0.6); border: 0.5px dashed var(--border); font-size: 1.3rem; letter-spacing: 0.08em; color: var(--text-2);
+  }
+  .mock button { height: 3.6rem; padding: 0 1.2rem; border: 0.5px solid var(--border); border-radius: var(--r); background: transparent; font-size: 1.3rem; }
+  .mock button[aria-pressed="true"] { background: var(--text-2); color: var(--bg); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+</style>
+</head>
+<body>
+
+<!-- Barre mockup ; pas dans le produit -->
+<nav class="mock" aria-label="Vues du mockup">
+  MOCKUP
+  <button type="button" data-view="demo" aria-pressed="true">Démo</button>
+  <button type="button" data-view="pro" aria-pressed="false">Pro</button>
+  <button type="button" data-view="keep" aria-pressed="false">Garder</button>
+</nav>
+
+<div class="scene" aria-hidden="true">
+  <div class="silhouette"></div>
+  <div class="title">cineræ</div>
+</div>
+
+<aside class="panel" aria-label="Panneau de réglages">
+  <div class="grip" aria-hidden="true"></div>
+
+  <header class="panel-head">
+    <div class="seg" role="group" aria-label="Mode">
+      <button type="button" data-mode="demo" aria-pressed="true">Démo</button>
+      <button type="button" data-mode="pro" aria-pressed="false">Pro</button>
+    </div>
+        <button type="button" class="btn-help">Aide</button>
+  </header>
+
+  <div class="panel-body" id="panel-body" data-mode="demo">
+
+    <!-- Les 4 curseurs, communs Démo et Pro -->
+    <div class="sliders">
+      <div class="slider">
+        <div class="bar"><input id="s-matiere" type="range" min="0" max="100" value="35"><div class="in"><label for="s-matiere">matière</label><output for="s-matiere">35</output></div></div>
+        <div class="ends"><span>poussière</span><span>fumée</span><span>encre</span><span>cristal</span></div>
+      </div>
+      <div class="slider">
+        <div class="bar"><input id="s-lumiere" type="range" min="0" max="100" value="40"><div class="in"><label for="s-lumiere">lumière</label><output for="s-lumiere">40</output></div></div>
+        <div class="ends"><span>nuit</span><span>jour</span></div>
+      </div>
+      <div class="slider">
+        <div class="bar"><input id="s-miroir" type="range" min="0" max="8" value="0"><div class="in"><label for="s-miroir">miroir</label><output for="s-miroir">0</output></div></div>
+        <div class="ends"><span>aucun</span><span>8 axes</span></div>
+      </div>
+      <div class="slider">
+        <div class="bar"><input id="s-memoire" type="range" min="0" max="100" value="20"><div class="in"><label for="s-memoire">mémoire</label><output for="s-memoire">20</output></div></div>
+        <div class="ends"><span>instantané</span><span>sédiment</span></div>
+      </div>
+    </div>
+
+    <!-- Sections Pro, repliées -->
+    <div class="pro-sections" id="pro" hidden>
+
+      <details>
+        <summary><span class="name">corps</span><span class="state">partage 60 % · où corps</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body">
+          <div class="slider">
+        <div class="bar"><input id="p-partage" type="range" min="0" max="100" value="60"><div class="in"><label for="p-partage">partage</label><output for="p-partage">60</output></div></div>
+        <div class="ends"><span>corps</span><span>empreinte</span></div>
+      </div>
+          <div class="slider">
+        <div class="bar"><input id="p-ou" type="range" min="0" max="100" value="15"><div class="in"><label for="p-ou">où</label><output for="p-ou">15</output></div></div>
+        <div class="ends"><span>corps</span><span>partout</span></div>
+      </div>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="name">empreinte</span><span class="state">cercle 3D · danse 40 %</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body">
+          <div class="chips" role="group" aria-label="Forme">
+            <button type="button" class="chip" aria-pressed="false">fond</button>
+            <button type="button" class="chip" aria-pressed="true">cercle 3D</button>
+            <button type="button" class="chip" aria-pressed="false">sinus</button>
+            <button type="button" class="chip" aria-pressed="false">Chladni</button>
+            <button type="button" class="chip" aria-pressed="false">Julia</button>
+            <button type="button" class="chip" aria-pressed="false">texte</button>
+            <button type="button" class="chip" aria-pressed="false">import</button>
+          </div>
+          <div class="slider">
+        <div class="bar"><input id="p-danse" type="range" min="0" max="100" value="40"><div class="in"><label for="p-danse">danse</label><output for="p-danse">40</output></div></div>
+        <div class="ends"><span>immobile</span><span>emportée</span></div>
+      </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary><span class="name">son</span><span class="state">musique · 120 bpm</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body">
+          <div class="bands" aria-label="Niveaux par bande">
+            <div class="band"><i style="--h:22%"></i><span>graves</span></div>
+            <div class="band"><i style="--h:58%"></i><span>bas-méd</span></div>
+            <div class="band"><i style="--h:70%"></i><span>médiums</span></div>
+            <div class="band"><i style="--h:30%"></i><span>aigus</span></div>
+            <div class="band"><i style="--h:85%"></i><span>coups</span></div>
+          </div>
+          <div class="tempo">
+            <div class="seg" role="group" aria-label="Tempo">
+              <button type="button" aria-pressed="true">musique</button>
+              <button type="button" aria-pressed="false">tap</button>
+            </div>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="mono">120 bpm</span>
+          </div>
+          <div class="slider">
+        <div class="bar"><input id="p-gain" type="range" min="0" max="100" value="50"><div class="in"><label for="p-gain">entrée micro</label><output for="p-gain">auto</output></div></div>
+        <div class="ends"><span>faible</span><span>fort</span></div>
+      </div>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="name">scènes</span><span class="state">Aube · au silence 30 s</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body">
+          <div class="chips" role="group" aria-label="Scène">
+            <button type="button" class="chip" aria-pressed="true">Aube</button>
+            <button type="button" class="chip" aria-pressed="false">Encre</button>
+            <button type="button" class="chip" aria-pressed="false">Transe</button>
+            <button type="button" class="chip" aria-pressed="false">Pulsar</button>
+            <button type="button" class="chip" aria-pressed="false">Canopée</button>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="name">modulation</span><span class="state">LFO 1 · lumière</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body"><p class="mono">LFO 1 à 4, son, corps (SENTIR). Contenu inchangé, réduit.</p></div>
+      </details>
+
+      <details>
+        <summary><span class="name">midi</span><span class="state">non relié</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body"><p class="mono">Apprendre une liaison : touchez un curseur puis bougez un bouton MIDI.</p></div>
+      </details>
+
+      <details>
+        <summary><span class="name">caméra</span><span class="state">arrière · brute non</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body">
+          <div class="chips" role="group" aria-label="Caméra">
+            <button type="button" class="chip" aria-pressed="false">avant</button>
+            <button type="button" class="chip" aria-pressed="true">arrière</button>
+            <button type="button" class="chip" aria-pressed="false">image brute</button>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="name">réglages</span><span class="state">400 k grains · FR</span><svg class="chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg></summary>
+        <div class="sec-body"><p class="mono">Grains, langue, vitrine après 20 s, tout remettre.</p></div>
+      </details>
+
+    </div>
+  </div>
+
+  <footer class="panel-foot">
+    <div class="actions">
+      <button type="button" class="btn-row">Chaos</button>
+      <button type="button" class="btn-row undo" aria-label="Annuler le dernier geste">↶</button>
+      <button type="button" class="btn-row" id="btn-garder">Garder</button>
+    </div>
+  </footer>
+</aside>
+
+<!-- Écran Garder -->
+<section class="keep" id="keep" data-on="false" aria-label="Image gardée">
+  <div class="silhouette" aria-hidden="true"></div>
+  <div class="toast" role="status">
+    <span>Image et boucle 4 s enregistrées</span>
+    <button type="button" id="btn-back">Reprendre</button>
+  </div>
+  <div class="mark">cineræ</div>
+  <div class="qr">
+    <svg viewBox="0 0 21 21" shape-rendering="crispEdges" aria-hidden="true" fill="#e8e2d8">
+      <path d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM14 0h7v7h-7zM15 1v5h5V1zM16 2h3v3h-3zM0 14h7v7H0zM1 15v5h5v-5zM2 16h3v3H2zM8 0h1v1H8zM10 0h1v2h-1zM12 0h1v1h-1zM8 2h2v1H8zM11 2h2v1h-2zM9 4h1v1H9zM11 4h1v2h-1zM8 6h1v1H8zM12 6h1v1h-1zM0 8h1v1H0zM2 8h2v1H2zM5 8h1v1H5zM7 8h2v1H7zM10 8h1v1h-1zM12 8h2v1h-2zM15 8h1v1h-1zM17 8h2v1h-2zM20 8h1v1h-1zM1 10h1v1H1zM3 10h1v1H3zM6 10h2v1H6zM9 10h2v1H9zM13 10h1v1h-1zM16 10h1v1h-1zM18 10h2v1h-2zM0 12h1v1H0zM2 12h1v1H2zM4 12h3v1H4zM8 12h1v1H8zM10 12h2v1h-2zM14 12h1v1h-1zM17 12h1v1h-1zM19 12h2v1h-2zM8 14h1v1H8zM10 14h2v1h-2zM13 14h1v1h-1zM15 14h1v1h-1zM18 14h1v1h-1zM20 14h1v1h-1zM9 16h1v1H9zM11 16h1v1h-1zM14 16h2v1h-2zM17 16h1v1h-1zM19 16h1v1h-1zM8 18h2v1H8zM12 18h1v1h-1zM15 18h1v1h-1zM18 18h2v1h-2zM9 20h1v1H9zM11 20h2v1h-2zM14 20h1v1h-1zM16 20h1v1h-1zM19 20h2v1h-2z"/>
+    </svg>
+    <span>linktr.ee/thomasmaury</span>
+  </div>
+</section>
+
+<script>
+  // Remplissage de piste + valeur affichée
+  document.querySelectorAll('input[type="range"]').forEach(function (r) {
+    var out = document.querySelector('output[for="' + r.id + '"]');
+    function sync() {
+      var pct = (r.value - r.min) / (r.max - r.min) * 100;
+      r.style.setProperty('--fill', pct + '%');
+      if (out && r.id !== 'p-gain') out.textContent = r.value;
+    }
+    r.addEventListener('input', sync); sync();
+  });
+
+  // Bascule Démo / Pro
+  var pro = document.getElementById('pro');
+  function setMode(m) {
+    document.querySelectorAll('[data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
+    pro.hidden = (m !== 'pro');
+    document.getElementById('panel-body').dataset.mode = m;
+    document.querySelectorAll('.mock [data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === m)); });
+  }
+  document.querySelectorAll('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
+
+  // Garder / Reprendre
+  var keep = document.getElementById('keep');
+  function setKeep(on) {
+    keep.dataset.on = String(on);
+    if (on) document.querySelectorAll('.mock [data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === 'keep')); });
+    else setMode(pro.hidden ? 'demo' : 'pro');
+  }
+  document.getElementById('btn-garder').addEventListener('click', function () { setKeep(true); });
+  document.getElementById('btn-back').addEventListener('click', function () { setKeep(false); });
+
+  // Barre mockup
+  document.querySelectorAll('.mock [data-view]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.view === 'keep') { setKeep(true); } else { setKeep(false); setMode(b.dataset.view); }
+    });
+  });
+
+  // Chips exclusifs par groupe (sauf "image brute" qui est un toggle)
+  document.querySelectorAll('.chips').forEach(function (g) {
+    g.querySelectorAll('.chip').forEach(function (c) {
+      c.addEventListener('click', function () {
+        if (c.textContent === 'image brute') { c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true')); return; }
+        g.querySelectorAll('.chip').forEach(function (o) { if (o.textContent !== 'image brute') o.setAttribute('aria-pressed', 'false'); });
+        c.setAttribute('aria-pressed', 'true');
+      });
+    });
+  });
+</script>
+</body>
+</html>
