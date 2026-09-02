@@ -252,8 +252,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let layerF = mix(1.0, mix(0.55, 1.6, layer * 0.5), params.depthAmount);
 
   // Touch emission: a small share of the population respawns under the finger
-  // every frame, streaming outward as fresh dust.
-  if (params.touch.z > 0.001) {
+  // every frame, streaming outward as fresh dust. Never while the wordmark
+  // holds — the intro hover parts the grains instead (v0.7.1g, below).
+  if (params.touch.z > 0.001 && title < 0.5) {
     let salt = u32(params.time * 61.0) * 2654435761u;
     if (hash01(i * 7u + salt) < 0.014 * params.touch.z) {
       let a = hash01(i * 7u + salt + 1u) * 6.2831853;
@@ -586,8 +587,23 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let ctarget = select(homeOf(i), danceTargetOf(i), params.imprintShape > 0.5);
   acc += (ctarget - pos) * cHold * 14.0;
   let t2 = tEff * tEff;
+  // v0.7.1g — the intro wordmark parts under the pointer like ash under a
+  // hand: a radial shove around the touch, the word's grip yields there and
+  // the grains flow back once the hand moves on. Gated to the title, so the
+  // live touch keeps its seeding behavior untouched.
+  var touchYield = 0.0;
+  if (title > 0.02 && params.touch.z > 0.001) {
+    let aspT = params.gridCols / max(params.gridRows, 1.0);
+    let dvT = (pos - params.touch.xy) * vec2f(aspT, 1.0);
+    let dT2 = dot(dvT, dvT);
+    let prox = exp(-dT2 / 0.0035);
+    touchYield = prox * params.touch.z * title;
+    if (dT2 > 1e-8) {
+      acc += dvT * inverseSqrt(dT2) * touchYield * 3.0;
+    }
+  }
   if (tEff > 0.001) {
-    acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold;
+    acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold * (1.0 - touchYield * 0.92);
   }
 
   // Corps spring: the portrait gathers on the body. A moving limb writes
@@ -621,7 +637,8 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // Viscosity damps motion; ash, a forming crystal, a held tone or the word
   // damp it much harder. Comets fly nearly free.
   let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
-    + ash * 4.0 + min(cym, 1.0) * 4.0 + cHold * 22.0 + t2 * 26.0 * hold + presDrag;
+    + ash * 4.0 + min(cym, 1.0) * 4.0 + cHold * 22.0
+    + t2 * 26.0 * hold * (1.0 - touchYield * 0.8) + presDrag;
   vel *= exp(-dt * drag);
   let maxSpeed = 0.9 + flight * 0.9;
   let speed = length(vel);

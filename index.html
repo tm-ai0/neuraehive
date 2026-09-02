@@ -531,34 +531,6 @@
       .cinerae-actions button:active {
         scale: 0.96;
       }
-      .cinerae-crystal {
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        margin-bottom: 0.45rem;
-        flex: none;
-      }
-      .cinerae-crystal-label {
-        color: var(--ink-dim);
-        font-size: 0.58rem;
-        letter-spacing: 0.12em;
-      }
-      .cinerae-crystal-track {
-        flex: 1;
-        height: 3px;
-        background: rgba(232, 221, 204, 0.12);
-        overflow: hidden;
-      }
-      .cinerae-crystal-fill {
-        display: block;
-        height: 100%;
-        width: 0%;
-        background: var(--ink);
-        transition-property: width;
-        transition-duration: 0.2s;
-        transition-timing-function: linear;
-      }
-
       /* ---- accordion sections: one open at a time ---- */
       .cinerae-section {
         border-top: 1px solid var(--ink-faint);
@@ -954,6 +926,18 @@
         }
       }
 
+      /* ---- v0.7.1g: the sensor switches call for the hand until on ---- */
+      .cinerae-switch.cinerae-attend .cinerae-switch-track {
+        animation: cinerae-invite 1.8s ease-in-out infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cinerae-switch.cinerae-attend .cinerae-switch-track {
+          animation: none;
+          border-color: rgba(232, 221, 204, 0.7);
+          box-shadow: 0 0 10px rgba(232, 221, 204, 0.16);
+        }
+      }
+
       /* ---- umbra: the tints, one slider ---- */
       .cinerae-umbra {
         padding: 0.2rem 0 0.4rem;
@@ -1021,7 +1005,46 @@
         color: var(--ink-bright);
       }
 
-      /* ---- aide: terms left, plain words right ---- */
+      /* ---- aide: a side drawer, the one sanctioned vertical scroll ---- */
+      .cinerae-aide-drawer {
+        position: fixed;
+        top: 1rem;
+        right: calc(1.5rem + 17.5rem);
+        width: 17.5rem;
+        max-height: calc(100vh - 2rem);
+        display: none;
+        flex-direction: column;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0.7rem 0.9rem 0.8rem;
+        background: rgba(5, 4, 3, 0.88);
+        border: 1px solid var(--ink-faint);
+        backdrop-filter: blur(8px);
+        font-size: 0.66rem;
+        letter-spacing: 0.05em;
+        z-index: 20;
+        user-select: none;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(232, 221, 204, 0.25) transparent;
+      }
+      .cinerae-aide-drawer.open {
+        display: flex;
+      }
+      .cinerae-aide-drawer > * {
+        flex: none;
+      }
+      .cinerae-aide-head {
+        color: var(--ink-bright);
+        font-size: 0.58rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin: 0.6rem 0 0.35rem;
+        padding-bottom: 0.2rem;
+        border-bottom: 1px solid var(--ink-faint);
+      }
+      .cinerae-aide-head:first-child {
+        margin-top: 0;
+      }
       .cinerae-aide-item {
         display: grid;
         grid-template-columns: 4.4rem 1fr;
@@ -1282,6 +1305,13 @@
         }
         .cinerae-switch[aria-checked="true"] .cinerae-switch-thumb {
           translate: 20px 0;
+        }
+        .cinerae-aide-drawer {
+          top: 0.5rem;
+          left: 0.5rem;
+          right: 0.5rem;
+          width: auto;
+          max-height: 50vh;
         }
         #overlay {
           padding-top: 58vh;

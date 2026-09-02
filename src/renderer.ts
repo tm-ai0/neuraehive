@@ -137,6 +137,7 @@ export interface Dynamics {
   windGain: number; // effective gesture gain fed to the flow injection
   memoryClear: number; // 1 = wipe the cendre mémoire this frame (consumed)
   presence: number; // someone-in-frame envelope 0..1, set by the orchestrator
+  welcome: number; // v0.7.1g — opening rush: the dust floods the body, then lets go
   voice: number; // smoothed voice level 0..1 — relaxes the corps serrage
   hand: number; // hands envelope 0..1 — fast small motion, set by the orchestrator
   // v0.7.1c — the dance, integrated by the orchestrator from the music.
@@ -330,6 +331,7 @@ export async function createRenderer(
     windGain: 1,
     memoryClear: 0,
     presence: 0,
+    welcome: 0,
     voice: 0,
     hand: 0,
     danceCos: 1,
@@ -585,7 +587,9 @@ export async function createRenderer(
           fondMat,
           fondMatB,
           matBlend,
-          share: tuning.presenceShare,
+          // v0.7.1g — the welcome rush hands the whole reserve to the body
+          // for a breath: composed on the CPU, zero shader cost.
+          share: Math.min(1, tuning.presenceShare + dynamics.welcome),
           hold: holdEff,
           elastic: tuning.elastic,
           margin: tuning.bodyMargin,
