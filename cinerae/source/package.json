@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "vgpu": "latest"
   },
   "devDependencies": {
