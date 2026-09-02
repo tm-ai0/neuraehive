@@ -39,6 +39,7 @@ export class DepthEngine {
 
   precision: string | null = null;
   private vues = true; // DA3 attend une dimension vues (rang 5), DA2 non
+  private inverse = true; // DA3 sort une PROFONDEUR (loin = grand) ; DA2 une disparité (près = grand)
 
   // Choix étagé MESURÉ, du plus conforme au brief vers ce qui tient :
   // V3 8 bits d'abord — mesuré ici, ses opérateurs int8 retombent sur le CPU
@@ -49,10 +50,10 @@ export class DepthEngine {
   // V2 fp16 aussi (277 ms). Le gagnant est mémorisé (localStorage) pour ne
   // pas re-payer l'essai à chaque activation.
   private static TIERS = [
-    { repo: "depth-anything-v3-small", dtype: "q8", vues: true, ext: false },
-    { repo: "depth-anything-v3-small", dtype: "fp32", vues: true, ext: true },
-    { repo: "depth-anything-v2-small", dtype: "fp16", vues: false, ext: false },
-    { repo: "depth-anything-v2-small", dtype: "q8", vues: false, ext: false },
+    { repo: "depth-anything-v3-small", dtype: "q8", vues: true, ext: false, inverse: true },
+    { repo: "depth-anything-v3-small", dtype: "fp32", vues: true, ext: true, inverse: true },
+    { repo: "depth-anything-v2-small", dtype: "fp16", vues: false, ext: false, inverse: false },
+    { repo: "depth-anything-v2-small", dtype: "q8", vues: false, ext: false, inverse: false },
   ] as const;
 
   async start(video: HTMLVideoElement, pose: PoseEngine): Promise<void> {
@@ -70,6 +71,7 @@ export class DepthEngine {
           try {
             this.processeur = await AutoImageProcessor.from_pretrained(tier.repo);
             this.vues = tier.vues;
+            this.inverse = tier.inverse;
             const modele = await AutoModel.from_pretrained(tier.repo, {
               device: "webgpu",
               dtype: tier.dtype,
@@ -184,9 +186,12 @@ export class DepthEngine {
     }
     // Normalisation min-max de la frame pour l'affichage ; « proche » = p90 des
     // valeurs brutes, étalonné sur les bornes lentes vues depuis le début.
+    // Tout est ramené en « proximité » (près = grand) : V3 livre une profondeur
+    // (mesuré sur capture : la personne sortait sombre), on la retourne.
+    const signe = this.inverse ? -1 : 1;
     let mn = Infinity, mx = -Infinity;
     for (let i = 0; i < n; i++) {
-      const v = data[i];
+      const v = signe * data[i];
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
@@ -197,7 +202,7 @@ export class DepthEngine {
     const px = img.data;
     const histo = new Uint32Array(256);
     for (let i = 0; i < n; i++) {
-      const v = Math.max(0, Math.min(255, (((data[i] - mn) / plage) * 255) | 0));
+      const v = Math.max(0, Math.min(255, (((signe * data[i] - mn) / plage) * 255) | 0));
       histo[v]++;
       const o = i * 4;
       px[o] = v;
