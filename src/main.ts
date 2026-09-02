@@ -36,9 +36,7 @@ const overlayError = document.getElementById("overlay-error")!;
 const fatal = document.getElementById("fatal")!;
 
 const INTRO_FORM_TIME = 4.5; // s, load -> word
-const REFORM_TIME = 14; // s, idle -> word, slow
 const DISSOLVE_TIME = 1.3; // s, word -> matter
-const IDLE_DELAY = 40; // s of total stillness before the word returns
 const MOTION_STILL = 0.02; // camera motion below this counts as stillness
 // v0.7.1d — the invariant becomes "at least 400 000 grains, fps held":
 // auto quality climbs these tiers and keeps the highest one this machine
@@ -75,13 +73,12 @@ const CHLADNI_MODES: [number, number][] = [
 const smooth01 = (t: number) => t * t * (3 - 2 * t);
 
 const ANIM_INTERVAL = 140; // ms between re-samplings of a living imprint
-const RANDOM_SILENCE_DELAY = 24; // s of silence between random imprints
 const FOND_DAMP = 0.25; // audio reactivity left to the fond mode
 
 // Chaos and the random mode draw from the families that need no asset or
-// camera: every variant, flattened, plus the title and a fresh multi seed.
+// camera: every variant, flattened, plus a fresh multi seed. v0.7.1f — the
+// title family left the pool: the wordmark belongs to the intro only.
 const RANDOM_POOL: [ImprintFamily, string][] = [
-  ["titre", ""],
   ["multi", ""],
   ...(["volume", "forme", "math", "fractale", "ondes"] as const).flatMap(
     (family) =>
@@ -120,9 +117,11 @@ async function boot() {
   // v0.7.1c — one presence sensitivity knob replaces threshold + delay.
   // At 0.5 it lands exactly on the validated defaults (0.0015, 8 s).
   const behavior = {
-    imprintReturn: true,
     presenceSense: 0.5,
     tempoAuto: false,
+    // v0.7.1f — "au silence": seconds of full silence before the piece
+    // draws a new imprint on its own (the switch lives in scènes).
+    silenceDelay: 24,
   };
   const presenceThreshold = () =>
     0.0015 * Math.pow(4, 0.5 - behavior.presenceSense);
@@ -134,7 +133,7 @@ async function boot() {
   let imageImprint: ImprintCloud | undefined;
   let textImprint: ImprintCloud | undefined;
   let animTimer: number | undefined;
-  let randomNext = RANDOM_SILENCE_DELAY;
+  let randomNext = behavior.silenceDelay;
 
   let phase: "intro" | "live" = "intro";
   let titleTarget = 1;
@@ -252,9 +251,9 @@ async function boot() {
         crystal = 0;
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
         renderer.tuning.rawCam = 0;
-        behavior.imprintReturn = true;
         behavior.presenceSense = 0.5;
         behavior.tempoAuto = false;
+        behavior.silenceDelay = 24;
         mod?.load(undefined);
         beatTimes = [];
         applyPalette(renderer.look, PALETTES[0]!);
@@ -263,7 +262,7 @@ async function boot() {
           structuredClone(DEFAULT_IMPRINT_SETTINGS)
         );
         textImprint = undefined;
-        void applyImprint("titre", "");
+        void applyImprint("fond", "");
       },
       onInteraction: markActivity,
       onImprintSelect(family, variant) {
@@ -485,13 +484,13 @@ async function boot() {
     }, 300);
   });
 
+  // v0.7.1f — the header carries fps and grains, the switches carry the
+  // sensor states: the status line only speaks when a sensor is missing.
   const updateStatus = () => {
-    const cam = cameraSource ? t("st.camOn") : t("st.camOff");
-    const audio = mic ? t("st.micOn") : t("st.micOff");
-    const auto = quality.auto
-      ? ` · auto ${Math.round(renderer.tuning.count / 1000)} k`
-      : "";
-    panel.setStatus(`${cam} · ${audio}${auto}`);
+    const missing: string[] = [];
+    if (!cameraSource) missing.push(t("st.camOff"));
+    if (!mic) missing.push(t("st.micOff"));
+    panel.setStatus(missing.join(" · "));
     panel.setSensors(Boolean(cameraSource), Boolean(mic));
   };
 
@@ -868,12 +867,12 @@ async function boot() {
     crystal = Math.max(0, crystal - dt * renderer.dynamics.titleMode * 0.6);
     renderer.dynamics.crystal = crystal;
 
-    // Random mode: a long lull (no sound, no gesture, no touch) draws a new
-    // imprint; the held matter glides to the new targets — a morphing.
+    // Random mode ("au silence"): a long lull (no sound, no gesture, no
+    // touch) draws a new imprint; the matter glides to the new targets.
     const idleS = (now - lastActivity) / 1000;
-    if (idleS < 1) randomNext = RANDOM_SILENCE_DELAY;
+    if (idleS < 1) randomNext = behavior.silenceDelay;
     else if (imprintSettings.random && phase === "live" && idleS > randomNext) {
-      randomNext += RANDOM_SILENCE_DELAY;
+      randomNext += behavior.silenceDelay;
       const current = `${imprintSettings.family}/${imprintSettings.variant}`;
       const picks = RANDOM_POOL.filter(([f, v]) => `${f}/${v}` !== current);
       const [family, variant] = picks[(Math.random() * picks.length) | 0]!;
@@ -1053,24 +1052,8 @@ async function boot() {
       windAuto * renderer.tuning.gestureGain
     );
 
-    // Title envelope: intro formation, dissolution, idle re-formation.
-    if (phase === "live") {
-      const idleFor = (now - lastActivity) / 1000;
-      if (
-        behavior.imprintReturn &&
-        renderer.imprintCount > 0 &&
-        !cameraMoving() &&
-        presenceEnv < 0.3 &&
-        idleFor > IDLE_DELAY &&
-        titleTarget === 0
-      ) {
-        titleTarget = 1;
-        titleSpeed = 1 / REFORM_TIME;
-      } else if (idleFor <= 1 && titleTarget === 1) {
-        titleTarget = 0;
-        titleSpeed = 1 / DISSOLVE_TIME;
-      }
-    }
+    // Title envelope: intro formation, then dissolution — the wordmark
+    // belongs to the intro only since v0.7.1f (no idle re-formation).
     const t = renderer.dynamics.titleMode;
     const step = titleSpeed * dt;
     renderer.dynamics.titleMode =
@@ -1169,6 +1152,15 @@ async function boot() {
         Math.min(1, d.treble),
         Math.min(1, d.transient),
       ]);
+      // v0.7.1f — the matter counter: who the grain budget goes to. The
+      // shares mirror the shader's own hash split (impShare, corps share ×
+      // presence); the luminance gating of corps grains happens per texel
+      // on the GPU and is not readable here — this is the budget, noted so
+      // in the hint.
+      const imp = renderer.tuning.balance * 0.55 * Math.min(1, crystal);
+      const corps =
+        (1 - imp) * renderer.tuning.presenceShare * presenceEnv;
+      panel.setMatter([corps, imp, Math.max(0, 1 - imp - corps)]);
     }
 
     // ?debug — kick watcher: around each rising accent, measure the share

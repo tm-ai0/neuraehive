@@ -37,10 +37,11 @@ export interface PanelState {
   };
   quality: { auto: boolean; cap: number };
   behavior: {
-    imprintReturn: boolean;
     presenceSense: number;
     /** v0.7.1e — the tempo follows the music's own beats when on. */
     tempoAuto: boolean;
+    /** v0.7.1f — seconds of full silence before a random imprint draw. */
+    silenceDelay: number;
   };
   imprint: ImprintSettings;
   colors: LookColors;
@@ -134,12 +135,12 @@ const MATERIAL_KEYS = [
 ] as const;
 
 // Sub-tabs of the tall sections: a section either fits the window whole or
-// splits into these fixed pages — never a scrollbar.
+// splits into these fixed pages — never a scrollbar. v0.7.1f — empreintes
+// is one page: family tabs, shapes, where, transform.
 const SECTION_GROUPS: Partial<Record<SectionId, string[]>> = {
   corps: ["forme", "tenue"],
   particules: ["grains", "temps"],
   look: ["teinte", "degrade", "fond", "lumiere", "espace"],
-  empreintes: ["forme", "reglages"],
   aide: ["modes", "macros", "clavier", "gestes", "camext", "liens"],
 };
 
@@ -162,7 +163,8 @@ const journey = (m: number, pts: Journey): number => {
   return pts[pts.length - 1]![1];
 };
 
-const CHAOS_HISTORY_MAX = 8;
+// v0.7.1f — the undo journal covers every gesture, not only Chaos.
+const GESTURE_MAX = 20;
 
 export function createPanel(
   root: HTMLElement,
@@ -290,12 +292,11 @@ export function createPanel(
       writeDef("bodyMargin", v * 2);
     }, { transient: true, format: percent }),
     // ---- corps -----------------------------------------------------------
-    // v0.7.1e — who owns the frame: the body or the imprint. One slider,
-    // visible from Umbra, hands the grains and the light from one to the
-    // other (the imprint's budget and glow follow it in the shaders).
-    def("balance", "corps", ["anima", "pro"], 0, 1, 0.01,
+    // v0.7.1e/f — who owns the frame: the body or the imprint. Lives in the
+    // command block (all modes), never duplicated in a section.
+    def("balance", "corps", [], 0, 1, 0.01,
       () => state.tuning.balance, (v) => (state.tuning.balance = v),
-      { format: percent, chaos: [0.15, 0.85], group: "forme" }),
+      { format: percent, chaos: [0.15, 0.85] }),
     def("presenceShare", "corps", ["anima", "pro"], 0.1, 1, 0.01,
       () => state.tuning.presenceShare, (v) => (state.tuning.presenceShare = v),
       { format: percent, chaos: [0.35, 1], group: "forme" }),
@@ -448,9 +449,11 @@ export function createPanel(
         visible: () => state.tuning.memoryGain > 0.001,
         group: "temps",
       }),
-    def("imprintReturn", "particules", [], 0, 1, 1,
-      () => (state.behavior.imprintReturn ? 1 : 0),
-      (v) => (state.behavior.imprintReturn = v > 0.5)),
+    // v0.7.1f — "au silence": the delay before a random imprint draw.
+    def("silenceDelay", "scenes", [], 5, 120, 1,
+      () => state.behavior.silenceDelay,
+      (v) => (state.behavior.silenceDelay = v),
+      { format: (v) => `${Math.round(v)} s` }),
     // ---- look ------------------------------------------------------------
     def("compHue", "look", ["anima", "pro"], 0, 1, 0.005,
       () => state.tuning.compHue, (v) => (state.tuning.compHue = v),
@@ -605,18 +608,20 @@ export function createPanel(
     // ---- v0.7.1e — the imprint layer: mode and transform ------------------
     // Position, rotation and scale are ordinary defs: the music dances them,
     // LFOs, macros, Chaos, scenes and MIDI drive them like anything else.
-    def("impMode", "empreintes", ["pro"], 0, 2, 1,
+    // v0.7.1f — "où" is continuous: left the body's hollow, right the whole
+    // frame, the middle a stochastic mix of both (the shader blends).
+    def("impMode", "empreintes", ["pro"], 0, 2, 0.01,
       () => state.tuning.impMode, (v) => (state.tuning.impMode = v),
       {
-        discrete: true,
         chaos: [0, 2],
-        chaosSnap: true,
-        group: "reglages",
-        options: () => [
-          { value: 0, label: t("opt.impCreux") },
-          { value: 1, label: t("opt.impMix") },
-          { value: 2, label: t("opt.impLibre") },
-        ],
+        format: (v) =>
+          v < 0.25
+            ? t("val.ouCorps")
+            : v > 1.75
+              ? t("val.ouPartout")
+              : Math.abs(v - 1) < 0.25
+                ? t("val.ouMix")
+                : percent(v / 2),
       }),
     def("impX", "empreintes", ["pro"], -0.4, 0.4, 0.005,
       () => state.tuning.impX, (v) => (state.tuning.impX = v),
@@ -703,6 +708,11 @@ export function createPanel(
   const initialValues = new Map<ControlDef, number>(
     controls.map((def) => [def, def.get()])
   );
+  // v0.7.1f — the values of the current scene (boot defaults until a scene
+  // is applied): what a double-click on a slider comes home to.
+  const sceneValues = new Map<string, number>(
+    controls.map((d) => [d.key, d.get()])
+  );
 
   // ----- skeleton ----------------------------------------------------------
   const panel = document.createElement("section");
@@ -773,15 +783,83 @@ export function createPanel(
     return b;
   });
 
-  // v0.7.1d — the three macro journeys, at the head of the panel in every
-  // mode: what a performer shows to people in thirty seconds.
+  // v0.7.1f — the command block: everything played live sits here, always
+  // visible, never folded. Macros, then the share slider with its matter
+  // counter, the sensor line, the tempo line, the band gauge, the actions.
   const macroBox = document.createElement("div");
   macroBox.className = "cinerae-macros";
   panel.appendChild(macroBox);
 
+  // Share slider (corps ◀▶ empreinte) + matter counter.
+  const partageBox = document.createElement("div");
+  partageBox.className = "cinerae-partage";
+  panel.appendChild(partageBox);
+  const matterBox = document.createElement("div");
+  matterBox.className = "cinerae-matter";
+  panel.appendChild(matterBox);
+  const matterFields: HTMLElement[] = [];
+  for (const key of ["matCorps", "matEmp", "matFond"]) {
+    const item = document.createElement("span");
+    item.className = "cinerae-matter-item";
+    const name = document.createElement("span");
+    name.className = "cinerae-matter-name";
+    name.dataset.key = key;
+    const val = document.createElement("span");
+    val.className = "cinerae-matter-val";
+    val.textContent = "—";
+    item.append(name, val);
+    matterBox.appendChild(item);
+    matterFields.push(val);
+  }
+
   const sensorsBox = document.createElement("div");
   sensorsBox.className = "cinerae-sensors";
   panel.appendChild(sensorsBox);
+
+  // v0.7.1f — the tempo line: bpm readout, a dot blinking on the beat,
+  // and the choice musique (auto) / tap.
+  const tempoBox = document.createElement("div");
+  tempoBox.className = "cinerae-tempo";
+  panel.appendChild(tempoBox);
+  const tempoDot = document.createElement("span");
+  tempoDot.className = "cinerae-tempo-dot";
+  const tempoBpm = document.createElement("span");
+  tempoBpm.className = "cinerae-tempo-bpm";
+  const tempoChips = document.createElement("span");
+  tempoChips.className = "cinerae-tempo-chips";
+  const tempoMusicChip = document.createElement("button");
+  tempoMusicChip.type = "button";
+  tempoMusicChip.className = "cinerae-chip";
+  const tempoTapChip = document.createElement("button");
+  tempoTapChip.type = "button";
+  tempoTapChip.className = "cinerae-chip";
+  tempoChips.append(tempoMusicChip, tempoTapChip);
+  tempoBox.append(tempoDot, tempoBpm, tempoChips);
+  let tempoShown = 0;
+  const syncTempoBox = () => {
+    const bpm = Math.round(
+      controls.find((d) => d.key === "tempo")?.get() ?? 120
+    );
+    if (bpm !== tempoShown) {
+      tempoShown = bpm;
+      tempoBpm.textContent = `${bpm} bpm`;
+      tempoDot.style.animationDuration = `${(60 / bpm).toFixed(3)}s`;
+    }
+    tempoMusicChip.classList.toggle("active", state.behavior.tempoAuto);
+    tempoTapChip.classList.toggle("active", !state.behavior.tempoAuto);
+  };
+  tempoMusicChip.addEventListener("click", () => {
+    hooks.onInteraction();
+    state.behavior.tempoAuto = !state.behavior.tempoAuto;
+    syncTempoBox();
+  });
+  tempoTapChip.addEventListener("click", () => {
+    hooks.onInteraction();
+    state.behavior.tempoAuto = false;
+    tapTempo();
+    syncTempoBox();
+  });
+  window.setInterval(syncTempoBox, 500);
 
   // v0.7.1e — the five-band gauge: what the microphone really hears, bar by
   // bar (graves, bas-médiums, médiums, aigus, attaques). Visible whenever
@@ -809,7 +887,7 @@ export function createPanel(
     bandNames.push(name);
   }
   const syncBandsVisible = () => {
-    bandsBox.style.display = mode !== "umbra" && sensors.mic ? "" : "none";
+    bandsBox.style.display = sensors.mic ? "" : "none";
   };
 
   const makeSwitch = (
@@ -853,6 +931,14 @@ export function createPanel(
     () => sensors.mic,
     (next) => hooks.onSensor("mic", next)
   );
+  // v0.7.1f — the raw camera lives on the sensor line, Pro only.
+  const rawSwitch = makeSwitch(
+    "sw.rawCam",
+    () => state.tuning.rawCam > 0.5,
+    (next) => writeDef("rawCam", next ? 1 : 0),
+    sensorsBox,
+    "hint.rawCam"
+  );
 
   const actions = document.createElement("div");
   actions.className = "cinerae-actions";
@@ -873,28 +959,35 @@ export function createPanel(
     hooks.getMod()?.onAuthored(key, v);
   };
 
-  interface ChaosSnap {
+  interface GestureSnap {
     values: [ControlDef, number][];
     colors: LookColors;
     imprint: { family: ImprintFamily; variant: string };
   }
-  const chaosHistory: ChaosSnap[] = [];
+  // v0.7.1f — one journal for every gesture: slider, select, imprint pick,
+  // palette, scene, Chaos. Z and ↶ step back through it, twenty deep.
+  const gestures: GestureSnap[] = [];
   const syncUndo = () => {
-    undoButton.disabled = chaosHistory.length === 0;
+    undoButton.disabled = gestures.length === 0;
+  };
+  const snapshot = (): GestureSnap => ({
+    values: controls
+      .filter((d) => !d.transient)
+      .map((d) => [d, d.get()] as [ControlDef, number]),
+    colors: cloneLookColors(state.colors),
+    imprint: { family: state.imprint.family, variant: state.imprint.variant },
+  });
+  const pushGesture = (snap: GestureSnap = snapshot()) => {
+    gestures.push(snap);
+    if (gestures.length > GESTURE_MAX) gestures.shift();
+    syncUndo();
   };
 
   const chaos = () => {
     hooks.onInteraction();
     chaosTimes.push(performance.now());
     // Remember where we stand: a lucky draw clicked past can come back.
-    chaosHistory.push({
-      values: controls
-        .filter((d) => !d.transient)
-        .map((d) => [d, d.get()] as [ControlDef, number]),
-      colors: cloneLookColors(state.colors),
-      imprint: { family: state.imprint.family, variant: state.imprint.variant },
-    });
-    if (chaosHistory.length > CHAOS_HISTORY_MAX) chaosHistory.shift();
+    pushGesture();
     hooks.onChaos();
     const targets: { def: ControlDef; to: number }[] = [];
     for (const def of controls) {
@@ -917,7 +1010,7 @@ export function createPanel(
   };
 
   const undoChaos = () => {
-    const snap = chaosHistory.pop();
+    const snap = gestures.pop();
     if (!snap) return;
     hooks.onInteraction();
     glide(snap.values.map(([def, to]) => ({ def, to })));
@@ -1033,7 +1126,26 @@ export function createPanel(
     input: HTMLInputElement;
     readout: HTMLSpanElement;
     row: HTMLElement;
+    /** v0.7.1f — the thin marker: the authored value (modulation center). */
+    tick?: HTMLElement;
+    authored?: () => number | undefined;
   }[] = [];
+
+  // v0.7.1f — the double marker: the full track shows the value really
+  // played, the thin tick shows the authored one. When nothing modulates
+  // the key the two coincide and the tick hides.
+  const updateTick = (ref: (typeof rowRefs)[number]) => {
+    if (!ref.tick) return;
+    const a = ref.authored?.();
+    const played = Number(ref.input.value);
+    const span = Math.max(1e-9, ref.def.max - ref.def.min);
+    if (a === undefined || Math.abs(a - played) < span * 0.01) {
+      ref.tick.style.display = "none";
+      return;
+    }
+    ref.tick.style.display = "";
+    ref.tick.style.left = `${(((a - ref.def.min) / span) * 100).toFixed(1)}%`;
+  };
 
   // Reflect a macro's cascade on its visible component rows mid-drag.
   const syncKeys = (keys: string[]) => {
@@ -1042,6 +1154,7 @@ export function createPanel(
       ref.input.value = String(ref.def.get());
       setFill(ref.input);
       ref.readout.textContent = (ref.def.format ?? plain)(ref.def.get());
+      updateTick(ref);
     }
   };
   const changedTimers = new Map<HTMLElement, number>();
@@ -1123,6 +1236,9 @@ export function createPanel(
     name.textContent = label;
     const readout = document.createElement("span");
     readout.className = "cinerae-value";
+    const tick = document.createElement("span");
+    tick.className = "cinerae-tick";
+    tick.style.display = "none";
     const show = () => {
       readout.textContent = format(get());
       setFill(input);
@@ -1133,15 +1249,37 @@ export function createPanel(
       show();
       hooks.onInteraction();
     });
-    row.append(input, name, readout);
+    row.append(input, tick, name, readout);
     parent.appendChild(row);
-    return { row, input, readout, name, show };
+    return { row, input, readout, name, show, tick };
+  };
+
+  // v0.7.1f — arm the gesture journal on a slider: the state is captured
+  // when the hand lands, committed once when the drag really changed it.
+  const armUndoSlider = (input: HTMLInputElement) => {
+    let pending: { snap: GestureSnap; value: string } | undefined;
+    const arm = () => {
+      pending = { snap: snapshot(), value: input.value };
+    };
+    input.addEventListener("pointerdown", arm);
+    input.addEventListener("keydown", (e) => {
+      if (!pending && !["Tab", "Shift"].includes(e.key)) arm();
+    });
+    input.addEventListener("change", () => {
+      if (pending && pending.value !== input.value) pushGesture(pending.snap);
+      pending = undefined;
+    });
+    input.addEventListener("blur", () => {
+      if (pending && pending.value !== input.value) pushGesture(pending.snap);
+      pending = undefined;
+    });
   };
 
   const renderDefRow = (def: ControlDef, parent: HTMLElement) => {
     const mod = hooks.getMod();
     if (def.options) {
       const { row, name } = makeSelect(parent, def.label, def.options(), def.get, (v) => {
+        pushGesture();
         def.set(v);
         mod?.onAuthored(def.key, v);
         if (def.imprint) hooks.onImprintParams();
@@ -1151,7 +1289,7 @@ export function createPanel(
       decorateRow(row, name, def);
       return;
     }
-    const { row, input, readout, name } = makeSliderRow(
+    const { row, input, readout, name, tick } = makeSliderRow(
       parent,
       def.label,
       def.min,
@@ -1168,8 +1306,30 @@ export function createPanel(
     );
     row.dataset.hint = t(`hint.${def.key}`);
     if (def.reveals) input.addEventListener("change", () => renderMode());
+    armUndoSlider(input);
+    // v0.7.1f — double-click brings the slider back to its value in the
+    // current scene (the boot state before any scene is applied).
+    row.addEventListener("dblclick", () => {
+      const home = sceneValues.get(def.key);
+      if (home === undefined || Math.abs(home - def.get()) < 1e-9) return;
+      pushGesture();
+      def.set(home);
+      mod?.onAuthored(def.key, home);
+      if (def.imprint) hooks.onImprintParams();
+      syncKeys([def.key]);
+      hooks.onInteraction();
+    });
     decorateRow(row, name, def);
-    rowRefs.push({ def, input, readout, row });
+    const ref = {
+      def,
+      input,
+      readout,
+      row,
+      tick,
+      authored: () => hooks.getMod()?.centerOf(def.key),
+    };
+    rowRefs.push(ref);
+    updateTick(ref);
   };
 
   // Modulated dot, MIDI tag, learn-mode arming on the row label.
@@ -1288,6 +1448,7 @@ export function createPanel(
       b.append(band, name);
       b.addEventListener("click", () => {
         hooks.onInteraction();
+        pushGesture();
         hooks.onPaletteSelect(p.name);
       });
       grid.appendChild(b);
@@ -1340,9 +1501,30 @@ export function createPanel(
     body.appendChild(chips);
     for (const p of presets?.builtIns ?? []) {
       makeChip(chips, t(`scene.${p.name}`), false, () => {
+        pushGesture();
         presets?.apply(structuredClone(p) as PresetData);
+        // The applied scene becomes the home of every double-click.
+        for (const d of controls) sceneValues.set(d.key, d.get());
         renderMode();
       });
+    }
+
+    // v0.7.1f — "au silence": the piece draws imprints on its own after a
+    // stretch of full silence; the delay slider shows when it is on.
+    makeSwitch(
+      "sw.randomImprint",
+      () => state.imprint.random,
+      (next) => {
+        state.imprint.random = next;
+        hooks.onImprintParams();
+        renderMode();
+      },
+      body,
+      "hint.randomImprint"
+    );
+    if (state.imprint.random) {
+      const delayDef = controls.find((d) => d.key === "silenceDelay")!;
+      renderDefRow(delayDef, body);
     }
 
     const io = document.createElement("div");
@@ -1479,15 +1661,6 @@ export function createPanel(
       renderLookGradient(body);
     } else {
       renderSectionDefs("look", body, active);
-      if (active === "fond" && mode === "pro") {
-        makeSwitch(
-          "sw.rawCam",
-          () => state.tuning.rawCam > 0.5,
-          (next) => writeDef("rawCam", next ? 1 : 0),
-          body,
-          "hint.rawCam"
-        );
-      }
     }
     renderCaptureRow(body);
   }
@@ -1534,15 +1707,6 @@ export function createPanel(
   function renderParticules(body: HTMLElement) {
     const active = renderGroupTabs("particules", defGroups("particules"), body);
     renderSectionDefs("particules", body, active);
-    if (active === "temps" && mode === "pro") {
-      makeSwitch(
-        "sw.imprintReturn",
-        () => state.behavior.imprintReturn,
-        (next) => writeDef("imprintReturn", next ? 1 : 0),
-        body,
-        "hint.imprintReturn"
-      );
-    }
   }
 
   // ----- modulation section -------------------------------------------------
@@ -1576,11 +1740,20 @@ export function createPanel(
     const bpm = 60_000 / (sum / (tapTimes.length - 1));
     writeDef("tempo", Math.min(220, Math.max(40, bpm)));
     syncKeys(["tempo"]);
+    syncTempoBox();
   };
 
-  // v0.7.1e — one LFO page: shape, frequency in Hz or as a tempo division,
-  // amplitude, and ONE target — any registry setting, macros, imprint
-  // transform and the four global composition handles included.
+  // v0.7.1f — one LFO unfolded at a time, the other three summarized on one
+  // line each (number, target, speed). The unfolded one: shape as five text
+  // chips, tempo sync with its divisions or a free frequency, amplitude,
+  // target. The tempo itself lives in the command block.
+  let openLfo = 0; // 0..3 = LFO index, 4 = the links page
+
+  const lfoSpeedText = (lfo: { useTempo: boolean; div: number; rate: number }) =>
+    lfo.useTempo
+      ? t(`div.${DIV_LABELS[Math.max(0, TEMPO_DIVS.findIndex((d) => d === lfo.div))]}`)
+      : `${lfo.rate.toFixed(2)} Hz`;
+
   function renderLfoBlock(body: HTMLElement, i: number) {
     const mod = hooks.getMod()!;
     const lfo = mod.lfos[i]!;
@@ -1594,6 +1767,49 @@ export function createPanel(
         renderMode();
       });
     }
+    makeSwitch(
+      "sw.lfoTempo",
+      () => lfo.useTempo,
+      (next) => {
+        lfo.useTempo = next;
+        renderMode();
+      },
+      body,
+      "hint.lfoTempo"
+    );
+    if (lfo.useTempo) {
+      makeSelect(
+        body,
+        t("ui.lfoDiv"),
+        TEMPO_DIVS.slice(0, 5).map((_, idx) => ({
+          value: idx,
+          label: t(`div.${DIV_LABELS[idx]}`),
+        })),
+        () => Math.max(0, TEMPO_DIVS.slice(0, 5).findIndex((d) => d === lfo.div)),
+        (v) => (lfo.div = TEMPO_DIVS[v] ?? 4)
+      );
+    } else {
+      makeSliderRow(
+        body,
+        t("ui.lfoRate"),
+        0,
+        1,
+        0.005,
+        () => rateToSlider(lfo.rate),
+        (v) => (lfo.rate = sliderToRate(v)),
+        () => `${lfo.rate.toFixed(2)} Hz`
+      );
+    }
+    makeSliderRow(
+      body,
+      t("ui.lfoAmp"),
+      0,
+      1,
+      0.01,
+      () => lfo.amp,
+      (v) => (lfo.amp = v),
+      percent
+    );
     const keys = ["", ...targetOptions().map((o) => o.key), "xfade"];
     const { row: targetRow } = makeSelect(
       body,
@@ -1611,86 +1827,45 @@ export function createPanel(
       }
     );
     targetRow.dataset.hint = t("hint.lfoTarget");
-    makeSliderRow(
-      body,
-      t("ui.lfoAmp"),
-      0,
-      1,
-      0.01,
-      () => lfo.amp,
-      (v) => (lfo.amp = v),
-      percent
-    );
-    makeSwitch(
-      "sw.lfoTempo",
-      () => lfo.useTempo,
-      (next) => {
-        lfo.useTempo = next;
-        renderMode();
-      },
-      body,
-      "hint.lfoTempo"
-    );
-    if (lfo.useTempo) {
-      makeSelect(
-        body,
-        t("ui.lfoDiv"),
-        TEMPO_DIVS.map((_, idx) => ({ value: idx, label: t(`div.${DIV_LABELS[idx]}`) })),
-        () => Math.max(0, TEMPO_DIVS.findIndex((d) => d === lfo.div)),
-        (v) => (lfo.div = TEMPO_DIVS[v] ?? 4)
-      );
-      const tempoDef = controls.find((d) => d.key === "tempo")!;
-      renderDefRow(tempoDef, body);
-      const tRow = document.createElement("div");
-      tRow.className = "cinerae-mini-row";
-      body.appendChild(tRow);
-      miniButton(tRow, t("btn.tap"), tapTempo, t("hint.tap"));
-      makeSwitch(
-        "sw.tempoAuto",
-        () => state.behavior.tempoAuto,
-        (next) => (state.behavior.tempoAuto = next),
-        body,
-        "hint.tempoAuto"
-      );
-    } else {
-      makeSliderRow(
-        body,
-        t("ui.lfoRate"),
-        0,
-        1,
-        0.005,
-        () => rateToSlider(lfo.rate),
-        (v) => (lfo.rate = sliderToRate(v)),
-        () => `${lfo.rate.toFixed(2)} Hz`
-      );
-    }
-    makeSliderRow(
-      body,
-      t("ui.lfoPhase"),
-      0,
-      1,
-      0.01,
-      () => lfo.phase,
-      (v) => (lfo.phase = v),
-      percent
-    );
-    makeSwitch(
-      "sw.lfoSync",
-      () => lfo.sync,
-      (next) => (lfo.sync = next),
-      body
-    );
   }
 
   function renderModulation(body: HTMLElement) {
     const mod = hooks.getMod();
     if (!mod) return;
-    const groups = [
-      ...mod.lfos.map((_, i) => ({ key: `lfo${i + 1}`, label: `lfo ${i + 1}` })),
-      { key: "liens", label: t("ui.links") },
-    ];
-    const active = renderGroupTabs("modulation", groups, body);
-    if (active === "liens") {
+    const summaryLine = (label: string, onOpen: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cinerae-lfoline";
+      b.textContent = label;
+      b.addEventListener("click", () => {
+        hooks.onInteraction();
+        onOpen();
+        renderMode();
+      });
+      body.appendChild(b);
+    };
+    for (let i = 0; i < mod.lfos.length; i++) {
+      const lfo = mod.lfos[i]!;
+      const target = lfo.target
+        ? controls.find((d) => d.key === lfo.target)?.label ?? lfo.target
+        : t("ui.lfoNone");
+      if (i === openLfo) {
+        const head = document.createElement("div");
+        head.className = "cinerae-lfoline open";
+        head.textContent = `LFO ${i + 1}`;
+        body.appendChild(head);
+        renderLfoBlock(body, i);
+      } else {
+        summaryLine(`LFO ${i + 1} · ${target} · ${lfoSpeedText(lfo)}`, () => {
+          openLfo = i;
+        });
+      }
+    }
+    if (openLfo === 4) {
+      const head = document.createElement("div");
+      head.className = "cinerae-lfoline open";
+      head.textContent = t("ui.links");
+      body.appendChild(head);
       for (const link of [...mod.links]) {
         renderLinkRow(body, mod, link);
       }
@@ -1702,8 +1877,9 @@ export function createPanel(
         renderMode();
       });
     } else {
-      const i = Number(active.slice(3)) - 1;
-      if (mod.lfos[i]) renderLfoBlock(body, i);
+      summaryLine(`${t("ui.links")} · ${mod.links.length}`, () => {
+        openLfo = 4;
+      });
     }
   }
 
@@ -1856,8 +2032,9 @@ export function createPanel(
   });
   panel.appendChild(fileInput);
 
+  // v0.7.1f — the family line: underlined tabs, one row. The wordmark
+  // belongs to the intro; multi stays engine-side (Chaos may draw it).
   const FAMILY_ORDER: ImprintFamily[] = [
-    "titre",
     "fond",
     "volume",
     "forme",
@@ -1866,7 +2043,6 @@ export function createPanel(
     "ondes",
     "texte",
     "camera",
-    "multi",
   ];
 
   const makeChip = (
@@ -1887,49 +2063,48 @@ export function createPanel(
     parent.appendChild(chip);
   };
 
+  // v0.7.1f — one page: the family line (underlined tabs), the shapes of
+  // the family, then où, position, rotation, échelle and the family's own
+  // fine settings.
   function renderImprints(body: HTMLElement) {
-    const active = renderGroupTabs(
-      "empreintes",
-      defGroups("empreintes", ["forme"]),
-      body
-    );
-    if (active !== "forme") {
-      renderSectionDefs("empreintes", body, "reglages");
-      return;
-    }
+    familyChips.className = "cinerae-subtabs cinerae-famline";
     body.append(familyChips, variantChips, textRow);
     familyChips.replaceChildren();
     variantChips.replaceChildren();
     const sel = state.imprint;
+    const famTab = (label: string, active: boolean, onPick: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-pressed", String(active));
+      b.addEventListener("click", () => {
+        hooks.onInteraction();
+        pushGesture();
+        onPick();
+      });
+      familyChips.appendChild(b);
+    };
     for (const family of FAMILY_ORDER) {
-      makeChip(familyChips, t(`fam.${family}`), sel.family === family, () =>
+      famTab(t(`fam.${family}`), sel.family === family, () =>
         hooks.onImprintSelect(family, IMPRINT_VARIANTS[family]?.[0] ?? "")
       );
     }
-    makeChip(familyChips, t("fam.image"), sel.family === "image", () =>
-      fileInput.click()
-    );
+    famTab(t("fam.image"), sel.family === "image", () => fileInput.click());
     const variants = IMPRINT_VARIANTS[sel.family];
     variantChips.style.display = variants ? "" : "none";
     if (variants) {
       for (const v of variants) {
-        makeChip(variantChips, t(`var.${v}`), sel.variant === v, () =>
-          hooks.onImprintSelect(sel.family, v)
-        );
+        makeChip(variantChips, t(`var.${v}`), sel.variant === v, () => {
+          pushGesture();
+          hooks.onImprintSelect(sel.family, v);
+        });
       }
     }
     textRow.style.display = sel.family === "texte" ? "" : "none";
     textInput.placeholder = t("ui.freeText");
     textInput.value = sel.text;
-    makeSwitch(
-      "sw.randomImprint",
-      () => state.imprint.random,
-      (next) => {
-        state.imprint.random = next;
-        hooks.onImprintParams();
-      },
-      body
-    );
+    renderSectionDefs("empreintes", body);
   }
 
   // ----- aide ---------------------------------------------------------------
@@ -1986,6 +2161,7 @@ export function createPanel(
       }
     } else if (active === "gestes") {
       item(t("aide.touchTitle"), t("aide.touch"));
+      item(t("aide.undoTitle"), t("aide.undo"));
     } else if (active === "camext") {
       item(t("aide.ndiTitle"), t("aide.ndi"));
     } else {
@@ -2141,22 +2317,23 @@ export function createPanel(
       },
       () => ""
     );
+    armUndoSlider(input);
     input.setAttribute("aria-label", t("ctl.umbra"));
     row.dataset.hint = t("hint.umbra");
     row.classList.add("cinerae-umbra-row");
+  }
 
-    // v0.7.1e — the second Umbra gesture: who owns the frame, the body or
-    // the imprint. Same ends-labeled slider, driving the balance def.
+  // v0.7.1f — the share slider lives in the command block, in every mode:
+  // ends-labeled, journal-armed, ticked like any def row.
+  function renderPartage() {
+    partageBox.replaceChildren();
     const bal = controls.find((d) => d.key === "balance")!;
-    const balWrap = document.createElement("div");
-    balWrap.className = "cinerae-umbra-slider";
-    umbraBox.appendChild(balWrap);
-    const balEnds = document.createElement("div");
-    balEnds.className = "cinerae-umbra-ends";
-    balEnds.innerHTML = `<span>${t("ui.balL")}</span><span>${t("ui.balR")}</span>`;
-    balWrap.appendChild(balEnds);
+    const ends = document.createElement("div");
+    ends.className = "cinerae-umbra-ends";
+    ends.innerHTML = `<span>${t("ui.balL")}</span><span>${t("ui.balR")}</span>`;
+    partageBox.appendChild(ends);
     const balRow = makeSliderRow(
-      balWrap,
+      partageBox,
       "",
       bal.min,
       bal.max,
@@ -2172,7 +2349,17 @@ export function createPanel(
     balRow.input.setAttribute("aria-label", t("ctl.balance"));
     balRow.row.dataset.hint = t("hint.balance");
     balRow.row.classList.add("cinerae-umbra-row");
-    rowRefs.push({ def: bal as ControlDef, input: balRow.input, readout: balRow.readout, row: balRow.row });
+    armUndoSlider(balRow.input);
+    const ref = {
+      def: bal,
+      input: balRow.input,
+      readout: balRow.readout,
+      row: balRow.row,
+      tick: balRow.tick,
+      authored: () => hooks.getMod()?.centerOf(bal.key),
+    };
+    rowRefs.push(ref);
+    updateTick(ref);
   }
 
   // ----- glide (Chaos / Reset made visible on the sliders) ------------------
@@ -2214,6 +2401,7 @@ export function createPanel(
       for (const ref of rowRefs) {
         ref.input.value = String(ref.def.get());
         setFill(ref.input);
+        updateTick(ref);
         const text = (ref.def.format ?? plain)(ref.def.get());
         if (ref.readout.textContent !== text) {
           ref.readout.textContent = text;
@@ -2247,19 +2435,30 @@ export function createPanel(
     cameraSwitch.sync();
     micSwitch.sync();
 
+    // v0.7.1f — the command block never hides: every mode sees it whole.
     const minimal = mode === "umbra";
-    sensorsBox.style.display = minimal ? "none" : "";
-    actions.style.display = minimal ? "none" : "";
-    crystalBar.style.display = minimal ? "none" : "";
+    rawSwitch.row.style.display = mode === "pro" ? "" : "none";
+    rawSwitch.sync();
     syncBandsVisible();
+    syncTempoBox();
     bandsBox.dataset.hint = t("hint.bands");
     bandNames.forEach((el) => {
       el.textContent = t(`band.${el.dataset.key}`);
     });
+    matterBox.dataset.hint = t("hint.matter");
+    matterBox.querySelectorAll<HTMLElement>(".cinerae-matter-name").forEach((el) => {
+      el.textContent = t(`ui.${el.dataset.key}`);
+    });
+    tempoMusicChip.textContent = t("ui.tempoMusic");
+    tempoMusicChip.dataset.hint = t("hint.tempoMusic");
+    tempoTapChip.textContent = t("btn.tap");
+    tempoTapChip.dataset.hint = t("hint.tap");
+    tempoDot.setAttribute("aria-label", t("ui.tempoBeat"));
 
     stopInvite();
     rowRefs = [];
     renderMacros();
+    renderPartage();
     renderUmbra();
 
     const visible: Partial<Record<SectionId, boolean>> = {
@@ -2328,7 +2527,19 @@ export function createPanel(
     },
     writeDef,
     setFps(fps: number) {
-      fpsLine.textContent = `${Math.round(fps)} fps`;
+      // v0.7.1f — the header carries both vital signs: fps and grains.
+      fpsLine.textContent =
+        `${Math.round(fps)} fps · ${Math.round(state.tuning.count / 1000)} k`;
+    },
+    /** v0.7.1f — the matter counter: [corps, empreinte, fond] as 0..1. */
+    setMatter(shares: readonly number[]) {
+      for (let i = 0; i < matterFields.length; i++) {
+        const v = Math.round(Math.min(1, Math.max(0, shares[i] ?? 0)) * 100);
+        const text = `${v} %`;
+        if (matterFields[i]!.textContent !== text) {
+          matterFields[i]!.textContent = text;
+        }
+      }
     },
     setStatus(text: string) {
       statusLine.textContent = text;
@@ -2356,6 +2567,7 @@ export function createPanel(
         if (!keys.has(ref.def.key)) continue;
         ref.input.value = String(ref.def.get());
         setFill(ref.input);
+        updateTick(ref);
         const text = (ref.def.format ?? plain)(ref.def.get());
         if (ref.readout.textContent !== text) ref.readout.textContent = text;
       }

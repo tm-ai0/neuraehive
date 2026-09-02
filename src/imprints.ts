@@ -61,8 +61,10 @@ export interface ImprintSettings {
   lissa: { a: number; b: number };
 }
 
+// v0.7.1f — the piece opens and resets on pure abstract dust: the wordmark
+// belongs to the intro only, the "titre" family left the picker.
 export const DEFAULT_IMPRINT_SETTINGS: ImprintSettings = {
-  family: "titre",
+  family: "fond",
   variant: "",
   random: false,
   text: "lumière",
