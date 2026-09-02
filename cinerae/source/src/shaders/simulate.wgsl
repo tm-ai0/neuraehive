@@ -251,21 +251,6 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let layer = f32(i % 3u);
   let layerF = mix(1.0, mix(0.55, 1.6, layer * 0.5), params.depthAmount);
 
-  // Touch emission: a small share of the population respawns under the finger
-  // every frame, streaming outward as fresh dust. Never while the wordmark
-  // holds — the intro hover parts the grains instead (v0.7.1g, below).
-  if (params.touch.z > 0.001 && title < 0.5) {
-    let salt = u32(params.time * 61.0) * 2654435761u;
-    if (hash01(i * 7u + salt) < 0.014 * params.touch.z) {
-      let a = hash01(i * 7u + salt + 1u) * 6.2831853;
-      let r = sqrt(hash01(i * 7u + salt + 2u)) * 0.012;
-      let dir = vec2f(cos(a), sin(a));
-      dst[i * 2u] = vec4f(params.touch.xy + dir * r, dir * (0.03 + hash01(i * 7u + salt + 3u) * 0.16));
-      dst[i * 2u + 1u] = vec4f(0.0, 0.0, 0.0, 0.0);
-      return;
-    }
-  }
-
   // As the word takes hold it quiets the weather: ambient wind, turbulence
   // and kicks fade so the strokes can actually set.
   let calm = 1.0 - title * title * 0.92;
@@ -589,15 +574,16 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   let t2 = tEff * tEff;
   // v0.7.1g — the intro wordmark parts under the pointer like ash under a
   // hand: a radial shove around the touch, the word's grip yields there and
-  // the grains flow back once the hand moves on. Gated to the title, so the
-  // live touch keeps its seeding behavior untouched.
+  // the grains flow back once the hand moves on. v0.7.2 — the same hand
+  // works on the whole screen in live: the gate is the title OR the live
+  // matter, so the gesture never dies while the word dissolves.
   var touchYield = 0.0;
-  if (title > 0.02 && params.touch.z > 0.001) {
+  if (params.touch.z > 0.001) {
     let aspT = params.gridCols / max(params.gridRows, 1.0);
     let dvT = (pos - params.touch.xy) * vec2f(aspT, 1.0);
     let dT2 = dot(dvT, dvT);
     let prox = exp(-dT2 / 0.0035);
-    touchYield = prox * params.touch.z * title;
+    touchYield = prox * params.touch.z * max(title, 1.0 - title);
     if (dT2 > 1e-8) {
       acc += dvT * inverseSqrt(dT2) * touchYield * 3.0;
     }
