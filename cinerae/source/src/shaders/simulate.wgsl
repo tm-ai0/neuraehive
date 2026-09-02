@@ -80,6 +80,12 @@ struct SimParams {
   danceScale: f32,
   danceWarp: f32,
   danceTime: f32,       // phase of the ripple
+  // v0.7.1e — the imprint is a layer of its own: a dedicated share of the
+  // reserve serves it (the balance slider hands grains over), and its
+  // freedom says where it may set: 0 = only in the body's hollow, 1 = the
+  // whole frame, in between = a stochastic mix of both.
+  impShare: f32,
+  impFree: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -284,7 +290,10 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   var presLum = 0.0;   // camera light under this grain (bichromie driver)
   var presEdge = 0.0;  // silhouette-edge weight (the body reads by its edges)
   var corpsMat = 0.0;
-  let isCorpsHash = hash01(i * 41u + 9u) < params.share;
+  // v0.7.1e — the imprint claims its own grains first: they never join the
+  // corps, so the imprint keeps its budget whoever stands in the frame.
+  let isImp = hash01(i * 61u + 29u) < params.impShare;
+  let isCorpsHash = !isImp && hash01(i * 41u + 9u) < params.share;
   if (params.presence > 0.003 && params.hold > 0.001 && isCorpsHash) {
     corpsMat = matOf(params.bodyMat, params.bodyMatB, i);
     let hp = homeOf(i);
@@ -343,7 +352,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       presEdge = edge;
     }
   }
-  let isFond = presW < 0.001;
+  let isFond = presW < 0.001 && !isImp;
   let fondM = matOf(params.fondMat, params.fondMatB, i);
   // Two tempos: while someone is there the fond breathes at 0.6x — the
   // world steps back — while the corps answers instantly.
@@ -560,10 +569,20 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // imprint — or, in camera mode, to its home cell showing the frozen
   // luminance image. A body walking through the form frees it locally.
   let hold = 1.0 - ero;
-  // Corps grains ignore the imprint spring: the person and the imprint
-  // share the one reserve — the corps keeps its grains, the imprint takes
-  // the rest. No melting, no fight between the two springs.
-  let cHold = c2 * hold * (1.0 - presW);
+  // v0.7.1e — only the imprint's own grains answer the imprint spring; the
+  // rest of the dust stays free. The imprint mode says where a grain may
+  // set: a free grain engages anywhere, a hollow-bound one only inside the
+  // body's light — with nobody in the frame the hollow rule relaxes. The
+  // camera-gelée imprint keeps the historical full-dust behavior.
+  var impGate = 0.0;
+  if (params.imprintShape < 0.5) {
+    impGate = 1.0 - presW;
+  } else if (isImp) {
+    let free = select(0.0, 1.0, hash01(i * 67u + 31u) < params.impFree);
+    let hollow = smoothstep(0.08, 0.45, f.b);
+    impGate = mix(mix(1.0, hollow, params.presence), 1.0, free);
+  }
+  let cHold = c2 * hold * impGate;
   let ctarget = select(homeOf(i), danceTargetOf(i), params.imprintShape > 0.5);
   acc += (ctarget - pos) * cHold * 14.0;
   let t2 = tEff * tEff;
@@ -636,6 +655,10 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   var pack = 0.0;
   if (presW > 0.001) {
     pack = 1.0 + floor(presLum * 255.0) + floor(presEdge * 255.0) * 256.0;
+  } else if (isImp && params.imprintShape > 0.5 && cHold > 0.003) {
+    // Imprint grains mark themselves negative, engagement in the value: the
+    // render lights the layer on its own budget, never dimmed by presence.
+    pack = -(1.0 + clamp(cHold, 0.0, 1.0));
   }
   dst[i * 2u + 1u] = vec4f(heat, age, comet, pack);
 }

@@ -14,7 +14,6 @@ struct PresentParams {
   exposure: f32,
   fringe: f32,      // transient-driven, 0 almost always
   fringeTint: f32,  // 0 = warm red bias, 0.5 = neutral, 1 = cool blue bias
-  overlay: f32,     // wind-field overlay opacity
   time: f32,
   bg: vec3f,        // background (paper color in subtractive mode)
   grade: vec3f,     // final multiplicative tint
@@ -32,6 +31,14 @@ struct PresentParams {
   camScale: vec2f,  // raw-camera aspect mapping (same recipe as the luma pass)
   camOffset: vec2f,
   camMirror: f32,
+  // v0.7.1e — global composition: the whole frame breathes as one. The bass
+  // pumps the zoom, LFOs and macros drive every knob through the registry.
+  compZoom: f32,    // 1 = none; sampled mirror-wrapped so no edge ever shows
+  compRot: f32,     // radians around the screen center
+  compBright: f32,  // final brightness multiplier
+  compHue: f32,     // hue rotation, 0..1 = full turn
+  contrast: f32,    // S-curve strength on the graded image
+  flash: f32,       // whole-frame lightning on each strong accent
 };
 
 @group(0) @binding(0) var<uniform> params: PresentParams;
@@ -85,6 +92,19 @@ fn foldUv(uv: vec2f, mode: f32, n: f32) -> vec2f {
   return q / vec2f(aspect, 1.0) + vec2f(0.5);
 }
 
+// Mirror-repeat so the composition zoom and rotation never sample a smeared
+// clamp edge: outside [0,1] the image reflects seamlessly.
+fn mirrorUv(p: vec2f) -> vec2f {
+  return vec2f(1.0) - abs(vec2f(1.0) - 2.0 * fract(p * 0.5));
+}
+
+// Hue rotation around the grey axis (Rodrigues) — cheap, good enough for
+// dust, and continuous so LFOs can spin the tint forever.
+fn hueRotate(c: vec3f, a: f32) -> vec3f {
+  let k = vec3f(0.57735026);
+  return c * cos(a) + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cos(a));
+}
+
 // One tone curve, whole mode. Fractional modes mix two of these.
 fn toneOf(mode: i32, xe: vec3f) -> vec3f {
   if (mode <= 0) {
@@ -111,11 +131,21 @@ fn toneOf(mode: i32, xe: vec3f) -> vec3f {
     return vec4f(img, 1.0);
   }
 
+  // v0.7.1e — global composition first: the whole accumulated image zooms
+  // and turns around the screen center, aspect-corrected, mirror-wrapped.
+  let cAspect = params.texel.y / max(params.texel.x, 1e-6);
+  var cp = (uv - vec2f(0.5)) * vec2f(cAspect, 1.0);
+  let cCos = cos(-params.compRot);
+  let cSin = sin(-params.compRot);
+  cp = vec2f(cp.x * cCos - cp.y * cSin, cp.x * cSin + cp.y * cCos)
+    / max(params.compZoom, 0.05);
+  let tuv = mirrorUv(cp / vec2f(cAspect, 1.0) + vec2f(0.5));
+
   // Two folds, blended: fractional symmetry is a mix of the two nearest
   // whole folds. When mode and branch count are whole, fMix is 0 and only
   // the first fold is sampled — the historical path.
-  let suvA = foldUv(uv, floor(params.symMode), floor(params.symN));
-  let suvB = foldUv(uv, ceil(params.symMode), ceil(params.symN));
+  let suvA = foldUv(tuv, floor(params.symMode), floor(params.symN));
+  let suvB = foldUv(tuv, ceil(params.symMode), ceil(params.symN));
   let fMix = max(
     params.symMode - floor(params.symMode),
     params.symN - floor(params.symN),
@@ -199,15 +229,23 @@ fn toneOf(mode: i32, xe: vec3f) -> vec3f {
 
   var color = mix(lightColor, paperColor, paperW);
 
-  // Wind-field overlay: motion becomes slow veils in the grade's own tint,
-  // direction smeared along the flow itself so currents read as strokes.
-  if (params.overlay > 0.001) {
-    let v = textureSampleLevel(field, samp, suvA, 0.0).rg;
-    let v2 = textureSampleLevel(field, samp, suvA - v * 0.05, 0.0).rg;
-    let mag = (length(v) + length(v2)) * 0.5;
-    let veil = min(mag * 2.4, 1.0) * params.overlay;
-    color *= 1.0 - veil * 0.2 * paperW;
-    color += vec3f(1.0, 0.86, 0.68) * veil * 0.22 * (1.0 - paperW);
+  // v0.7.1e — contrast: an S-curve pressed onto the graded image.
+  if (params.contrast > 0.001) {
+    let cc = clamp(color, vec3f(0.0), vec3f(1.0));
+    color = mix(color, cc * cc * (vec3f(3.0) - 2.0 * cc), params.contrast);
+  }
+  // Brightness and hue: the LFO's whole-frame handles.
+  color *= params.compBright;
+  if (abs(params.compHue) > 0.0015) {
+    color = hueRotate(color, params.compHue * 6.2831853);
+  }
+  // The lightning: each strong accent blows a flash through the whole
+  // frame — multiplicative so the image itself flares, plus a veil so even
+  // the black breathes with the kick. Restrained: the flash must read as
+  // light, never blow the frame into fringe-torn white.
+  if (params.flash > 0.003) {
+    color = color * (1.0 + params.flash * 0.3)
+      + (params.grade * 0.5 + vec3f(0.24)) * params.flash * 0.16;
   }
 
   // Paper grain: a static multiplicative tooth, dosable, both modes.

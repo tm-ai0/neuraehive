@@ -140,11 +140,6 @@ const DICT: Record<string, [string, string]> = {
     "mon geste à droite pousse la poussière à droite",
     "my move to the right pushes the dust to the right",
   ],
-  "ctl.windOverlay": ["voiles", "veils"],
-  "hint.windOverlay": [
-    "rendre le courant d'air visible en voiles lents",
-    "make the air current visible as slow veils",
-  ],
   "ctl.musicReact": ["réactivité", "reactivity"],
   "hint.musicReact": [
     "combien la musique secoue la poussière — graves, aigus, attaques",
@@ -165,10 +160,10 @@ const DICT: Record<string, [string, string]> = {
     "un claquement ou un beat disperse tout d'un coup",
     "a clap or a beat scatters everything at once",
   ],
-  "ctl.danse": ["danse", "dance"],
-  "hint.danse": [
-    "les formes tournent, pompent et ondulent sur la musique",
-    "shapes turn, pump and ripple with the music",
+  "ctl.balance": ["corps / empreinte", "body / imprint"],
+  "hint.balance": [
+    "à gauche le corps prend les grains, à droite l'empreinte les prend",
+    "left, the body takes the grains — right, the imprint does",
   ],
   "ctl.soundFx": ["intensité son", "sound intensity"],
   "hint.soundFx": [
@@ -322,6 +317,31 @@ const DICT: Record<string, [string, string]> = {
     "toute l'image plus sombre ou plus lumineuse",
     "the whole image, darker or brighter",
   ],
+  "ctl.compBright": ["luminosité", "brightness"],
+  "hint.compBright": [
+    "toute l'image, après le grade — une poignée pour les LFO",
+    "the whole image, after the grade — a handle for the LFOs",
+  ],
+  "ctl.contrast": ["contraste", "contrast"],
+  "hint.contrast": [
+    "les sombres s'enfoncent, les clairs montent",
+    "darks sink, brights rise",
+  ],
+  "ctl.compHue": ["décalage teinte", "hue shift"],
+  "hint.compHue": [
+    "toutes les couleurs tournent d'un coup sur la roue",
+    "every color turns at once around the wheel",
+  ],
+  "ctl.compZoom": ["zoom", "zoom"],
+  "hint.compZoom": [
+    "toute la composition avance ou recule — les basses la pompent",
+    "the whole composition breathes in and out — the bass pumps it",
+  ],
+  "ctl.compRot": ["rotation cadre", "frame rotation"],
+  "hint.compRot": [
+    "toute la composition tourne autour du centre",
+    "the whole composition turns around the center",
+  ],
   "ctl.depthAmount": ["profondeur", "depth"],
   "hint.depthAmount": [
     "trois couches de poussière, proches et lointaines",
@@ -351,6 +371,39 @@ const DICT: Record<string, [string, string]> = {
   "hint.xfade": [
     "tout glisse d'un état à l'autre, sans à-coup, couleurs comprises",
     "everything glides between two states, colors included, no jump",
+  ],
+  "ctl.impMode": ["place", "placement"],
+  "hint.impMode": [
+    "où l'empreinte vit : dans le creux du corps, sur tout le cadre, ou les deux",
+    "where the imprint lives: in the body's hollow, across the frame, or both",
+  ],
+  "opt.impCreux": ["dans le corps", "in the body"],
+  "opt.impMix": ["mélange", "mixed"],
+  "opt.impLibre": ["tout le cadre", "whole frame"],
+  "ctl.impX": ["position x", "position x"],
+  "hint.impX": [
+    "l'empreinte glisse à gauche ou à droite — la musique la balance aussi",
+    "the imprint slides left or right — the music sways it too",
+  ],
+  "ctl.impY": ["position y", "position y"],
+  "hint.impY": [
+    "l'empreinte monte ou descend",
+    "the imprint rises or sinks",
+  ],
+  "ctl.impRot": ["rotation", "rotation"],
+  "hint.impRot": [
+    "l'empreinte tourne sur elle-même — la danse s'y ajoute",
+    "the imprint turns on itself — the dance adds to it",
+  ],
+  "ctl.impScale": ["échelle", "scale"],
+  "hint.impScale": [
+    "l'empreinte grandit ou se resserre — les basses la pompent",
+    "the imprint grows or tightens — the bass pumps it",
+  ],
+  "ctl.tempo": ["tempo", "tempo"],
+  "hint.tempo": [
+    "le pouls partagé des LFO synchronisés — tap ou détection auto",
+    "the shared pulse of synced LFOs — tap it or let it listen",
   ],
   "ctl.waveFreq": ["fréquence", "frequency"],
   "hint.waveFreq": ["des ondulations plus serrées", "tighter undulations"],
@@ -416,10 +469,19 @@ const DICT: Record<string, [string, string]> = {
   "sw.mic": ["micro", "microphone"],
   "sw.auto": ["qualité auto", "auto quality"],
   "sw.mirror": ["miroir", "mirror"],
-  "sw.overlay": ["voiles", "veils"],
   "sw.imprintReturn": ["retour du titre", "title return"],
   "sw.randomImprint": ["aléatoire au calme", "random when calm"],
   "sw.lfoSync": ["sync attaques", "sync to attacks"],
+  "sw.lfoTempo": ["suivre le tempo", "follow the tempo"],
+  "hint.lfoTempo": [
+    "la vitesse devient une division du tempo, du quart de temps à 4 mesures",
+    "the rate becomes a tempo division, from a quarter beat to 4 bars",
+  ],
+  "sw.tempoAuto": ["tempo auto", "auto tempo"],
+  "hint.tempoAuto": [
+    "la pièce écoute les coups et cale le tempo toute seule",
+    "the piece listens to the hits and locks the tempo on its own",
+  ],
   "sw.midiLearn": ["apprentissage", "learn"],
   "sw.invites": ["invitations", "invitations"],
   "hint.invites": [
@@ -443,6 +505,11 @@ const DICT: Record<string, [string, string]> = {
   "btn.load": ["charger", "load"],
   "btn.fullscreen": ["plein écran", "fullscreen"],
   "btn.midiOn": ["activer le midi", "enable midi"],
+  "btn.tap": ["tap", "tap"],
+  "hint.tap": [
+    "taper le rythme — la moyenne des frappes écrit le tempo",
+    "tap the beat — the mean of your taps writes the tempo",
+  ],
   // ---- small UI ------------------------------------------------------------
   "ui.modulated": ["modulé", "modulated"],
   "ui.color": ["couleur", "color"],
@@ -453,7 +520,38 @@ const DICT: Record<string, [string, string]> = {
   "ui.lfoAmp": ["ampleur", "amount"],
   "ui.lfoPhase": ["phase", "phase"],
   "ui.lfoTarget": ["cible", "target"],
+  "ui.lfoNone": ["aucune", "none"],
+  "ui.lfoDiv": ["division", "division"],
   "ui.lfoDepth": ["profondeur", "depth"],
+  "hint.lfoShape": [
+    "la forme du mouvement répété",
+    "the shape of the repeated motion",
+  ],
+  "hint.lfoTarget": [
+    "le réglage que ce LFO anime — macros et cadre compris",
+    "the setting this LFO animates — macros and frame included",
+  ],
+  "lfo.sinus": ["sinus", "sine"],
+  "lfo.triangle": ["triangle", "triangle"],
+  "lfo.scie": ["dent de scie", "sawtooth"],
+  "lfo.carre": ["carré", "square"],
+  "lfo.aleatoire": ["aléatoire", "random"],
+  "div.divQ": ["1/4 temps", "1/4 beat"],
+  "div.divH": ["1/2 temps", "1/2 beat"],
+  "div.divB1": ["1 temps", "1 beat"],
+  "div.divB2": ["2 temps", "2 beats"],
+  "div.divM1": ["1 mesure", "1 bar"],
+  "div.divM2": ["2 mesures", "2 bars"],
+  "div.divM4": ["4 mesures", "4 bars"],
+  "band.bass": ["graves", "bass"],
+  "band.lowMid": ["bas-méd", "lo-mid"],
+  "band.mid": ["médiums", "mids"],
+  "band.treble": ["aigus", "highs"],
+  "band.hit": ["coups", "hits"],
+  "hint.bands": [
+    "ce que le micro capte vraiment, bande par bande",
+    "what the microphone really hears, band by band",
+  ],
   "ui.links": ["liens", "links"],
   "ui.addLink": ["+ lien", "+ link"],
   "ui.midiTurn": ["tourner un potard pour lier…", "turn a knob to bind…"],
@@ -468,6 +566,8 @@ const DICT: Record<string, [string, string]> = {
   "ui.freeText": ["texte libre…", "free text…"],
   "ui.pushL": ["frôler", "graze"],
   "ui.pushR": ["bousculer", "shove"],
+  "ui.balL": ["corps", "body"],
+  "ui.balR": ["empreinte", "imprint"],
   "ui.langSwitch": ["Switch to English", "Passer en français"],
   "ui.openPanel": ["Ouvrir les réglages", "Open the settings"],
   "ui.closePanel": ["Replier les réglages", "Collapse the settings"],
@@ -613,8 +713,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   // ---- aide ----------------------------------------------------------------
   "aide.umbra": [
-    "un seul curseur, du frôlement à la bousculade, et les teintes",
-    "one slider, from a graze to a shove, plus the tints",
+    "deux curseurs — la poussée du corps, la part de l'empreinte — et les teintes",
+    "two sliders — the body's push, the imprint's share — plus the tints",
   ],
   "aide.anima": [
     "cinq sections : corps, geste, musique, particules, look",

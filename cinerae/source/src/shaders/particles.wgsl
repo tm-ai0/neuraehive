@@ -50,6 +50,7 @@ struct RenderParams {
   sparkle: f32,      // treble: a share of the grains flash like struck flint
   midTint: f32,      // mids: the palette slides toward its bright end
   bassPulse: f32,    // bass: the grain size itself breathes with the low end
+  impBright: f32,    // v0.7.1e — the imprint layer's own light (balance-fed)
 };
 
 struct VertexOut {
@@ -147,8 +148,11 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   let age = extra.y;
   let comet = extra.z;
   // Corps packing from the simulation: 0 = fond grain, else 1 + light
-  // (0..255) + edge (0..255)*256.
+  // (0..255) + edge (0..255)*256. Negative = imprint layer, engagement in
+  // the value (v0.7.1e).
   let isCorps = extra.w >= 0.999;
+  let isImp = extra.w <= -0.999;
+  let impEngage = select(0.0, clamp(-extra.w - 1.0, 0.0, 1.0), isImp);
   let packed = max(extra.w - 1.0, 0.0);
   let presEdge = floor(packed / 256.0) / 255.0;
   let presLum = (packed - floor(packed / 256.0) * 256.0) / 255.0;
@@ -187,7 +191,10 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   // Shape imprints glow evenly (the additive pile-up on the strokes does the
   // drawing); only the camera imprint reads the frozen luminance image.
   let held = select(frozen, params.imprintGlow, params.imprintShape > 0.5);
-  let crystalWeight = params.crystal * (1.0 - params.titleMode);
+  // v0.7.1e — in shape mode only the imprint's own grains take the held
+  // glow; the free dust stays fluid. Camera-gelée keeps the full-dust image.
+  let crystalGate = select(1.0, select(0.0, 1.0, isImp), params.imprintShape > 0.5);
+  let crystalWeight = params.crystal * (1.0 - params.titleMode) * crystalGate;
   var brightness = mix(fluid, held, crystalWeight * crystalWeight);
   // The life cycle darkens ash; embers and comets burn over everything.
   brightness *= lifeTone(age);
@@ -211,11 +218,19 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   let bodyW = params.presence * smoothstep(0.10, 0.55, fHere.b);
   brightness *= mix(1.0, params.corpsComp, bodyW);
   // The fond steps back while someone is there — down to its "visible"
-  // level — and darkens further inside the body's shadow margin.
-  if (!isCorps) {
+  // level — and darkens further inside the body's shadow margin. The
+  // imprint layer never steps back: it owns its light (v0.7.1e).
+  if (!isCorps && !isImp) {
     brightness *= mix(1.0, params.fondVisible, params.presence);
     let inBody = smoothstep(0.12, 0.6, fHere.b);
     brightness *= 1.0 - params.presence * inBody * 0.85;
+  }
+  if (isImp) {
+    brightness = mix(
+      brightness,
+      params.imprintGlow * params.impBright * 1.35,
+      impEngage,
+    );
   }
 
   // Palette color along the chosen driver (fractional = blend of two).
@@ -256,10 +271,14 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   tint = mix(tint, vec3f(1.0, 0.86, 0.62), handHere * 0.65);
   brightness *= 1.0 + handHere * 0.9;
   // Treble sparkle: a small share of the grains flash briefly, re-rolled at
-  // ~22 Hz — hi-hats and cymbals shimmer across the whole field.
+  // ~22 Hz — hi-hats and cymbals shimmer across the whole field. v0.7.1e —
+  // the struck grains also swell: the treble makes the sparks bigger, not
+  // just brighter.
+  var sparkleHit = 0.0;
   if (params.sparkle > 0.02) {
     let tw = hash01(instanceIndex * 7919u + u32(params.time * 22.0) * 977u);
-    brightness *= 1.0 + step(1.0 - params.sparkle * 0.14, tw) * 2.2 * min(params.sparkle, 1.0);
+    sparkleHit = step(1.0 - params.sparkle * 0.14, tw);
+    brightness *= 1.0 + sparkleHit * 2.2 * min(params.sparkle, 1.0);
   }
   out.tint = tint;
 
@@ -278,6 +297,8 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   // The bass is mass: the low end swells every grain a touch.
   let px = params.pointSize * sizeF * blurMul * titleFine
     * (1.0 + params.bassPulse * 0.11)
+    * (1.0 + sparkleHit * min(params.sparkle, 1.2) * 0.9)
+    * (1.0 + impEngage * 0.3)
     * mix(1.0, params.presenceSize, presMix);
   var offsetPx = corner * px;
   out.streak = 0.0;

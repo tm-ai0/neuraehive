@@ -180,14 +180,14 @@ export function createPresets(
       halo: 0.3,
       trails: 0.9,
       bodyMat: 7,
-      danse: 1.5,
+      balance: 0.65,
     }),
     // Pulsar — a living Julia set pumping on the beat, phosphor sparks.
     builtIn(
       "pulsar",
       "phosphore",
       {
-        danse: 1.6,
+        balance: 0.7,
         halo: 0.45,
         trails: 0.93,
         colorDriver: 1,
@@ -205,7 +205,7 @@ export function createPresets(
       "canopee",
       "cuivre",
       {
-        danse: 0.9,
+        balance: 0.6,
         trails: 0.94,
         halo: 0.3,
         viscosity: 3,
