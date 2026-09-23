@@ -1,0 +1,667 @@
+// Particle simulation. Position/velocity live in screen-UV space [0,1]^2;
+// each particle carries a second vec4: heat (ember glow), age (life cycle,
+// wraps at 1), comet (torn-off flight), body-layer packing (lum+edge).
+//
+// Life cycle: born ember on a strong audio transient (orange, brief), cools
+// to warm white, ages into ash (darker, slower, sediments toward the edges),
+// then quietly re-brightens in place. Vigorous local camera motion stirs the
+// ash bed and re-ignites a few embers. At rest the dust condenses onto the
+// zero level-set of a slow drifting noise field (iron-filings filaments),
+// combed every so often by a global gust. A dominant sustained tone aligns
+// the dust on Chladni figures; a very fast camera gesture tears comets off.
+//
+// v0.7.1 — two layers, one reserve. While someone stands in the frame a
+// share of the population becomes the CORPS layer (the person, dressed in a
+// chosen matter); the rest stays the FOND layer (dense free dust) which is
+// evicted from the body, runs at 0.6x time, and returns when the person
+// leaves — matter is conserved, grains only change allegiance. Materials
+// are fractional: the fractional part stochastically mixes two adjacent
+// materials across the population, so a crossfade never jumps.
+import { simplex3d } from "@vgpu/wgsl-std/noise/simplex";
+
+struct SimParams {
+  dt: f32,
+  time: f32,
+  force: f32,
+  viscosity: f32,
+  turbulence: f32,
+  crystal: f32,     // 0 = fluid dust, 1 = frozen imprint
+  bass: f32,
+  treble: f32,
+  transient: f32,
+  mid: f32,         // v0.7.1d — mids gather the matter onto its structures
+  shockR: f32,      // v0.7.1d — accent shockwave: ring radius from the center
+  shockAmp: f32,    // v0.7.1d — shockwave strength, decays over ~0.7 s
+  gridCols: f32,
+  gridRows: f32,
+  count: f32,
+  titleMode: f32,       // 0 = free matter, 1 = word fully crystallized
+  titleCount: f32,
+  titleScale: vec2f,    // ink-height units -> UV
+  titleOffset: vec2f,   // word center in UV
+  chaosAspire: f32,     // inverted-wind aspiration phase
+  chaosBurst: f32,      // turbulence burst phase
+  dissolve: f32,        // random thermalizing kick while the word melts
+  touch: vec3f,         // xy = UV, z = strength
+  gust: vec2f,          // resting-state wind gust (direction x envelope)
+  cymMN: vec2f,         // Chladni mode numbers (m, n)
+  cymatic: f32,         // sustained-tone envelope x gain, 0..~2
+  ember: f32,           // ember birth gain on strong transients
+  filament: f32,        // resting filament field strength
+  lifeRate: f32,        // 1 / life-cycle seconds
+  ashLevel: f32,        // age where dust turns to ash (~0.97 - ash share)
+  sediment: f32,        // peripheral drift strength for ash
+  cometGain: f32,       // camera-tear sensitivity
+  imprintShape: f32,    // 1 = crystal targets the imprint cloud, 0 = home cells
+  stagger: f32,         // 0 = all points engage together, ->1 = ordered build
+  depthAmount: f32,     // parallax layer separation, 0 = off
+  presence: f32,        // someone-in-frame envelope 0..1 (0 = historical render)
+  bodyMat: f32,         // corps material 0..7, fractional = stochastic blend
+  bodyMatB: f32,        // crossfade partner material of the corps
+  fondMat: f32,         // fond material 0..7, fractional = stochastic blend
+  fondMatB: f32,        // crossfade partner material of the fond
+  matBlend: f32,        // 0 = A only .. 1 = B only, stochastic per grain
+  share: f32,           // resting bias: share of grains serving the corps
+  hold: f32,            // serrage — effective grip (voice already relaxed it)
+  elastic: f32,         // how far the portrait yields under a gesture
+  margin: f32,          // shadow margin: fond eviction strength around the body
+  fondReact: f32,       // how much the fond feels the gesture wind
+  push: f32,            // v0.7.1b — body shove: momentum kick + obstacle squeeze
+  // v0.7.1c — the dance: every held imprint is transformed live. Rotation,
+  // scale and a three-lobed radial ripple, integrated on the CPU from the
+  // music (bass pumps, transients kick the spin, treble shimmers); without
+  // music the same fields carry a slow breath.
+  danceCos: f32,
+  danceSin: f32,
+  danceCx: f32,         // imprint center in UV (word center, or 0.5/0.5)
+  danceCy: f32,
+  danceDriftX: f32,     // slow float of the whole imprint
+  danceDriftY: f32,
+  danceScale: f32,
+  danceWarp: f32,
+  danceTime: f32,       // phase of the ripple
+  // v0.7.1e — the imprint is a layer of its own: a dedicated share of the
+  // reserve serves it (the balance slider hands grains over), and its
+  // freedom says where it may set: 0 = only in the body's hollow, 1 = the
+  // whole frame, in between = a stochastic mix of both.
+  impShare: f32,
+  impFree: f32,
+};
+
+@group(0) @binding(0) var<uniform> params: SimParams;
+@group(0) @binding(1) var<storage, read> src: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dst: array<vec4f>;
+@group(0) @binding(3) var<storage, read> titleTargets: array<vec4f>;
+@group(0) @binding(4) var field: texture_2d<f32>;
+@group(0) @binding(5) var fieldSamp: sampler;
+
+fn pcg(v: u32) -> u32 {
+  let state = v * 747796405u + 2891336453u;
+  let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+
+fn hash01(n: u32) -> f32 {
+  return f32(pcg(n)) / 4294967295.0;
+}
+
+// Each particle owns a jittered grid cell: its "home" when matter crystallizes.
+fn homeOf(i: u32) -> vec2f {
+  let cols = params.gridCols;
+  let col = f32(i % u32(cols));
+  let row = f32(i / u32(cols));
+  let jitter = vec2f(hash01(i * 2u + 1u), hash01(i * 2u + 2u)) - vec2f(0.5);
+  return vec2f(
+    (col + 0.5 + jitter.x * 0.9) / cols,
+    (row + 0.5 + jitter.y * 0.9) / params.gridRows,
+  );
+}
+
+// Where this grain condenses on the wordmark. Targets are sampled from the
+// actual ink, so only a whisper of jitter is needed to soften them to dust.
+fn titleTargetOf(i: u32) -> vec2f {
+  let t = titleTargets[i % u32(max(params.titleCount, 1.0))];
+  let perp = (hash01(i * 5u + 11u) + hash01(i * 5u + 12u) - 1.0) * 0.005;
+  let along = (hash01(i * 5u + 13u) - 0.5) * 0.006;
+  let tangent = vec2f(t.w, -t.z);
+  let local = t.xy + t.zw * perp + tangent * along;
+  return params.titleOffset + local * params.titleScale;
+}
+
+// The danced target: the held imprint rotates, breathes and ripples around
+// its own center, aspect-corrected so circles stay circles. The wordmark's
+// own idle return (titleMode) keeps the raw target — the name stays put.
+fn danceTargetOf(i: u32) -> vec2f {
+  let raw = titleTargetOf(i);
+  let asp = params.gridCols / max(params.gridRows, 1.0);
+  let center = vec2f(params.danceCx, params.danceCy);
+  var p = (raw - center) * vec2f(asp, 1.0);
+  let r = length(p);
+  if (r > 1e-5) {
+    let ang = atan2(p.y, p.x);
+    let ripple = 1.0 + params.danceWarp * sin(3.0 * ang + params.danceTime);
+    p = vec2f(
+      p.x * params.danceCos - p.y * params.danceSin,
+      p.x * params.danceSin + p.y * params.danceCos,
+    ) * (params.danceScale * ripple);
+  }
+  return p / vec2f(asp, 1.0) + center
+    + vec2f(params.danceDriftX, params.danceDriftY);
+}
+
+// The simulation lives a little wider than the screen: matter drifts out of
+// frame, wraps out of frame, and no border is ever perceptible.
+const MARGIN: f32 = 0.085;
+
+fn curlOctave(q: vec2f, tz: f32, e: f32) -> vec2f {
+  let n1 = simplex3d(vec3f(q.x, q.y + e, tz));
+  let n2 = simplex3d(vec3f(q.x, q.y - e, tz));
+  let n3 = simplex3d(vec3f(q.x + e, q.y, tz));
+  let n4 = simplex3d(vec3f(q.x - e, q.y, tz));
+  return vec2f((n1 - n2), -(n3 - n4)) / (2.0 * e);
+}
+
+// Three drifting octaves of curl noise, aspect-corrected so eddies stay
+// round. The largest structure is wider than the screen and every octave
+// slides its own way through space and time — smoke, never a lattice.
+fn curlNoise(p: vec2f, t: f32, asp: f32) -> vec2f {
+  let q = vec2f(p.x * asp, p.y);
+  var sum = curlOctave(q * 0.9 + vec2f(t * 0.020, -t * 0.012), t * 0.10, 0.09) * 0.17;
+  sum += curlOctave(q * 2.6 + vec2f(-t * 0.035, t * 0.021), t * 0.17, 0.07) * 0.11;
+  sum += curlOctave(q * 6.8 + vec2f(t * 0.052, t * 0.033), t * 0.26, 0.05) * 0.06;
+  return sum;
+}
+
+// 0 = living dust, 1 = ash. Falls after ashLevel, releases just before the
+// wrap so the rebirth at age 0 is seamless (the grain re-brightens in place).
+fn ashWeight(age: f32) -> f32 {
+  return smoothstep(params.ashLevel, params.ashLevel + 0.04, age)
+    * (1.0 - smoothstep(0.965, 1.0, age));
+}
+
+// Fractional material -> the whole material this grain serves. The
+// fractional part converts a share of the population to the next material,
+// so any authored value reads as a continuous visual blend. The crossfade
+// blends its two endpoint materials directly instead (never sweeping
+// through the ladder in between): matBlend stochastically hands grains
+// from the A material to the B material.
+fn matOf(valueA: f32, valueB: f32, i: u32) -> f32 {
+  let v = select(valueA, valueB, hash01(i * 97u + 3u) < params.matBlend);
+  let lo = floor(v);
+  return lo + select(0.0, 1.0, hash01(i * 53u + 17u) < v - lo);
+}
+
+// Fond structure: a gentle spring pulling free dust toward the pattern of
+// its material. Fumée (0) and encre (2) are formless here — their identity
+// lives in the render; contours (7) rides the filament field instead.
+fn fondStructure(mat: f32, pos: vec2f, asp: f32) -> vec2f {
+  let pa = vec2f(pos.x * asp, pos.y);
+  if (mat > 0.5 && mat < 1.5) {
+    // liquide: everything slides slowly down, swaying like falling water
+    return vec2f(sin(pos.y * 4.5 + params.time * 0.23) * 0.05, 0.16);
+  } else if (mat > 2.5 && mat < 3.5) {
+    // points: condense on a rotated dot lattice
+    let pr = vec2f(pa.x * 0.9659 - pa.y * 0.2588, pa.x * 0.2588 + pa.y * 0.9659) * 26.0;
+    let d = fract(pr) - vec2f(0.5);
+    let back = vec2f(-d.x * 0.9659 + d.y * 0.2588, -d.x * 0.2588 - d.y * 0.9659);
+    return back * 3.2;
+  } else if (mat > 3.5 && mat < 4.5) {
+    // dither: a finer, denser lattice — a woven veil of dust
+    let d = fract(pa * 48.0) - vec2f(0.5);
+    return -d * 2.6;
+  } else if (mat > 4.5 && mat < 5.5) {
+    // lignes: settle on a horizontal raster
+    let dy = (round(pos.y * 34.0) - pos.y * 34.0) / 34.0;
+    return vec2f(0.0, dy * 90.0);
+  } else if (mat > 5.5 && mat < 6.5) {
+    // moiré: two slightly rotated line systems interfering
+    let d1f = pa.x * 0.2955 + pa.y * 0.9553;
+    let d2f = pa.y * 0.9553 - pa.x * 0.2955;
+    let p1 = (round(d1f * 24.0) - d1f * 24.0) / 24.0;
+    let p2 = (round(d2f * 24.0) - d2f * 24.0) / 24.0;
+    let pull = select(
+      vec2f(0.2955, 0.9553) * p1,
+      vec2f(-0.2955, 0.9553) * p2,
+      abs(p2) < abs(p1),
+    );
+    return pull * 70.0;
+  }
+  return vec2f(0.0);
+}
+
+@compute @workgroup_size(256)
+fn cs_main(@builtin(global_invocation_id) id: vec3u) {
+  let i = id.x;
+  if (f32(i) >= params.count) {
+    return;
+  }
+
+  var pos = src[i * 2u].xy;
+  var vel = src[i * 2u].zw;
+  var heat = src[i * 2u + 1u].x;
+  var age = src[i * 2u + 1u].y;
+  var comet = src[i * 2u + 1u].z;
+  // Signed dt rewinds only the advection; forces, damping and probabilities
+  // integrate on |dt| so a reversed time stays numerically stable.
+  let sdt = params.dt;
+  let dt = abs(params.dt);
+  let title = params.titleMode;
+
+  // Parallax layer: far grains feel the weather less, near ones more.
+  let layer = f32(i % 3u);
+  let layerF = mix(1.0, mix(0.55, 1.6, layer * 0.5), params.depthAmount);
+
+  // As the word takes hold it quiets the weather: ambient wind, turbulence
+  // and kicks fade so the strokes can actually set.
+  let calm = 1.0 - title * title * 0.92;
+
+  let f = textureSampleLevel(field, fieldSamp, pos, 0.0);
+  let flowSpeed = length(f.rg);
+
+  // Imprint engagement: target rank can stagger the build (a text
+  // crystallizes letter by letter, a curve draws itself), and local camera
+  // motion erases a held shape exactly where a person passes through it.
+  let rank = f32(i % u32(max(params.titleCount, 1.0))) / max(params.titleCount, 1.0);
+  let unstag = max(1.0 - params.stagger, 0.05);
+  let tEff = clamp((title - params.stagger * rank) / unstag, 0.0, 1.0);
+  let ero = params.imprintShape * smoothstep(0.05, 0.28, f.a);
+
+  // ---- corps layer ----------------------------------------------------------
+  // Continuous portrait: the mirrored camera luminance places the grains
+  // through the chosen material, evaluated at each grain's home cell — the
+  // person reads as dust from the first second, never as video. The whole
+  // block is inert while the presence envelope is 0 (empty room, no camera,
+  // fond imprint) or while the serrage sits at "poussière libre".
+  var presW = 0.0;     // corps membership weight
+  var presLum = 0.0;   // camera light under this grain (bichromie driver)
+  var presEdge = 0.0;  // silhouette-edge weight (the body reads by its edges)
+  var corpsMat = 0.0;
+  // v0.7.1e — the imprint claims its own grains first: they never join the
+  // corps, so the imprint keeps its budget whoever stands in the frame.
+  let isImp = hash01(i * 61u + 29u) < params.impShare;
+  let isCorpsHash = !isImp && hash01(i * 41u + 9u) < params.share;
+  if (params.presence > 0.003 && params.hold > 0.001 && isCorpsHash) {
+    corpsMat = matOf(params.bodyMat, params.bodyMatB, i);
+    let hp = homeOf(i);
+    let lp = smoothstep(0.06, 0.9, textureSampleLevel(field, fieldSamp, hp, 0.0).b);
+    let pAsp = params.gridCols / max(params.gridRows, 1.0);
+    let pa = vec2f(hp.x * pAsp, hp.y);
+    // Luminance gradient at the home cell: the outline of the body. Every
+    // material uses it — the edge carries the reading of the silhouette.
+    let dims = vec2f(textureDimensions(field, 0));
+    let ex = vec2f(1.0 / dims.x, 0.0);
+    let ey = vec2f(0.0, 1.0 / dims.y);
+    let gx = textureSampleLevel(field, fieldSamp, hp + ex, 0.0).b
+      - textureSampleLevel(field, fieldSamp, hp - ex, 0.0).b;
+    let gy = textureSampleLevel(field, fieldSamp, hp + ey, 0.0).b
+      - textureSampleLevel(field, fieldSamp, hp - ey, 0.0).b;
+    let edge = clamp(length(vec2f(gx, gy)) * 10.0, 0.0, 1.0);
+    var on = false;
+    if (corpsMat < 0.5) {
+      // fumée: stochastic gathering where the light is — loose, smoky
+      on = hash01(i * 13u + 7u) < lp * 0.92 + edge * 0.3;
+    } else if (corpsMat < 1.5) {
+      // liquide: same gathering, the behavior below makes it pour
+      on = hash01(i * 13u + 7u) < lp * 0.9 + edge * 0.4;
+    } else if (corpsMat < 2.5) {
+      // encre: saturated outline, diluted wash inside
+      on = hash01(i * 13u + 7u) < clamp(edge * 1.6 + lp * 0.30, 0.0, 1.0);
+    } else if (corpsMat < 3.5) {
+      // points: rotated dot screen, dot area follows the light
+      let pr = vec2f(pa.x * 0.9659 - pa.y * 0.2588, pa.x * 0.2588 + pa.y * 0.9659) * 34.0;
+      on = length(fract(pr) - vec2f(0.5)) < 0.62 * sqrt(lp);
+    } else if (corpsMat < 4.5) {
+      // dither ordonné: Bayer 4x4 over the home cells
+      let col = i % u32(params.gridCols);
+      let row = i / u32(params.gridCols);
+      var m = array<f32, 16>(
+        0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,
+        3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0,
+      );
+      on = lp > (m[(row % 4u) * 4u + (col % 4u)] + 0.5) / 16.0;
+    } else if (corpsMat < 5.5) {
+      // lignes: horizontal raster whose thickness follows the light
+      on = abs(fract(hp.y * 44.0) - 0.5) * 2.0 < lp * 0.8;
+    } else if (corpsMat < 6.5) {
+      // moiré: two slightly rotated line systems interfering
+      let d1 = pa.x * 0.2955 + pa.y * 0.9553;
+      let d2 = pa.y * 0.9553 - pa.x * 0.2955;
+      on = abs(fract(d1 * 30.0) - 0.5) * 2.0 < lp * 0.62
+        || abs(fract(d2 * 30.0) - 0.5) * 2.0 < lp * 0.62;
+    } else {
+      // contours: the luminance gradient alone draws the outlines
+      on = hash01(i * 31u + 5u) < clamp(edge * 1.4 + lp * 0.08, 0.0, 1.0);
+    }
+    if (on) {
+      presW = params.presence;
+      presLum = lp;
+      presEdge = edge;
+    }
+  }
+  let isFond = presW < 0.001 && !isImp;
+  let fondM = matOf(params.fondMat, params.fondMatB, i);
+  // Two tempos: while someone is there the fond breathes at 0.6x — the
+  // world steps back — while the corps answers instantly.
+  let tempo = select(1.0, mix(1.0, 0.6, params.presence), isFond);
+
+  // ---- life cycle ----------------------------------------------------------
+  // Aging, with a per-particle tempo so the population never pulses in sync.
+  age = fract(age + dt * params.lifeRate * (0.7 + 0.6 * hash01(i * 9u + 3u)));
+  heat *= exp(-dt * 0.85);
+
+  var ash = ashWeight(age);
+
+  // Strong transient: a sparse scatter of living grains is reborn as embers.
+  // Brief and localized, never a wash — and never the sleeping ash bed,
+  // which only vigorous camera motion may stir.
+  let strong = clamp((params.transient - 0.55) * 2.2, 0.0, 1.0);
+  if (strong > 0.0 && params.ember > 0.0 && ash < 0.5) {
+    let salt = pcg(u32(params.time * 83.0));
+    if (hash01(i * 17u + salt) < strong * params.ember * dt * 0.9) {
+      heat = 1.0;
+      age = 0.0;
+    }
+  }
+
+  // Vigorous camera motion stirs the local ash bed; a few grains re-ignite.
+  if (ash > 0.5 && f.a > 0.18) {
+    let salt = pcg(u32(params.time * 71.0) + 917u);
+    if (hash01(i * 23u + salt) < f.a * dt * 5.0) {
+      age = hash01(i * 23u + salt + 1u) * 0.1;
+      if (hash01(i * 23u + salt + 2u) < 0.18) {
+        heat = max(heat, 0.7 + 0.3 * hash01(i * 23u + salt + 3u));
+      }
+      vel += f.rg * 0.3;
+      ash = 0.0;
+    }
+  }
+
+  // A very fast gesture tears a few grains off as hot comets.
+  if (comet < 0.05 && f.a > 0.5 && flowSpeed > 0.35 && params.cometGain > 0.0) {
+    let salt = pcg(u32(params.time * 57.0) + 331u);
+    if (hash01(i * 29u + salt) < params.cometGain * f.a * dt * 1.2) {
+      comet = 1.0;
+      heat = max(heat, 0.9);
+      age = 0.0;
+      vel += f.rg / max(flowSpeed, 1e-4) * (0.45 + 0.35 * hash01(i * 29u + salt + 2u));
+    }
+  }
+  comet *= exp(-dt * 0.75);
+  let flight = clamp(comet * 4.0, 0.0, 1.0); // free-flight factor
+
+  // ---- forces --------------------------------------------------------------
+  // Wind as entrainment: dust in air feels a drag toward the local wind
+  // velocity, so a strong current takes the grains with it — following with
+  // a slight lag — while a faint drift barely tugs. Bass adds pressure. Ash
+  // is heavy and barely feels it, unless the motion energy churns the bed.
+  let windDir = 1.0 - params.chaosAspire * 3.5;
+  let ashWind = 1.0 - ash * 0.75 * (1.0 - min(f.a * 2.5, 1.0));
+  let wind = f.rg * 1.6 * windDir;
+  let windReact = select(1.0, params.fondReact, isFond);
+  let couple = params.force * (0.6 + params.bass * 1.6) * calm * ashWind
+    * min(flowSpeed * 6.0, 1.0) * 2.5 * layerF * tempo * windReact;
+  var acc = (wind - vel) * couple;
+  acc += (vec2f(0.5) - pos) * params.chaosAspire * 1.8;
+
+  let cym = params.cymatic * calm * (1.0 - ash) * (1.0 - flight);
+
+  // How much the scene is at rest: no sound, no camera motion, no word, no
+  // held tone. Only then does the filament field take the matter over.
+  let act = clamp(
+    params.bass * 1.1 + params.treble * 0.9 + params.transient * 1.6
+      + flowSpeed * 2.5 + f.a * 2.0 + params.chaosBurst,
+    0.0, 1.0
+  );
+  let cRaw = params.crystal * (1.0 - title);
+  let c = clamp((cRaw - params.stagger * rank) / unstag, 0.0, 1.0);
+  let c2 = c * c;
+  let restness = (1.0 - act) * calm * (1.0 - c2) * (1.0 - min(cym, 1.0));
+
+  // Treble feeds fine turbulence; the chaos burst multiplies it hard. Rest
+  // and a held tone both quiet it so structure can emerge from the fur.
+  // A held corps grain sheds most turbulence — except the fumée, which
+  // keeps swirling inside the silhouette; the fond only slows its tempo.
+  let matTurbCut = select(0.85, 0.35, corpsMat < 0.5);
+  let turb = params.turbulence * (0.35 + params.treble * 2.0)
+    * (1.0 + params.chaosBurst * 5.0) * calm
+    * (1.0 - restness * 0.6) * (1.0 - min(cym, 1.0) * 0.75)
+    * (1.0 - presW * matTurbCut) * tempo;
+  acc += curlNoise(pos, params.time, params.gridCols / max(params.gridRows, 1.0)) * turb * layerF;
+
+  // Resting filaments: condense on the zero level-set of a slow drifting
+  // noise (iron filings on a wandering magnet) and slide gently along it.
+  // The contours fond material rides the same field even while the room
+  // plays, so its free dust always keeps that streaked, combed look.
+  let fondContours = select(0.0, 0.65, isFond && fondM > 6.5);
+  let rest = (params.filament * restness + fondContours * calm * (1.0 - c2))
+    * (1.0 - flight) * (1.0 - presW) * (1.0 + params.mid * 0.8);
+  if (rest > 0.003) {
+    let asp = params.gridCols / max(params.gridRows, 1.0);
+    let q = vec2f(pos.x * asp, pos.y) * 2.3
+      + vec2f(params.time * 0.011, -params.time * 0.007);
+    let tz = params.time * 0.035;
+    let e = 0.05;
+    let n0 = simplex3d(vec3f(q.x, q.y, tz));
+    let gx = simplex3d(vec3f(q.x + e, q.y, tz)) - simplex3d(vec3f(q.x - e, q.y, tz));
+    let gy = simplex3d(vec3f(q.x, q.y + e, tz)) - simplex3d(vec3f(q.x, q.y - e, tz));
+    let grad = vec2f(gx, gy) / (2.0 * e);
+    let gl = sqrt(dot(grad, grad) + 0.05);
+    acc += (-n0 * grad * 3.2 + vec2f(grad.y, -grad.x) * 0.5) / gl * rest;
+  }
+
+  // Fond structure: free dust condenses gently toward the pattern of its
+  // material (raster, lattice, moiré, falling water). Quieted by the word,
+  // a forming crystal or a held tone, like every other resting force.
+  // The mids gather: presence in the music pulls the matter onto its
+  // structures — cohesion you can see when a voice or a lead enters.
+  if (isFond && fondM > 0.5 && fondM < 6.5) {
+    let asp = params.gridCols / max(params.gridRows, 1.0);
+    acc += fondStructure(fondM, pos, asp) * calm * (1.0 - c2) * (1.0 - tEff)
+      * (1.0 - min(cym, 1.0)) * (1.0 - flight) * 0.8 * (1.0 + params.mid * 1.2);
+  }
+
+  // v0.7.1d — the shockwave: every strong accent rings a wave out of the
+  // imprint's center; the dust is thrown along the expanding front and
+  // settles behind it. Bold on purpose: a snare should be seen.
+  if (params.shockAmp > 0.003) {
+    let aspS = params.gridCols / max(params.gridRows, 1.0);
+    let dv = (pos - vec2f(params.danceCx, params.danceCy)) * vec2f(aspS, 1.0);
+    let rS = length(dv);
+    if (rS > 1e-4) {
+      let band = exp(-pow((rS - params.shockR) * 7.0, 2.0));
+      acc += dv / rS * band * params.shockAmp * calm * (1.0 - ash * 0.5) * 3.2;
+    }
+  }
+
+  // Fond eviction + obstacle: the world steps aside around the body. Free
+  // dust caught on the silhouette is pushed toward the dark, leaving a
+  // shadow margin that draws the person in negative — and the poussée makes
+  // the lit body a real obstacle, squeezing harder the grains it covers so
+  // even a still body keeps its clearing.
+  let evict = params.margin * 1.6 + params.push * 2.4;
+  if (isFond && params.presence > 0.003 && evict > 0.001) {
+    let lpP = smoothstep(0.05, 0.75, f.b);
+    if (lpP > 0.02) {
+      let dims = vec2f(textureDimensions(field, 0));
+      let ex = vec2f(1.0 / dims.x, 0.0);
+      let ey = vec2f(0.0, 1.0 / dims.y);
+      let gx = textureSampleLevel(field, fieldSamp, pos + ex, 0.0).b
+        - textureSampleLevel(field, fieldSamp, pos - ex, 0.0).b;
+      let gy = textureSampleLevel(field, fieldSamp, pos + ey, 0.0).b
+        - textureSampleLevel(field, fieldSamp, pos - ey, 0.0).b;
+      let g = vec2f(gx, gy);
+      let gl = length(g);
+      if (gl > 1e-4) {
+        // Push down the luminance gradient — out of the light, into shadow.
+        acc += -g / gl * lpP * params.presence * evict;
+      }
+    }
+  }
+
+  // Poussée: where a limb writes motion energy the dust takes a real
+  // momentum kick along the gesture — beyond the wind's entrainment, so it
+  // flies ahead of the arm, piles up at the front and rolls off in a wake
+  // behind. The corps yields a third as much: the portrait bends under the
+  // shove without dissolving (the élastique does the rest).
+  if (params.push > 0.001 && params.presence > 0.003 && flight < 0.5) {
+    let hit = smoothstep(0.02, 0.22, f.a);
+    if (hit > 0.001) {
+      let pw = select(0.35, 1.0, isFond);
+      acc += f.rg * (hit * params.push * pw * params.presence * 26.0);
+    }
+  }
+
+  // The resting gust: everything bends the same way, then it dies down.
+  acc += params.gust * calm * (1.0 - ash * 0.7) * layerF * tempo;
+
+  // Cymatics: a dominant sustained tone aligns the dust on the nodal lines
+  // of a Chladni figure; the pattern follows the detected pitch.
+  if (cym > 0.003) {
+    let pi = 3.14159265;
+    let m = params.cymMN.x;
+    let n = params.cymMN.y;
+    let px = pos.x * pi;
+    let py = pos.y * pi;
+    let amp = cos(n * px) * cos(m * py) - cos(m * px) * cos(n * py);
+    let gA = vec2f(
+      (-n * sin(n * px) * cos(m * py) + m * sin(m * px) * cos(n * py)) * pi,
+      (-m * cos(n * px) * sin(m * py) + n * cos(m * px) * sin(n * py)) * pi,
+    );
+    acc += -amp * gA / (length(gA) + 1.5) * cym * 3.0;
+  }
+
+  // Audio transients, the chaos burst and the melting word all shatter
+  // outward — the dissolve kick re-seeds entropy so the released cluster
+  // mixes back into dust instead of shearing into laminae.
+  let kick = ((params.transient + params.chaosBurst * 0.8) * calm + params.dissolve)
+    * (1.0 - ash * 0.6);
+  if (kick > 0.001) {
+    let a = hash01(i * 3u + u32(params.time * 997.0)) * 6.2831853;
+    acc += vec2f(cos(a), sin(a)) * kick * 1.4;
+  }
+
+  // Ash sediments toward the peripheral bed. The bed itself straddles the
+  // screen edge — mostly out of frame — so it never draws a visible border.
+  if (ash > 0.001 && params.sediment > 0.001) {
+    let edgeDist = min(min(pos.x, 1.0 - pos.x), min(pos.y, 1.0 - pos.y));
+    let fromCenter = pos - vec2f(0.5);
+    let l = length(fromCenter);
+    if (l > 1e-4) {
+      acc += fromCenter / l * smoothstep(-0.05, 0.28, edgeDist) * ash * params.sediment;
+    }
+  }
+
+  // Crystallization: silence pulls each grain slowly to the selected
+  // imprint — or, in camera mode, to its home cell showing the frozen
+  // luminance image. A body walking through the form frees it locally.
+  let hold = 1.0 - ero;
+  // v0.7.1e — only the imprint's own grains answer the imprint spring; the
+  // rest of the dust stays free. The imprint mode says where a grain may
+  // set: a free grain engages anywhere, a hollow-bound one only inside the
+  // body's light — with nobody in the frame the hollow rule relaxes. The
+  // camera-gelée imprint keeps the historical full-dust behavior.
+  var impGate = 0.0;
+  if (params.imprintShape < 0.5) {
+    impGate = 1.0 - presW;
+  } else if (isImp) {
+    let free = select(0.0, 1.0, hash01(i * 67u + 31u) < params.impFree);
+    let hollow = smoothstep(0.08, 0.45, f.b);
+    impGate = mix(mix(1.0, hollow, params.presence), 1.0, free);
+  }
+  let cHold = c2 * hold * impGate;
+  let ctarget = select(homeOf(i), danceTargetOf(i), params.imprintShape > 0.5);
+  acc += (ctarget - pos) * cHold * 14.0;
+  let t2 = tEff * tEff;
+  // v0.7.1g — the intro wordmark parts under the pointer like ash under a
+  // hand: a radial shove around the touch, the word's grip yields there and
+  // the grains flow back once the hand moves on. v0.7.2 — the same hand
+  // works on the whole screen in live: the gate is the title OR the live
+  // matter, so the gesture never dies while the word dissolves.
+  var touchYield = 0.0;
+  if (params.touch.z > 0.001) {
+    let aspT = params.gridCols / max(params.gridRows, 1.0);
+    let dvT = (pos - params.touch.xy) * vec2f(aspT, 1.0);
+    let dT2 = dot(dvT, dvT);
+    let prox = exp(-dT2 / 0.0035);
+    touchYield = prox * params.touch.z * max(title, 1.0 - title);
+    if (dT2 > 1e-8) {
+      acc += dvT * inverseSqrt(dT2) * touchYield * 3.0;
+    }
+  }
+  if (tEff > 0.001) {
+    acc += (titleTargetOf(i) - pos) * t2 * 30.0 * hold * (1.0 - touchYield * 0.92);
+  }
+
+  // Corps spring: the portrait gathers on the body. A moving limb writes
+  // motion energy, the portrait yields there — the élastique says how far —
+  // and the freed grains scatter around the gesture before coming back.
+  // Each material grips its own way: fumée is aspirated loosely and keeps
+  // swirling, liquide is held sideways but pours, encre pins its outline
+  // hard and lets the wash inside breathe, the screens hold everything.
+  var presDrag = 0.0;
+  if (presW > 0.001) {
+    let ph = params.hold;
+    let give = smoothstep(0.06, 0.30, f.a) * clamp(params.elastic, 0.0, 1.0);
+    var stiff = 1.0;
+    if (corpsMat < 0.5) {
+      stiff = 0.4; // fumée
+    } else if (corpsMat < 1.5) {
+      stiff = 0.75; // liquide
+    } else if (corpsMat < 2.5) {
+      stiff = mix(0.3, 1.5, smoothstep(0.1, 0.6, presEdge)); // encre
+    }
+    let pull = presW * ph * stiff * (1.0 - give) * (1.0 - flight);
+    acc += (homeOf(i) - pos) * pull * (10.0 + 30.0 * ph);
+    presDrag = pull * (4.0 + 22.0 * ph);
+    if (corpsMat > 0.5 && corpsMat < 1.5) {
+      // liquide: gravity pours it down the body, sideways motion is damped
+      acc += vec2f(-vel.x * 5.0, 0.5) * presW;
+    }
+  }
+
+  vel += acc * dt;
+  // Viscosity damps motion; ash, a forming crystal, a held tone or the word
+  // damp it much harder. Comets fly nearly free.
+  let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
+    + ash * 4.0 + min(cym, 1.0) * 4.0 + cHold * 22.0
+    + t2 * 26.0 * hold * (1.0 - touchYield * 0.8) + presDrag;
+  vel *= exp(-dt * drag);
+  let maxSpeed = 0.9 + flight * 0.9;
+  let speed = length(vel);
+  if (speed > maxSpeed) {
+    vel *= maxSpeed / speed;
+  }
+
+  pos += vel * sdt * tempo;
+  // Wrap over the extended domain, so leaving and re-entering both happen
+  // out of frame — unless the word holds the matter. A comet that flies out
+  // lands as fresh ash where it re-enters.
+  if (title < 0.5) {
+    if (any(pos < vec2f(-MARGIN)) || any(pos > vec2f(1.0 + MARGIN))) {
+      if (comet > 0.05) {
+        comet = 0.0;
+        heat = 0.0;
+        age = clamp(params.ashLevel + 0.02, 0.0, 0.95);
+        vel *= 0.2;
+      }
+      let span = 1.0 + 2.0 * MARGIN;
+      pos = fract((pos + vec2f(MARGIN)) / span) * span - vec2f(MARGIN);
+    }
+  } else {
+    pos = clamp(pos, vec2f(-0.05), vec2f(1.05));
+  }
+
+  dst[i * 2u] = vec4f(pos, vel);
+  // Spare channel: 0 for fond grains, else the corps packing — 1 + light
+  // (0..255) + edge (0..255)*256, both exact in f32 — so the render pass
+  // can light the portrait and draw the body by its edges.
+  var pack = 0.0;
+  if (presW > 0.001) {
+    pack = 1.0 + floor(presLum * 255.0) + floor(presEdge * 255.0) * 256.0;
+  } else if (isImp && params.imprintShape > 0.5 && cHold > 0.003) {
+    // Imprint grains mark themselves negative, engagement in the value: the
+    // render lights the layer on its own budget, never dimmed by presence.
+    pack = -(1.0 + clamp(cHold, 0.0, 1.0));
+  }
+  dst[i * 2u + 1u] = vec4f(heat, age, comet, pack);
+}

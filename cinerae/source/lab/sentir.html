@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>sentir — laboratoire vision Cineræ</title>
+  <style>
+    :root {
+      --fond: #0c0b09;
+      --carte: #14120f;
+      --trait: #2a2620;
+      --texte: #d8d2c4;
+      --sourd: #8a836f;
+      --braise: #e0a458;
+      --actif: #7fb069;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0c0b09;
+      color: #d8d2c4;
+      font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+      padding: 14px 16px;
+    }
+    header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+    h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.04em; }
+    h1 span { color: #8a836f; font-weight: 400; }
+    #fpsLab { color: #e0a458; font-variant-numeric: tabular-nums; }
+    #note { color: #8a836f; font-size: 12px; }
+    button {
+      background: #14120f; color: #d8d2c4; border: 1px solid #3a3527;
+      border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer;
+    }
+    button:hover { border-color: #e0a458; }
+    button.on { border-color: #7fb069; color: #7fb069; }
+    button.charge { border-color: #e0a458; color: #e0a458; }
+    #panneaux { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+    .panneau {
+      background: #14120f; border: 1px solid #241f16; border-radius: 8px;
+      padding: 8px; width: 336px;
+    }
+    .panneau .barre { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .panneau .titre { font-weight: 600; }
+    .panneau canvas { width: 320px; height: 240px; background: #000; border-radius: 4px; display: block; }
+    .panneau video { width: 320px; height: 240px; background: #000; border-radius: 4px; display: block; object-fit: cover; transform: scaleX(-1); }
+    .stats { color: #8a836f; font-size: 12px; margin-top: 5px; font-variant-numeric: tabular-nums; min-height: 16px; }
+    .signaux { margin-top: 5px; display: grid; gap: 3px; }
+    .sig { display: grid; grid-template-columns: 74px 1fr 40px; gap: 6px; align-items: center; font-size: 12px; }
+    .sig .nom { color: #8a836f; }
+    .sig .piste { height: 6px; background: #221e15; border-radius: 3px; overflow: hidden; }
+    .sig .jauge { height: 100%; width: 0%; background: #e0a458; border-radius: 3px; }
+    .sig .val { text-align: right; color: #d8d2c4; font-variant-numeric: tabular-nums; }
+    .gestes { margin-top: 5px; font-size: 13px; min-height: 18px; }
+    .gestes b { color: #e0a458; font-weight: 600; }
+    footer { margin-top: 14px; color: #55503f; font-size: 11px; max-width: 900px; }
+    code { color: #8a836f; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>sentir <span>— laboratoire vision</span></h1>
+    <div>labo <span id="fpsLab">—</span> fps</div>
+    <button id="btnCam">démarrer la caméra</button>
+    <button id="btnVoir" disabled>voir la caméra</button>
+    <span id="note">chaque signal s'active un par un ; modèles servis en local, rien n'est envoyé</span>
+  </header>
+
+  <div id="panneaux">
+    <div class="panneau" id="p-silhouette">
+      <div class="barre"><span class="titre">silhouette</span><button data-t="silhouette" disabled>activer</button></div>
+      <canvas width="320" height="240"></canvas>
+      <div class="stats">—</div>
+      <div class="signaux">
+        <div class="sig"><span class="nom">aire</span><span class="piste"><span class="jauge" id="j-aire"></span></span><span class="val" id="v-aire">—</span></div>
+        <div class="sig"><span class="nom">hauteur</span><span class="piste"><span class="jauge" id="j-hauteur"></span></span><span class="val" id="v-hauteur">—</span></div>
+      </div>
+    </div>
+
+    <div class="panneau" id="p-corps">
+      <div class="barre"><span class="titre">corps · 33 points</span><button data-t="corps" disabled>activer</button></div>
+      <canvas width="320" height="240"></canvas>
+      <div class="stats">—</div>
+      <div class="signaux">
+        <div class="sig"><span class="nom">présence</span><span class="piste"><span class="jauge" id="j-presence"></span></span><span class="val" id="v-presence">—</span></div>
+      </div>
+    </div>
+
+    <div class="panneau" id="p-mains">
+      <div class="barre"><span class="titre">mains · 21 points</span><button data-t="mains" disabled>activer</button></div>
+      <canvas width="320" height="240"></canvas>
+      <div class="stats">—</div>
+      <div class="gestes" id="g-mains">—</div>
+      <div class="signaux">
+        <div class="sig"><span class="nom">ouverture</span><span class="piste"><span class="jauge" id="j-ouverture"></span></span><span class="val" id="v-ouverture">—</span></div>
+        <div class="sig"><span class="nom">pince</span><span class="piste"><span class="jauge" id="j-pince"></span></span><span class="val" id="v-pince">—</span></div>
+      </div>
+    </div>
+
+    <div class="panneau" id="p-visage">
+      <div class="barre"><span class="titre">visage</span><button data-t="visage" disabled>activer</button></div>
+      <canvas width="320" height="240"></canvas>
+      <div class="stats">—</div>
+      <div class="signaux">
+        <div class="sig"><span class="nom">souffle</span><span class="piste"><span class="jauge" id="j-souffle"></span></span><span class="val" id="v-souffle">—</span></div>
+        <div class="sig"><span class="nom">lumière</span><span class="piste"><span class="jauge" id="j-lumiere"></span></span><span class="val" id="v-lumiere">—</span></div>
+        <div class="sig"><span class="nom">clin</span><span class="piste"><span class="jauge" id="j-clin"></span></span><span class="val" id="v-clin">—</span></div>
+      </div>
+    </div>
+
+    <div class="panneau" id="p-profondeur">
+      <div class="barre"><span class="titre">profondeur</span><button data-t="profondeur" disabled>activer</button></div>
+      <canvas width="320" height="240"></canvas>
+      <div class="stats">—</div>
+      <div class="signaux">
+        <div class="sig"><span class="nom">proche</span><span class="piste"><span class="jauge" id="j-proche"></span></span><span class="val" id="v-proche">—</span></div>
+      </div>
+    </div>
+
+    <div class="panneau" id="p-camera" style="display:none">
+      <div class="barre"><span class="titre">caméra (labo seul)</span><span></span></div>
+      <video id="videoVoir" muted playsinline></video>
+      <div class="stats">jamais montrée au public — bouton réservé au labo</div>
+    </div>
+  </div>
+
+  <footer>
+    Tous les signaux sortent normalisés 0–1 sur <code>window.__sentir</code> avec cadence (Hz) et latence (ms) par signal.
+    Pose = MediaPipe Pose Landmarker (masque + 33 points) · mains = Hand Landmarker + gestes nommés
+    (pousser = paume ouverte, tirer = pince, serrer = poing, lâcher = ouverture) · visage = blendshapes réduits ·
+    profondeur = Depth Anything V3 small ONNX 8 bits (transformers.js WebGPU), repli imité si le GPU sature.
+  </footer>
+
+  <script type="module" src="/src/sentir/main.ts"></script>
+</body>
+</html>
