@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
@@ -18,7 +18,7 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; }
     body { background: var(--bg); color: var(--ink); font-family: 'IBM Plex Mono', monospace; font-weight: 300; }
-    .app { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+    .app { position: relative; width: 100%; height: 100vh; height: 100dvh; overflow: hidden; }
     #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; z-index: 1; image-rendering: auto; }
     /* ambient bg */
     .stage-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
@@ -67,6 +67,11 @@
     .sdsep { height:1px;background:var(--line);margin:3px 0; }
     /* hud */
     .hud { position:absolute;left:20px;bottom:52px;font-size:10px;letter-spacing:1.5px;color:var(--ink-faint);display:flex;gap:8px;align-items:center; }
+    /* social */
+    .wm-social { display:flex;align-items:center;gap:8px;margin-left:6px; }
+    .wm-social a { font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6a7080;text-decoration:none;opacity:.5;transition:opacity .3s,color .3s;display:flex;align-items:center; }
+    .wm-social a:hover { opacity:1;color:#c34ea0; }
+    .wm-social .kofi { font-size:15px;line-height:1; }
     /* source bar (supersedes srcChip/srcDropdown) */
     #srcChip, #srcDropdown { display:none!important; }
     #srcBar { position:absolute;bottom:0;left:50%;transform:translateX(-50%);display:flex;align-items:stretch;height:52px;background:rgba(8,8,11,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:10px 10px 0 0;overflow:hidden;white-space:nowrap; }
@@ -100,9 +105,10 @@
     .xy-dot { position:absolute;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;transition:none; }
     #trailCanvas { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;mix-blend-mode:screen; }
     #xyBar { position:absolute;pointer-events:none;z-index:3; }
-    #xyBarTrack { width:3px;height:80px;background:rgba(255,255,255,.08);border-radius:2px;position:relative;overflow:hidden; }
+    #xyBarTrack { width:5px;height:80px;background:rgba(255,255,255,.2);border-radius:2px;position:relative;overflow:hidden; }
     #xyBarFill  { position:absolute;bottom:0;left:0;width:100%;border-radius:2px; }
-    #xyBarLabel { font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:1px;color:rgba(200,197,192,.7);margin-bottom:4px;white-space:nowrap;text-align:center; }
+    #xyBarLabel { font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1px;color:#f2efec;margin-bottom:4px;white-space:nowrap;text-align:center; }
+    #xyBarLabelX { font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1px;color:#f2efec;margin-top:4px;white-space:nowrap;text-align:center; }
     .hint-text { font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:2px;color:rgba(195,78,160,.5);margin:0 0 18px; }
     .hint-dots { display:flex;gap:14px;justify-content:center; }
     .dot { width:8px;height:8px;border-radius:50%; }
@@ -135,7 +141,7 @@
     .mfill { position:absolute;left:0;top:0;bottom:0;border-radius:2px;transition:width .1s; }
     .mnum { font-size:10px;letter-spacing:2px;color:var(--ink-dim); }
     /* vj rack */
-    .rack { position:absolute;top:0;right:0;bottom:0;width:384px;background:rgba(11,12,15,.62);backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px);border-left:1px solid var(--line);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent; }
+    .rack { position:absolute;top:0;right:0;bottom:0;width:384px;background:rgba(11,12,15,.12);backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px);border-left:1px solid var(--line);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent; }
     .rack::-webkit-scrollbar { width:6px; }
     .rack::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1);border-radius:6px; }
     .rack-inner { padding:20px 20px 40px; }
@@ -210,6 +216,25 @@
     .big:hover, .export-row .two button:hover { color:var(--ink);border-color:rgba(255,255,255,.22); }
     .big { border-color:rgba(195,78,160,.3);color:var(--cyan);text-align:center; }
     input[type='file'] { display:none; }
+
+    /* mobile: srcBar (IMAGE/VIDEO/CAM/FIELD/SHARDS/MESH/TUNNEL) deborde et se fait clipper des 2 cotes en centrage fixe */
+    @media (max-width: 640px) {
+      #srcBar { max-width:calc(100vw - 16px); overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+      #srcBar::-webkit-scrollbar { display:none; }
+      .sb-label { display:none; }
+      .sb-bloc { padding:0 8px;gap:4px; }
+      #srcBar .sb { padding:5px 7px;font-size:10px;gap:4px; }
+      #srcBar .sb .ti { font-size:13px; }
+      #blendSel { display:none!important; }
+      .macros { display:grid;grid-template-columns:repeat(2,1fr);gap:8px;width:min(92vw,360px);bottom:84px; }
+      .macro { width:100%;height:auto;padding:10px 12px;flex-direction:row;justify-content:flex-start;align-items:center;gap:10px; }
+      .macro-icon { flex:none; }
+      .macro-icon svg { width:26px;height:26px; }
+      .macro-bottom { align-items:flex-start;gap:4px;flex:1;min-width:0; }
+      .mname { font-size:13px; }
+      .mtrack { width:100%; }
+      .mnum { font-size:9px;letter-spacing:1.5px; }
+    }
   </style>
 </head>
 <body>
@@ -222,11 +247,11 @@
     </div>
     <canvas id="cv"></canvas>
     <canvas id="trailCanvas"></canvas>
-    <div id="xyBar" style="display:none"><div id="xyBarLabel"></div><div id="xyBarTrack"><div id="xyBarFill"></div></div></div>
+    <div id="xyBar" style="display:none"><div id="xyBarLabel"></div><div id="xyBarTrack"><div id="xyBarFill"></div></div><div id="xyBarLabelX"></div></div>
     <input type="file" id="fileIn" accept="image/*" />
     <input type="file" id="vidIn" accept="video/*" />
     <div class="ui-over">
-      <div class="wm"><span id="dot"></span><span class="wmname">Animæ</span></div>
+      <div class="wm"><span id="dot"></span><span class="wmname">Animæ</span><div class="wm-social"><a href="https://linktr.ee/thomasmaury" target="_blank">by Thomas Maury</a><a href="https://ko-fi.com/tm_ai0" target="_blank" class="kofi"><i class="ti ti-coffee"></i></a></div></div>
       <nav class="modebar" id="modeBarNav">
         <div class="seg on" data-mode="simple"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="7" r="3.4"/></svg><span class="slabel">SIMPLE</span></div>
         <div class="seg" data-mode="public"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="4" cy="4" r="1.7"/><circle cx="10" cy="4" r="1.7"/><circle cx="4" cy="10" r="1.7"/><circle cx="10" cy="10" r="1.7"/></svg><span class="slabel">PUBLIC</span></div>
@@ -290,7 +315,7 @@
       <div class="mode-layer hidden" id="layerVJ">
         <aside class="rack" id="panel">
           <div class="rack-inner">
-            <div class="rack-bar"><span class="rack-title">Rack</span><button class="rack-chaos" id="rackChaos">&#8623; chaos</button></div>
+            <div class="rack-bar"><span class="rack-title">Rack</span><div style="display:flex;gap:6px"><button class="rack-chaos" id="rackResetAll">&#8634; reset all</button><button class="rack-chaos" id="rackChaos">&#8623; chaos</button></div></div>
             <div class="rsec">
               <div class="rhead"><span>SOURCE</span></div>
               <div class="src-row" id="srcRow">
@@ -368,16 +393,15 @@
             <button class="sb" data-sb="tunnel"><i class="ti ti-tunnel"></i>TUNNEL</button>
           </div>
         </div>
-        <div id="blendSel" class="hidden">
+        <div id="blendSel">
           <div class="sb-divider"></div>
           <div class="sb-bloc" style="background:transparent">
             <span class="sb-label" style="color:#4a5060">BLEND</span>
             <div class="sb-btns">
               <button class="bm on" data-bm="source-over">Normal</button>
-              <button class="bm" data-bm="lighter">Add</button>
-              <button class="bm" data-bm="multiply">Multiply</button>
               <button class="bm" data-bm="screen">Screen</button>
-              <button class="bm" data-bm="luminosity">Luma</button>
+              <button class="bm" data-bm="lighter">Add</button>
+              <button class="bm" data-bm="difference">Difference</button>
             </div>
           </div>
         </div>
@@ -753,7 +777,7 @@
       function drawField(x, W, H, rnd) {
         const s = W / 1280
         x.globalCompositeOperation = 'lighter'
-        const n = Math.floor((W * H) / 4000)
+        const n = Math.floor((W * H) / 4000) * 3
         for (let i = 0; i < n; i++) {
           let px = rnd() * W,
             py = rnd() * H
@@ -765,7 +789,7 @@
               : rnd() < 0.1
                 ? 'rgba(255,80,110,'
                 : 'rgba(220,235,255,'
-          x.strokeStyle = tint + (0.02 + rnd() * 0.06) + ')'
+          x.strokeStyle = tint + (0.08 + rnd() * 0.17) + ')'
           x.lineWidth = 0.6 + rnd() * 1.4
           x.beginPath()
           x.moveTo(px, py)
@@ -784,6 +808,16 @@
             r = (100 + rnd() * 300) * s
           const g = x.createRadialGradient(gx, gy, 0, gx, gy, r)
           g.addColorStop(0, 'rgba(80,140,200,0.06)')
+          g.addColorStop(1, 'rgba(0,0,0,0)')
+          x.fillStyle = g
+          x.fillRect(0, 0, W, H)
+        }
+        const FIELD_PALETTE = [[120,200,255],[255,80,110],[200,100,255],[255,200,80]]
+        for (let i = 0; i < 4; i++) {
+          const gx = rnd() * W, gy = rnd() * H, r = (300 + rnd() * 500) * s
+          const c = FIELD_PALETTE[i]
+          const g = x.createRadialGradient(gx, gy, 0, gx, gy, r)
+          g.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},0.15)`)
           g.addColorStop(1, 'rgba(0,0,0,0)')
           x.fillStyle = g
           x.fillRect(0, 0, W, H)
@@ -1197,12 +1231,26 @@
         if (t.scan) fxScanlines(d, W, H, p)
         if (t.vignette) fxVignette(d, W, H, p)
       }
+      const blitOffscreen = document.createElement('canvas')
+      const GEN_SOURCES = ['field', 'shards', 'mesh', 'tunnel']
       function blit(img) {
         if (cv.width !== img.width || cv.height !== img.height) {
+          console.log('cv resized:', cv.width, '→', img.width)
           cv.width = img.width
           cv.height = img.height
         }
-        ctx.putImageData(img, 0, 0)
+        const bm = state.blendMode || 'source-over'
+        console.log('blit called:', state.sourceMode, GEN_SOURCES.indexOf(state.sourceMode), state.blendMode)
+        if (GEN_SOURCES.indexOf(state.sourceMode) !== -1 && bm !== 'source-over') {
+          blitOffscreen.width  = img.width
+          blitOffscreen.height = img.height
+          blitOffscreen.getContext('2d').putImageData(img, 0, 0)
+          ctx.globalCompositeOperation = bm
+          ctx.drawImage(blitOffscreen, 0, 0)
+          ctx.globalCompositeOperation = 'source-over'
+        } else {
+          ctx.putImageData(img, 0, 0)
+        }
       }
 
       /* ---- rendu statique (pause / tweak) ---- */
@@ -1633,6 +1681,13 @@
         syncUI()
         scheduleRender()
         var _mk = ['speed','band','chroma','depth']; window.currentMacro = _mk[Math.floor(Math.random()*4)]
+        var LIVE_SRC = ['upload', 'video', 'cam']
+        if (LIVE_SRC.indexOf(state.sourceMode) === -1) {
+          var GEN_LIST = ['field', 'shards', 'mesh', 'tunnel']
+          var newSrc = GEN_LIST[Math.floor(Math.random() * GEN_LIST.length)]
+          var newSrcBtn = document.querySelector('#srcBar .sb[data-sb="' + newSrc + '"]')
+          if (newSrcBtn) newSrcBtn.click()
+        }
       })
       document.getElementById('resetBtn').addEventListener('click', () => {
         GROUPS.forEach((g) => {
@@ -1692,11 +1747,13 @@
 
         // bar
         var xyBar   = document.getElementById('xyBar')
-        var xyFill  = document.getElementById('xyBarFill')
-        var xyLabel = document.getElementById('xyBarLabel')
+        var xyFill   = document.getElementById('xyBarFill')
+        var xyLabel  = document.getElementById('xyBarLabel')
+        var xyLabelX = document.getElementById('xyBarLabelX')
 
         var MODE_COLORS = { speed:'#c34ea0', band:'#e8b86c', chroma:'#7d68e6', depth:'#56d6ff' }
-        var MODE_YLABEL = { speed:'abMag', band:'bandAmt', chroma:'abMag', depth:'tunSpd' }
+        var MODE_YLABEL = { speed:'color split', band:'fracture force', chroma:'color split', depth:'depth' }
+        var MODE_XLABEL = { speed:'ghost trail', band:'fracture rate', chroma:'spectrum angle', depth:'spin' }
 
         function resizeTrail() {
           tCv.width  = tCv.offsetWidth
@@ -1714,7 +1771,8 @@
           var col = 'rgb(' + r + ',' + g + ',' + b + ')'
           var lw = Math.min(28, Math.max(2, 2 + spd * 1.8))
           tCtx.globalCompositeOperation = 'lighter'
-          tCtx.filter = 'blur(3px)'
+          tCtx.filter = 'blur(6px)'
+          tCtx.globalAlpha = 0.7
           tCtx.strokeStyle = col
           tCtx.lineWidth = lw
           tCtx.lineCap = 'round'
@@ -1725,6 +1783,7 @@
           tCtx.moveTo(trailPrevPx, trailPrevPy)
           tCtx.lineTo(x, y)
           tCtx.stroke()
+          tCtx.globalAlpha = 1
           tCtx.filter = 'none'
           tCtx.shadowBlur = 0
           tCtx.globalCompositeOperation = 'source-over'
@@ -1733,7 +1792,7 @@
 
         function trailFrame() {
           tCtx.globalCompositeOperation = 'source-over'
-          tCtx.fillStyle = 'rgba(0,0,0,0.04)'
+          tCtx.fillStyle = 'rgba(0,0,0,0.08)'
           tCtx.fillRect(0, 0, tCv.width, tCv.height)
           trailRafId = requestAnimationFrame(trailFrame)
         }
@@ -1751,9 +1810,12 @@
 
         function updateBar(canvasX, canvasY, ny) {
           var macro = window.currentMacro || 'speed'
+          var col = MODE_COLORS[macro] || '#e8b86c'
           xyFill.style.height = (ny * 80) + 'px'
-          xyFill.style.background = MODE_COLORS[macro] || '#e8b86c'
+          xyFill.style.background = col
+          xyFill.style.boxShadow = '0 0 8px ' + col
           xyLabel.textContent = MODE_YLABEL[macro] || ''
+          xyLabelX.textContent = MODE_XLABEL[macro] || ''
           xyBar.style.left = (canvasX + 16) + 'px'
           xyBar.style.top  = (canvasY - 40) + 'px'
         }
@@ -1913,6 +1975,40 @@
         })
         var rackChaos = document.getElementById('rackChaos')
         if (rackChaos) rackChaos.addEventListener('click', function() { document.getElementById('chaos').click() })
+        var rackResetAll = document.getElementById('rackResetAll')
+        if (rackResetAll) rackResetAll.addEventListener('click', function() {
+          /* effets (toggles + params) */
+          document.getElementById('resetBtn').click()
+          /* seed */
+          state.seed = 1337
+          var si = document.getElementById('seedIn'); if (si) si.value = 1337
+          /* motion engine */
+          ANIM.speed = 1.0
+          var ms = document.getElementById('m_speed'), vs = document.getElementById('v_speed')
+          if (ms) ms.value = 1; if (vs) vs.textContent = '1.0'
+          MOTION.forEach(function(m) {
+            ANIM[m.k] = m.on; ANIM[m.rate] = m.val
+            var r = document.getElementById('m_' + m.rate), v = document.getElementById('v_' + m.rate)
+            if (r) r.value = m.val; if (v) v.textContent = m.val
+          })
+          var rows = document.querySelectorAll('#motionRows .mrow.toggle')
+          MOTION.forEach(function(m, i) { if (rows[i]) rows[i].classList.toggle('on', m.on) })
+          /* tunnel */
+          ANIM.tunnelSpeed = 45; ANIM.tunnelRot = 8
+          var ts = document.getElementById('m_tunnelSpeed'), vts = document.getElementById('v_tunnelSpeed')
+          if (ts) ts.value = 45; if (vts) vts.textContent = '45'
+          var tr = document.getElementById('m_tunnelRot'), vtr = document.getElementById('v_tunnelRot')
+          if (tr) tr.value = 8; if (vtr) vtr.textContent = '8'
+          /* resolution */
+          ANIM.res = 560
+          document.querySelectorAll('#resRow button').forEach(function(b) { b.classList.toggle('on', b.dataset.r === '560') })
+          /* source -> tunnel + blend normal */
+          state.blendMode = 'source-over'
+          document.querySelectorAll('#blendSel .bm').forEach(function(b) { b.classList.toggle('on', b.dataset.bm === 'source-over') })
+          var tb = document.querySelector('#srcBar .sb[data-sb="tunnel"]')
+          if (tb) tb.click()
+          scheduleRender()
+        })
         /* source bar */
         var MEDIA_SRC = ['upload', 'video', 'cam']
         var currentMode = 'simple'
@@ -1923,7 +2019,6 @@
         }
         function refreshSrcBar(src) {
           document.querySelectorAll('#srcBar .sb').forEach(function(b){ b.classList.toggle('on', b.dataset.sb === src) })
-          document.getElementById('blendSel').classList.toggle('hidden', MEDIA_SRC.indexOf(src) === -1)
           updateHint()
         }
         document.getElementById('srcBar').addEventListener('click', function(e) {
@@ -1934,6 +2029,13 @@
           else if (src === 'video') { document.getElementById('vidIn').click() }
           else if (src === 'cam') { document.getElementById('camBtn').click() }
           else {
+            if (VIDEO.srcObject) {
+              VIDEO.srcObject.getTracks().forEach(function(t){ t.stop() })
+              VIDEO.srcObject = null
+            }
+            VIDEO.src = ''
+            VIDEO.pause()
+            state.uploadedImage = null
             var real = document.querySelector('#srcRow [data-src="' + src + '"]')
             if (real) real.click()
             refreshSrcBar(src)
@@ -1946,6 +2048,7 @@
           var btn = e.target.closest('.bm')
           if (!btn) return
           state.blendMode = btn.dataset.bm
+          console.log('blendMode changed:', state.blendMode)
           document.querySelectorAll('#blendSel .bm').forEach(function(b){ b.classList.toggle('on', b === btn) })
           if (typeof scheduleRender === 'function') scheduleRender()
         })
@@ -1994,6 +2097,57 @@
           window.addEventListener('touchmove', function(e){ if(!dragging) return; update(startV+(e.touches[0].clientX-startX)/200) }, {passive:true})
           window.addEventListener('touchend', function(){ dragging=false })
         })
+      })()
+    </script>
+    <script>
+      /* VJ rack : swipe-down pour fermer (tiroir), actif seulement scrollTop=0 pour ne pas gener le scroll normal */
+      ;(function () {
+        var rack = document.getElementById('panel')
+        if (!rack) return
+        var startY = null, dragging = false, pulling = false
+        var CLOSE_THRESHOLD = 260
+        function onStart(e) {
+          var t = e.touches ? e.touches[0] : e
+          startY = t.clientY
+          dragging = true
+          pulling = false
+          rack.style.transition = 'none'
+        }
+        function onMove(e) {
+          if (!dragging) return
+          var t = e.touches ? e.touches[0] : e
+          var dy = t.clientY - startY
+          if (rack.scrollTop <= 0 && dy > 0) {
+            pulling = true
+            e.preventDefault()
+            var damp = Math.min(dy * 0.6, 220)
+            rack.style.transform = 'translateY(' + damp + 'px)'
+          }
+        }
+        function onEnd(e) {
+          if (!dragging) return
+          dragging = false
+          rack.style.transition = 'transform .22s ease'
+          if (pulling) {
+            var t = e.changedTouches ? e.changedTouches[0] : e
+            var dy = t.clientY - startY
+            if (dy > CLOSE_THRESHOLD) {
+              rack.style.transform = 'translateY(115%)'
+              setTimeout(function () {
+                var simpleSeg = document.querySelector('.seg[data-mode="simple"]')
+                if (simpleSeg) simpleSeg.click()
+                rack.style.transition = 'none'
+                rack.style.transform = ''
+              }, 200)
+            } else {
+              rack.style.transform = ''
+            }
+          }
+          pulling = false
+        }
+        rack.addEventListener('touchstart', onStart, { passive: true })
+        rack.addEventListener('touchmove', onMove, { passive: false })
+        rack.addEventListener('touchend', onEnd)
       })()
     </script>
 </html>

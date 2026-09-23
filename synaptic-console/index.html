@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroaeHive — Synaptic Console</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #06060e;
+            --bg-panel: #0c0c18;
+            --bg-surface: #10101f;
+            --bg-elevated: #161628;
+            --border-dim: rgba(255,255,255,0.04);
+            --border-glow: rgba(0,204,170,0.15);
+            --text-primary: #d0d0e8;
+            --text-secondary: #5a5a7a;
+            --text-muted: #3a3a55;
+            --accent-cyan: #00ccaa;
+            --accent-magenta: #e055a0;
+            --accent-indigo: #4466cc;
+            --accent-amber: #ddaa44;
+            --knob-track: rgba(255,255,255,0.06);
+        }
+
+        @keyframes breathe {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(0,204,170,0.08); }
+            50% { border-color: rgba(0,204,170,0.25); }
+        }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100vh); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Azeret Mono', monospace;
+            background: var(--bg-deep);
+            min-height: 100vh;
+            color: var(--text-primary);
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        /* === MAIN LAYOUT === */
+        .app {
+            display: flex;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* === SCANLINE OVERLAY === */
+        .app::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.03) 2px,
+                rgba(0,0,0,0.03) 4px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* === SIDEBAR PANEL === */
+        .panel {
+            width: 340px;
+            flex-shrink: 0;
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border-dim);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            z-index: 10;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .panel.hidden {
+            transform: translateX(-100%);
+            position: absolute;
+            height: 100%;
+        }
+
+        /* === HEADER === */
+        .panel-header {
+            padding: 20px 22px 16px;
+            border-bottom: 1px solid var(--border-dim);
+            animation: fadeInUp 0.6s ease both;
+        }
+
+        .brand-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 2.5px;
+            color: var(--accent-cyan);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .brand-tag::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            animation: breathe 3s ease-in-out infinite;
+            box-shadow: 0 0 8px var(--accent-cyan);
+        }
+
+        .panel-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 26px;
+            font-weight: 400;
+            color: #e8e8f8;
+            line-height: 1.1;
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+        }
+
+        .panel-subtitle {
+            font-size: 10px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            letter-spacing: 0.3px;
+        }
+
+        /* === SECTIONS === */
+        .section {
+            padding: 16px 22px;
+            border-bottom: 1px solid var(--border-dim);
+            animation: fadeInUp 0.6s ease both;
+        }
+
+        .section:nth-child(2) { animation-delay: 0.05s; }
+        .section:nth-child(3) { animation-delay: 0.1s; }
+        .section:nth-child(4) { animation-delay: 0.15s; }
+        .section:nth-child(5) { animation-delay: 0.2s; }
+        .section:nth-child(6) { animation-delay: 0.25s; }
+
+        .section-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-dim);
+        }
+
+        /* === KNOB CONTROL === */
+        .knob-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+
+        .knob-control {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 8px;
+            padding: 12px 10px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .knob-control:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 0 20px rgba(0,204,170,0.04);
+        }
+
+        .knob-control label {
+            font-size: 8px;
+            font-weight: 500;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            text-align: center;
+        }
+
+        .knob-value {
+            font-size: 16px;
+            font-weight: 300;
+            color: var(--accent-cyan);
+            font-family: 'Azeret Mono', monospace;
+            letter-spacing: -0.5px;
+        }
+
+        .knob-slider {
+            width: 100%;
+            height: 3px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--knob-track);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .knob-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 6px rgba(0,204,170,0.4);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .knob-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+            box-shadow: 0 0 12px rgba(0,204,170,0.6);
+        }
+
+        .knob-slider::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+        }
+
+        /* === SEED CONTROLS === */
+        .seed-display {
+            width: 100%;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Space Mono', monospace;
+            font-size: 15px;
+            color: var(--accent-cyan);
+            text-align: center;
+            margin-bottom: 10px;
+            transition: border-color 0.3s;
+        }
+
+        .seed-display:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 2px rgba(0,204,170,0.1);
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }
+
+        .btn {
+            background: var(--bg-surface);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-dim);
+            padding: 8px 6px;
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 500;
+            font-family: 'Azeret Mono', monospace;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .btn:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-glow);
+            color: var(--text-primary);
+        }
+
+        .btn.accent {
+            background: rgba(0,204,170,0.08);
+            color: var(--accent-cyan);
+            border-color: rgba(0,204,170,0.15);
+        }
+
+        .btn.accent:hover {
+            background: rgba(0,204,170,0.15);
+            border-color: rgba(0,204,170,0.3);
+        }
+
+        .btn.magenta {
+            background: rgba(224,85,160,0.08);
+            color: var(--accent-magenta);
+            border-color: rgba(224,85,160,0.15);
+        }
+
+        .btn.magenta:hover {
+            background: rgba(224,85,160,0.15);
+            border-color: rgba(224,85,160,0.3);
+        }
+
+        .btn.amber {
+            background: rgba(221,170,68,0.08);
+            color: var(--accent-amber);
+            border-color: rgba(221,170,68,0.15);
+        }
+
+        .btn.amber:hover {
+            background: rgba(221,170,68,0.15);
+        }
+
+        /* === MODE SWITCHER === */
+        .mode-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-surface);
+            padding: 4px;
+            border-radius: 6px;
+            border: 1px solid var(--border-dim);
+        }
+
+        .mode-tab {
+            flex: 1;
+            padding: 7px 4px;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            text-align: center;
+            background: transparent;
+            border: none;
+            border-radius: 4px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Azeret Mono', monospace;
+        }
+
+        .mode-tab.active {
+            background: rgba(0,204,170,0.12);
+            color: var(--accent-cyan);
+            box-shadow: 0 0 10px rgba(0,204,170,0.05);
+        }
+
+        .mode-tab:hover:not(.active) {
+            color: var(--text-secondary);
+        }
+
+        /* === TOGGLE SWITCH === */
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+
+        .toggle-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+
+        .toggle {
+            width: 36px;
+            height: 20px;
+            background: var(--knob-track);
+            border-radius: 10px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            border: 1px solid var(--border-dim);
+        }
+
+        .toggle.on {
+            background: rgba(0,204,170,0.25);
+            border-color: rgba(0,204,170,0.3);
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .toggle.on::after {
+            left: 18px;
+            background: var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(0,204,170,0.5);
+        }
+
+        /* === LIVE STATS === */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }
+
+        .stat-cell {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            padding: 8px 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 15px;
+            font-weight: 300;
+            color: var(--accent-cyan);
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .stat-label {
+            font-size: 7px;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        /* === OSCILLOSCOPE === */
+        .oscilloscope {
+            width: 100%;
+            height: 50px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .oscilloscope canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* === KEYBOARD HINTS === */
+        .kb-hints {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 6px;
+        }
+
+        .kb-key {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 7px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            font-size: 8px;
+            color: var(--text-muted);
+        }
+
+        .kb-key kbd {
+            font-family: 'Azeret Mono', monospace;
+            color: var(--accent-cyan);
+            font-size: 9px;
+            font-weight: 700;
+        }
+
+        /* === CANVAS AREA === */
+        .viewport {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: var(--bg-deep);
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        #canvas-container canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* === PERFORMANCE HUD === */
+        .hud {
+            position: absolute;
+            top: 16px;
+            right: 20px;
+            display: flex;
+            gap: 16px;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .hud-item {
+            font-size: 10px;
+            color: rgba(0,204,170,0.5);
+            font-family: 'Space Mono', monospace;
+        }
+
+        /* === INTERACTION HINT === */
+        .interaction-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: rgba(255,255,255,0.15);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            z-index: 100;
+            pointer-events: none;
+            animation: breathe 4s ease-in-out infinite;
+        }
+
+        /* === FULLSCREEN MODE === */
+        body.fullscreen .panel { transform: translateX(-100%); position: absolute; }
+        body.fullscreen .interaction-hint { display: none; }
+        body.fullscreen .hud { display: none; }
+
+        /* === RESPONSIVE === */
+        @media (max-width: 800px) {
+            .panel { width: 280px; }
+            .knob-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- CONTROL PANEL -->
+        <div class="panel" id="panel">
+            <div class="panel-header">
+                <div class="brand-tag">NeuroaeHive</div>
+                <div class="panel-title">Synaptic Console</div>
+                <div class="panel-subtitle">Neural network instrument — touch, listen, perform</div>
+            </div>
+
+            <!-- VISUALIZATION MODE -->
+            <div class="section">
+                <div class="section-label">Visualization</div>
+                <div class="mode-tabs" id="mode-tabs">
+                    <button class="mode-tab active" data-mode="neural" onclick="setMode('neural')">Neural</button>
+                    <button class="mode-tab" data-mode="heat" onclick="setMode('heat')">Heat</button>
+                    <button class="mode-tab" data-mode="wave" onclick="setMode('wave')">Wave</button>
+                </div>
+            </div>
+
+            <!-- SEED -->
+            <div class="section">
+                <div class="section-label">Seed</div>
+                <input type="number" id="seed-input" class="seed-display" value="12345" onchange="updateSeed()">
+                <div class="btn-grid">
+                    <button class="btn" onclick="prevSeed()">← Prev</button>
+                    <button class="btn accent" onclick="randomSeedAndUpdate()">Random</button>
+                    <button class="btn" onclick="nextSeed()">Next →</button>
+                </div>
+            </div>
+
+            <!-- NETWORK PARAMS -->
+            <div class="section">
+                <div class="section-label">Network</div>
+                <div class="knob-row">
+                    <div class="knob-control">
+                        <label>Nodes</label>
+                        <span class="knob-value" id="v-nodeCount">140</span>
+                        <input class="knob-slider" type="range" id="nodeCount" min="40" max="280" step="10" value="140" oninput="setParam('nodeCount', this.value)">
+                    </div>
+                    <div class="knob-control">
+                        <label>Radius</label>
+                        <span class="knob-value" id="v-connectionRadius">130</span>
+                        <input class="knob-slider" type="range" id="connectionRadius" min="60" max="220" step="5" value="130" oninput="setParam('connectionRadius', this.value)">
+                    </div>
+                </div>
+                <div class="knob-row">
+                    <div class="knob-control">
+                        <label>Velocity</label>
+                        <span class="knob-value" id="v-propSpeed">2.0</span>
+                        <input class="knob-slider" type="range" id="propSpeed" min="0.3" max="5.0" step="0.1" value="2.0" oninput="setParam('propSpeed', this.value)">
+                    </div>
+                    <div class="knob-control">
+                        <label>Fire Rate</label>
+                        <span class="knob-value" id="v-fireRate">0.005</span>
+                        <input class="knob-slider" type="range" id="fireRate" min="0.001" max="0.025" step="0.001" value="0.005" oninput="setParam('fireRate', this.value)">
+                    </div>
+                </div>
+                <div class="knob-row">
+                    <div class="knob-control">
+                        <label>Refractory</label>
+                        <span class="knob-value" id="v-refractory">55</span>
+                        <input class="knob-slider" type="range" id="refractory" min="15" max="120" step="5" value="55" oninput="setParam('refractory', this.value)">
+                    </div>
+                    <div class="knob-control">
+                        <label>Decay</label>
+                        <span class="knob-value" id="v-decay">0.960</span>
+                        <input class="knob-slider" type="range" id="decay" min="0.900" max="0.995" step="0.005" value="0.960" oninput="setParam('decay', this.value)">
+                    </div>
+                </div>
+                <div class="knob-row">
+                    <div class="knob-control">
+                        <label>Bloom</label>
+                        <span class="knob-value" id="v-bloom">0.65</span>
+                        <input class="knob-slider" type="range" id="bloom" min="0" max="1.0" step="0.05" value="0.65" oninput="setParam('bloom', this.value)">
+                    </div>
+                    <div class="knob-control">
+                        <label>Touch Radius</label>
+                        <span class="knob-value" id="v-touchRadius">100</span>
+                        <input class="knob-slider" type="range" id="touchRadius" min="30" max="250" step="10" value="100" oninput="setParam('touchRadius', this.value)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- AUDIO ENGINE -->
+            <div class="section">
+                <div class="section-label">Audio Engine</div>
+                <div class="toggle-row">
+                    <span class="toggle-label">Synaptic Sonification</span>
+                    <div class="toggle" id="toggle-audio" onclick="toggleAudio()"></div>
+                </div>
+                <div class="toggle-row">
+                    <span class="toggle-label">Microphone Reactive</span>
+                    <div class="toggle" id="toggle-mic" onclick="toggleMic()"></div>
+                </div>
+                <div class="knob-row" style="margin-top:10px">
+                    <div class="knob-control">
+                        <label>Volume</label>
+                        <span class="knob-value" id="v-volume">-18</span>
+                        <input class="knob-slider" type="range" id="volume" min="-40" max="0" step="1" value="-18" oninput="setParam('volume', this.value)">
+                    </div>
+                    <div class="knob-control">
+                        <label>Reverb</label>
+                        <span class="knob-value" id="v-reverb">0.7</span>
+                        <input class="knob-slider" type="range" id="reverb" min="0" max="1.0" step="0.05" value="0.7" oninput="setParam('reverb', this.value)">
+                    </div>
+                </div>
+                <div class="oscilloscope" id="oscilloscope-container">
+                    <canvas id="osc-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- LIVE STATS -->
+            <div class="section">
+                <div class="section-label">Diagnostics</div>
+                <div class="stats-grid">
+                    <div class="stat-cell">
+                        <span class="stat-value" id="stat-firing">0</span>
+                        <span class="stat-label">Firing</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="stat-value" id="stat-pulses">0</span>
+                        <span class="stat-label">Pulses</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="stat-value" id="stat-fps">60</span>
+                        <span class="stat-label">FPS</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ACTIONS -->
+            <div class="section">
+                <div class="section-label">Actions</div>
+                <div class="btn-grid" style="grid-template-columns: 1fr 1fr;">
+                    <button class="btn accent" onclick="resetParams()">Reset</button>
+                    <button class="btn magenta" onclick="exportPNG()">↓ Export</button>
+                </div>
+                <div style="margin-top:10px">
+                    <button class="btn amber" onclick="toggleFullscreen()" style="width:100%">F — Performance Mode</button>
+                </div>
+                <div class="kb-hints">
+                    <span class="kb-key"><kbd>F</kbd> Fullscreen</span>
+                    <span class="kb-key"><kbd>R</kbd> Random</span>
+                    <span class="kb-key"><kbd>S</kbd> Audio</span>
+                    <span class="kb-key"><kbd>M</kbd> Mic</span>
+                    <span class="kb-key"><kbd>1-3</kbd> Modes</span>
+                    <span class="kb-key"><kbd>Space</kbd> Burst</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEWPORT -->
+        <div class="viewport">
+            <div id="canvas-container"></div>
+            <div class="hud">
+                <span class="hud-item" id="hud-mode">NEURAL</span>
+                <span class="hud-item" id="hud-seed">SEED: 12345</span>
+                <span class="hud-item" id="hud-nodes">N: 0</span>
+            </div>
+            <div class="interaction-hint">Click to stimulate — Drag to cascade</div>
+        </div>
+    </div>
+
+    <script>
+    // ═══════════════════════════════════════════════════════════════════════
+    // NEUROAEHIVE — SYNAPTIC CONSOLE
+    // A living neural performance instrument
+    // ═══════════════════════════════════════════════════════════════════════
+
+    let params = {
+        seed: 12345,
+        nodeCount: 140,
+        connectionRadius: 130,
+        propSpeed: 2.0,
+        fireRate: 0.005,
+        refractory: 55,
+        decay: 0.960,
+        bloom: 0.65,
+        touchRadius: 100,
+        volume: -18,
+        reverb: 0.7
+    };
+
+    let defaultParams = JSON.parse(JSON.stringify(params));
+
+    // State
+    let nodes = [];
+    let connections = [];
+    let pulses = [];
+    let vizMode = 'neural'; // neural | heat | wave
+    let audioEnabled = false;
+    let micEnabled = false;
+    let isFullscreen = false;
+    let activityHistory = [];
+    let heatMap = [];
+    let mouseStimulating = false;
+
+    // Audio
+    let synth, reverb, analyser, micAnalyser, mic;
+    let noteScales = ['C3','D3','E3','G3','A3','C4','D4','E4','G4','A4','C5','E5'];
+    let oscCtx, oscCanvas;
+    let lastNoteTime = 0;
+
+    // ═══════════════════════════════════════════════════════════════
+    // AUDIO ENGINE (Tone.js)
+    // ═══════════════════════════════════════════════════════════════
+
+    function initAudio() {
+        if (synth) return;
+        reverb = new Tone.Reverb({ decay: 4, wet: params.reverb }).toDestination();
+        synth = new Tone.PolySynth(Tone.FMSynth, {
+            maxPolyphony: 12,
+            voice: {
+                oscillator: { type: 'sine' },
+                envelope: { attack: 0.02, decay: 0.4, sustain: 0.05, release: 1.2 },
+                modulation: { type: 'triangle' },
+                modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.8 }
+            }
+        });
+        synth.volume.value = params.volume;
+        synth.connect(reverb);
+        analyser = new Tone.Analyser('waveform', 128);
+        synth.connect(analyser);
+    }
+
+    function playNodeFire(node) {
+        if (!audioEnabled || !synth) return;
+        let now = Tone.now();
+        if (now - lastNoteTime < 0.03) return; // throttle
+        lastNoteTime = now;
+
+        // Map node position to note selection
+        let idx = Math.floor(map(node.pos.y, 0, height, 0, noteScales.length - 1));
+        idx = constrain(idx, 0, noteScales.length - 1);
+        let note = noteScales[idx];
+        let vel = map(node.activation, 0.5, 1, 0.05, 0.35);
+        try {
+            synth.triggerAttackRelease(note, '16n', undefined, vel);
+        } catch(e) {}
+    }
+
+    async function toggleAudio() {
+        if (!audioEnabled) {
+            await Tone.start();
+            initAudio();
+            audioEnabled = true;
+            document.getElementById('toggle-audio').classList.add('on');
+        } else {
+            audioEnabled = false;
+            document.getElementById('toggle-audio').classList.remove('on');
+        }
+    }
+
+    async function toggleMic() {
+        if (!micEnabled) {
+            try {
+                await Tone.start();
+                mic = new Tone.UserMedia();
+                await mic.open();
+                micAnalyser = new Tone.Analyser('waveform', 64);
+                mic.connect(micAnalyser);
+                micEnabled = true;
+                document.getElementById('toggle-mic').classList.add('on');
+            } catch(e) {
+                console.log('Mic access denied');
+            }
+        } else {
+            if (mic) mic.close();
+            micEnabled = false;
+            document.getElementById('toggle-mic').classList.remove('on');
+        }
+    }
+
+    function getMicLevel() {
+        if (!micEnabled || !micAnalyser) return 0;
+        let vals = micAnalyser.getValue();
+        let sum = 0;
+        for (let i = 0; i < vals.length; i++) sum += Math.abs(vals[i]);
+        return sum / vals.length;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // OSCILLOSCOPE
+    // ═══════════════════════════════════════════════════════════════
+
+    function drawOscilloscope() {
+        if (!oscCtx) {
+            oscCanvas = document.getElementById('osc-canvas');
+            let container = document.getElementById('oscilloscope-container');
+            oscCanvas.width = container.clientWidth * 2;
+            oscCanvas.height = 100;
+            oscCtx = oscCanvas.getContext('2d');
+        }
+
+        let w = oscCanvas.width;
+        let h = oscCanvas.height;
+        oscCtx.fillStyle = 'rgba(16,16,31,0.3)';
+        oscCtx.fillRect(0, 0, w, h);
+
+        // Draw center line
+        oscCtx.strokeStyle = 'rgba(0,204,170,0.1)';
+        oscCtx.lineWidth = 1;
+        oscCtx.beginPath();
+        oscCtx.moveTo(0, h/2);
+        oscCtx.lineTo(w, h/2);
+        oscCtx.stroke();
+
+        // Draw waveform from analyser or activity history
+        let data;
+        if (audioEnabled && analyser) {
+            data = analyser.getValue();
+        } else {
+            // Use network activity as waveform
+            data = activityHistory.slice(-128);
+            while(data.length < 128) data.unshift(0);
+        }
+
+        oscCtx.strokeStyle = 'rgba(0,204,170,0.7)';
+        oscCtx.lineWidth = 2;
+        oscCtx.beginPath();
+        let sliceWidth = w / data.length;
+        for (let i = 0; i < data.length; i++) {
+            let v = typeof data[i] === 'number' ? data[i] : 0;
+            let y = h/2 + v * h * 0.45;
+            if (i === 0) oscCtx.moveTo(0, y);
+            else oscCtx.lineTo(i * sliceWidth, y);
+        }
+        oscCtx.stroke();
+
+        // Glow
+        oscCtx.strokeStyle = 'rgba(0,204,170,0.15)';
+        oscCtx.lineWidth = 6;
+        oscCtx.beginPath();
+        for (let i = 0; i < data.length; i++) {
+            let v = typeof data[i] === 'number' ? data[i] : 0;
+            let y = h/2 + v * h * 0.45;
+            if (i === 0) oscCtx.moveTo(0, y);
+            else oscCtx.lineTo(i * sliceWidth, y);
+        }
+        oscCtx.stroke();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // COLOR SYSTEM
+    // ═══════════════════════════════════════════════════════════════
+
+    function activationColor(level, alpha) {
+        let r, g, b;
+        if (level < 0.2) {
+            let t = level / 0.2;
+            r = lerp(10, 20, t); g = lerp(10, 40, t); b = lerp(35, 90, t);
+        } else if (level < 0.5) {
+            let t = (level - 0.2) / 0.3;
+            r = lerp(20, 0, t); g = lerp(40, 204, t); b = lerp(90, 200, t);
+        } else if (level < 0.8) {
+            let t = (level - 0.5) / 0.3;
+            r = lerp(0, 224, t); g = lerp(204, 85, t); b = lerp(200, 160, t);
+        } else {
+            let t = (level - 0.8) / 0.2;
+            r = lerp(224, 255, t); g = lerp(85, 220, t); b = lerp(160, 255, t);
+        }
+        return [r, g, b, alpha];
+    }
+
+    function heatColor(value) {
+        let v = constrain(value, 0, 1);
+        let r, g, b;
+        if (v < 0.33) {
+            let t = v / 0.33;
+            r = lerp(10, 0, t); g = lerp(10, 80, t); b = lerp(50, 180, t);
+        } else if (v < 0.66) {
+            let t = (v - 0.33) / 0.33;
+            r = lerp(0, 220, t); g = lerp(80, 170, t); b = lerp(180, 30, t);
+        } else {
+            let t = (v - 0.66) / 0.34;
+            r = lerp(220, 255, t); g = lerp(170, 255, t); b = lerp(30, 200, t);
+        }
+        return [r, g, b];
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // NEURAL NODE
+    // ═══════════════════════════════════════════════════════════════
+
+    class NeuralNode {
+        constructor(x, y, idx) {
+            this.pos = createVector(x, y);
+            this.idx = idx;
+            this.activation = 0;
+            this.refractoryTimer = 0;
+            this.connections = [];
+            this.baseRadius = random(2.5, 5.5);
+            this.noiseOff = random(1000);
+            this.threshold = random(0.55, 0.85);
+            this.hasFired = false;
+            this.totalFires = 0;
+            this.lastFireFrame = -999;
+        }
+
+        stimulate(amount) {
+            if (this.refractoryTimer <= 0) {
+                this.activation = min(1.0, this.activation + amount);
+            }
+        }
+
+        update(micLevel) {
+            let tremor = noise(this.noiseOff + frameCount * 0.007) * 0.015;
+            
+            // Mic reactivity — external signal stimulates random nodes
+            if (micLevel > 0.02 && this.refractoryTimer <= 0) {
+                let boost = micLevel * 0.6 * random(0, 1);
+                this.activation += boost;
+            }
+
+            if (this.refractoryTimer > 0) {
+                this.refractoryTimer--;
+                this.activation *= 0.9;
+                this.hasFired = false;
+            } else {
+                // Spontaneous fire
+                if (this.activation < 0.15 && random() < params.fireRate * 0.016) {
+                    this.activation = 1.0;
+                    this.fire();
+                }
+
+                // Threshold crossing
+                if (!this.hasFired && this.activation >= this.threshold) {
+                    this.fire();
+                }
+
+                this.activation *= params.decay;
+                this.activation += tremor;
+                this.activation = constrain(this.activation, 0, 1);
+            }
+        }
+
+        fire() {
+            this.hasFired = true;
+            this.refractoryTimer = params.refractory;
+            this.activation = 1.0;
+            this.totalFires++;
+            this.lastFireFrame = frameCount;
+
+            for (let ci of this.connections) {
+                let target = nodes[ci];
+                let d = p5.Vector.dist(this.pos, target.pos);
+                pulses.push(new Pulse(this.idx, ci, d));
+            }
+
+            playNodeFire(this);
+        }
+
+        drawNeural() {
+            let a = this.activation;
+            let r = this.baseRadius + a * 7;
+
+            // Bloom
+            if (a > 0.25 && params.bloom > 0) {
+                let br = r * (3 + a * 5) * params.bloom;
+                let ba = a * 25 * params.bloom;
+                let c = activationColor(a, ba);
+                noStroke(); fill(c[0], c[1], c[2], c[3]);
+                ellipse(this.pos.x, this.pos.y, br, br);
+            }
+
+            // Core
+            let c = activationColor(a, 160 + a * 95);
+            noStroke(); fill(c[0], c[1], c[2], c[3]);
+            ellipse(this.pos.x, this.pos.y, r * 2, r * 2);
+
+            // Hot center
+            if (a > 0.5) {
+                fill(255, 255, 255, a * 120);
+                ellipse(this.pos.x, this.pos.y, r * 0.5, r * 0.5);
+            }
+        }
+
+        drawHeat() {
+            let intensity = min(1, this.totalFires / max(1, frameCount) * 200);
+            let c = heatColor(intensity);
+            let r = this.baseRadius * 2 + intensity * 20;
+            noStroke();
+            fill(c[0], c[1], c[2], 20);
+            ellipse(this.pos.x, this.pos.y, r * 4, r * 4);
+            fill(c[0], c[1], c[2], 80 + intensity * 100);
+            ellipse(this.pos.x, this.pos.y, r, r);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // PULSE
+    // ═══════════════════════════════════════════════════════════════
+
+    class Pulse {
+        constructor(from, to, dist) {
+            this.from = from;
+            this.to = to;
+            this.dist = dist;
+            this.progress = 0;
+            this.speed = params.propSpeed / dist;
+            this.energy = 1.0;
+            this.alive = true;
+        }
+
+        update() {
+            this.progress += this.speed;
+            this.energy = 1.0 - this.progress * 0.3;
+            if (this.progress >= 1.0) {
+                nodes[this.to].stimulate(0.18 + this.energy * 0.25);
+                this.alive = false;
+            }
+        }
+
+        draw() {
+            if (!this.alive) return;
+            let f = nodes[this.from].pos;
+            let t = nodes[this.to].pos;
+            let pos = p5.Vector.lerp(f, t, this.progress);
+            let a = this.energy;
+            let c = activationColor(a * 0.8, 180);
+            let sz = 2 + a * 3.5;
+
+            noStroke();
+            fill(c[0], c[1], c[2], 12);
+            ellipse(pos.x, pos.y, sz * 5, sz * 5);
+            fill(c[0], c[1], c[2], c[3]);
+            ellipse(pos.x, pos.y, sz, sz);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // POISSON DISK
+    // ═══════════════════════════════════════════════════════════════
+
+    function poissonDisk(w, h, minD, count) {
+        let pts = [], active = [];
+        let cs = minD / Math.sqrt(2);
+        let cols = Math.ceil(w / cs), rows = Math.ceil(h / cs);
+        let grid = new Array(cols * rows).fill(-1);
+
+        let x0 = random(50, w - 50), y0 = random(50, h - 50);
+        pts.push(createVector(x0, y0));
+        active.push(0);
+        grid[Math.floor(x0 / cs) + Math.floor(y0 / cs) * cols] = 0;
+
+        while (active.length > 0 && pts.length < count) {
+            let ri = Math.floor(random(active.length));
+            let p = pts[active[ri]];
+            let found = false;
+            for (let n = 0; n < 25; n++) {
+                let ang = random(TWO_PI);
+                let dist = random(minD, minD * 2);
+                let nx = p.x + cos(ang) * dist, ny = p.y + sin(ang) * dist;
+                if (nx < 25 || nx > w - 25 || ny < 25 || ny > h - 25) continue;
+                let ci = Math.floor(nx / cs), ri2 = Math.floor(ny / cs);
+                let ok = true;
+                for (let di = -2; di <= 2 && ok; di++) {
+                    for (let dj = -2; dj <= 2 && ok; dj++) {
+                        let ni = ci + di, nj = ri2 + dj;
+                        if (ni >= 0 && ni < cols && nj >= 0 && nj < rows) {
+                            let gi = ni + nj * cols;
+                            if (grid[gi] !== -1 && p5.Vector.dist(createVector(nx, ny), pts[grid[gi]]) < minD) ok = false;
+                        }
+                    }
+                }
+                if (ok) {
+                    let idx = pts.length;
+                    pts.push(createVector(nx, ny));
+                    active.push(idx);
+                    grid[Math.floor(nx / cs) + Math.floor(ny / cs) * cols] = idx;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) active.splice(ri, 1);
+        }
+        return pts;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SYSTEM
+    // ═══════════════════════════════════════════════════════════════
+
+    function initSystem() {
+        randomSeed(params.seed);
+        noiseSeed(params.seed);
+        nodes = []; connections = []; pulses = [];
+        activityHistory = [];
+
+        let canvasW = width, canvasH = height;
+        let minD = map(params.nodeCount, 40, 280, 100, 35);
+        let positions = poissonDisk(canvasW, canvasH, minD, params.nodeCount);
+
+        for (let i = 0; i < positions.length; i++) {
+            nodes.push(new NeuralNode(positions[i].x, positions[i].y, i));
+        }
+
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                let d = p5.Vector.dist(nodes[i].pos, nodes[j].pos);
+                if (d < params.connectionRadius) {
+                    nodes[i].connections.push(j);
+                    nodes[j].connections.push(i);
+                    connections.push([i, j, d]);
+                }
+            }
+        }
+
+        background(6, 6, 14);
+        updateHUD();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // P5 LIFECYCLE
+    // ═══════════════════════════════════════════════════════════════
+
+    function setup() {
+        let container = document.getElementById('canvas-container');
+        let canvas = createCanvas(container.clientWidth, container.clientHeight);
+        canvas.parent('canvas-container');
+        initSystem();
+    }
+
+    function windowResized() {
+        let container = document.getElementById('canvas-container');
+        resizeCanvas(container.clientWidth, container.clientHeight);
+        initSystem();
+    }
+
+    function draw() {
+        let micLvl = getMicLevel();
+
+        // Fade
+        noStroke();
+        fill(6, 6, 14, vizMode === 'heat' ? 8 : 20);
+        rect(0, 0, width, height);
+
+        // Draw connections
+        if (vizMode === 'neural' || vizMode === 'wave') {
+            for (let [i, j, d] of connections) {
+                let a1 = nodes[i].activation, a2 = nodes[j].activation;
+                let mx = max(a1, a2);
+                if (mx > 0.04) {
+                    let c = activationColor(mx * 0.6, mx * 50);
+                    stroke(c[0], c[1], c[2], c[3]);
+                    strokeWeight(0.4 + mx * 1.8);
+                    line(nodes[i].pos.x, nodes[i].pos.y, nodes[j].pos.x, nodes[j].pos.y);
+                } else {
+                    stroke(18, 16, 35, 8);
+                    strokeWeight(0.25);
+                    line(nodes[i].pos.x, nodes[i].pos.y, nodes[j].pos.x, nodes[j].pos.y);
+                }
+            }
+        }
+
+        // Update + draw nodes
+        let firingCount = 0;
+        for (let node of nodes) {
+            node.update(micLvl);
+            if (vizMode === 'neural' || vizMode === 'wave') node.drawNeural();
+            else if (vizMode === 'heat') node.drawHeat();
+            if (node.activation > 0.5) firingCount++;
+        }
+
+        // Pulses
+        for (let i = pulses.length - 1; i >= 0; i--) {
+            pulses[i].update();
+            if (vizMode !== 'heat') pulses[i].draw();
+            if (!pulses[i].alive) pulses.splice(i, 1);
+        }
+        if (pulses.length > 2500) pulses.splice(0, pulses.length - 2500);
+
+        // Wave mode: overlay concentric activity rings
+        if (vizMode === 'wave') {
+            drawWaveOverlay();
+        }
+
+        // Mouse stimulation visual
+        if (mouseStimulating && mouseIsInCanvas()) {
+            noFill();
+            stroke(0, 204, 170, 30);
+            strokeWeight(1);
+            ellipse(mouseX, mouseY, params.touchRadius * 2, params.touchRadius * 2);
+            stroke(0, 204, 170, 10);
+            ellipse(mouseX, mouseY, params.touchRadius * 3, params.touchRadius * 3);
+        }
+
+        // Activity tracking
+        let activity = firingCount / max(1, nodes.length);
+        activityHistory.push(activity);
+        if (activityHistory.length > 256) activityHistory.shift();
+
+        // Update UI
+        if (frameCount % 6 === 0) {
+            document.getElementById('stat-firing').textContent = firingCount;
+            document.getElementById('stat-pulses').textContent = pulses.length;
+            document.getElementById('stat-fps').textContent = Math.round(frameRate());
+        }
+
+        // Oscilloscope
+        if (frameCount % 3 === 0) drawOscilloscope();
+    }
+
+    function drawWaveOverlay() {
+        // Draw expanding rings from recently fired nodes
+        for (let node of nodes) {
+            let elapsed = frameCount - node.lastFireFrame;
+            if (elapsed < 40 && elapsed > 0) {
+                let progress = elapsed / 40;
+                let radius = progress * 150;
+                let alpha = (1 - progress) * 40;
+                noFill();
+                let c = activationColor(1 - progress, alpha);
+                stroke(c[0], c[1], c[2], c[3]);
+                strokeWeight(2 - progress * 1.5);
+                ellipse(node.pos.x, node.pos.y, radius * 2, radius * 2);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MOUSE / TOUCH INTERACTION
+    // ═══════════════════════════════════════════════════════════════
+
+    function mouseIsInCanvas() {
+        return mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height;
+    }
+
+    function mousePressed() {
+        if (!mouseIsInCanvas()) return;
+        mouseStimulating = true;
+        stimulateArea(mouseX, mouseY);
+    }
+
+    function mouseDragged() {
+        if (!mouseIsInCanvas()) return;
+        stimulateArea(mouseX, mouseY);
+    }
+
+    function mouseReleased() {
+        mouseStimulating = false;
+    }
+
+    function stimulateArea(x, y) {
+        let mousePos = createVector(x, y);
+        for (let node of nodes) {
+            let d = p5.Vector.dist(node.pos, mousePos);
+            if (d < params.touchRadius) {
+                let strength = map(d, 0, params.touchRadius, 0.6, 0.05);
+                node.stimulate(strength);
+            }
+        }
+    }
+
+    // Space bar burst
+    function triggerBurst() {
+        for (let node of nodes) {
+            if (random() < 0.25) {
+                node.activation = 1.0;
+                node.fire();
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CONTROLS
+    // ═══════════════════════════════════════════════════════════════
+
+    function setMode(mode) {
+        vizMode = mode;
+        document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+        document.getElementById('hud-mode').textContent = mode.toUpperCase();
+        background(6, 6, 14);
+    }
+
+    function setParam(name, value) {
+        let v = parseFloat(value);
+        params[name] = v;
+        let display = document.getElementById('v-' + name);
+        if (display) display.textContent = value;
+
+        // Audio params
+        if (name === 'volume' && synth) synth.volume.value = v;
+        if (name === 'reverb' && reverb) reverb.wet.value = v;
+
+        // Structural rebuild
+        if (name === 'nodeCount' || name === 'connectionRadius') {
+            initSystem();
+        }
+    }
+
+    function updateSeed() {
+        let v = parseInt(document.getElementById('seed-input').value);
+        if (v && v > 0) { params.seed = v; initSystem(); }
+    }
+
+    function prevSeed() {
+        params.seed = Math.max(1, params.seed - 1);
+        document.getElementById('seed-input').value = params.seed;
+        initSystem();
+    }
+
+    function nextSeed() {
+        params.seed++;
+        document.getElementById('seed-input').value = params.seed;
+        initSystem();
+    }
+
+    function randomSeedAndUpdate() {
+        params.seed = Math.floor(Math.random() * 999999) + 1;
+        document.getElementById('seed-input').value = params.seed;
+        initSystem();
+    }
+
+    function resetParams() {
+        params = JSON.parse(JSON.stringify(defaultParams));
+        // Update all UI
+        for (let key of Object.keys(params)) {
+            let el = document.getElementById(key);
+            let vEl = document.getElementById('v-' + key);
+            if (el) el.value = params[key];
+            if (vEl) vEl.textContent = params[key];
+        }
+        document.getElementById('seed-input').value = params.seed;
+        if (synth) synth.volume.value = params.volume;
+        if (reverb) reverb.wet.value = params.reverb;
+        initSystem();
+    }
+
+    function exportPNG() {
+        saveCanvas('NeuroaeHive-SC-' + params.seed, 'png');
+    }
+
+    function toggleFullscreen() {
+        isFullscreen = !isFullscreen;
+        document.body.classList.toggle('fullscreen', isFullscreen);
+        setTimeout(() => {
+            let container = document.getElementById('canvas-container');
+            resizeCanvas(container.clientWidth, container.clientHeight);
+            initSystem();
+        }, 450);
+    }
+
+    function updateHUD() {
+        document.getElementById('hud-seed').textContent = 'SEED: ' + params.seed;
+        document.getElementById('hud-nodes').textContent = 'N: ' + nodes.length;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // KEYBOARD SHORTCUTS
+    // ═══════════════════════════════════════════════════════════════
+
+    document.addEventListener('keydown', function(e) {
+        // Don't trigger if typing in input
+        if (e.target.tagName === 'INPUT') return;
+
+        switch(e.key.toLowerCase()) {
+            case 'f':
+                toggleFullscreen();
+                break;
+            case 'r':
+                randomSeedAndUpdate();
+                break;
+            case 's':
+                toggleAudio();
+                break;
+            case 'm':
+                toggleMic();
+                break;
+            case '1':
+                setMode('neural');
+                break;
+            case '2':
+                setMode('heat');
+                break;
+            case '3':
+                setMode('wave');
+                break;
+            case ' ':
+                e.preventDefault();
+                triggerBurst();
+                break;
+        }
+    });
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+        let container = document.getElementById('canvas-container');
+        if (container) {
+            resizeCanvas(container.clientWidth, container.clientHeight);
+            initSystem();
+        }
+    });
+    </script>
+</body>
+</html>

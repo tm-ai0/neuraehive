@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NH — Synaptic Mirror v3.1</title>
+<meta name="theme-color" content="#000000">
+<meta name="description" content="NeuroaeHive — WebGL Visual Engine">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+#c{z-index:1}
+video{display:none}
+
+.hud{position:fixed;z-index:100;color:#fff;font-family:'Courier New',monospace;pointer-events:none;opacity:.55;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;text-shadow:0 0 6px rgba(0,255,176,.3);line-height:1.6}
+.hud-tl{top:14px;left:24px}
+.hud-tr{top:14px;right:24px;text-align:right}
+.hud-bl{bottom:14px;left:24px}
+.hud-br{bottom:14px;right:24px;text-align:right}
+
+.bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;gap:6px;transition:opacity .4s;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 48px)}
+.bar.hid{opacity:0;pointer-events:none}
+.b{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#999;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;padding:10px 16px;border-radius:4px;cursor:pointer;pointer-events:all;transition:all .15s;backdrop-filter:blur(6px);min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.b:hover,.b.on{background:rgba(0,255,176,.12);border-color:#00FFB0;color:#00FFB0;box-shadow:0 0 10px rgba(0,255,176,.15)}
+.b.src{background:rgba(210,177,76,.12);border-color:#D2B14C;color:#D2B14C}
+.b.rst{background:rgba(255,51,102,.08);border-color:rgba(255,51,102,.3);color:#ff3366}
+.b.rst:hover{background:rgba(255,51,102,.2);box-shadow:0 0 10px rgba(255,51,102,.2)}
+.sep{width:1px;background:rgba(255,255,255,.08);margin:0 2px;align-self:stretch}
+
+.pbar{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:200;display:flex;flex-direction:column;gap:20px;transition:opacity .4s}
+.pbar.hid{opacity:0;pointer-events:none}
+.ps{width:44px;height:100px;position:relative;cursor:pointer;pointer-events:all;display:flex;justify-content:center}
+.ps .track{width:6px;height:100%;background:rgba(255,255,255,.08);border-radius:3px;position:absolute;left:50%;transform:translateX(-50%)}
+.ps::after{content:attr(data-label);position:absolute;right:48px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.25);font-family:'Courier New',monospace;font-size:8px;letter-spacing:1px;text-transform:uppercase;white-space:nowrap;pointer-events:none;transition:color .15s}
+.ps.active::after{color:#00FFB0}
+.ps.active .track{background:rgba(0,255,176,.12);box-shadow:0 0 8px rgba(0,255,176,.15)}
+.ps.midi-learn::after{color:#D2B14C;animation:midiPulse 1s infinite}
+@keyframes midiPulse{0%,100%{opacity:.4}50%{opacity:1}}
+.pf{position:absolute;bottom:0;width:6px;left:50%;transform:translateX(-50%);background:#00FFB0;border-radius:3px;box-shadow:0 0 6px rgba(0,255,176,.3);transition:height .04s}
+.pk{position:absolute;width:22px;height:22px;background:#00FFB0;border-radius:50%;left:50%;transform:translate(-50%,50%);box-shadow:0 0 12px rgba(0,255,176,.5);pointer-events:all;transition:box-shadow .15s}
+.ps.active .pk{box-shadow:0 0 18px rgba(0,255,176,.8)}
+
+.pal-sel{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:200;display:none;gap:8px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 48px)}
+.pal-sel.show{display:flex}
+.pal-sel.hid{opacity:0;pointer-events:none}
+.pal-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.15);cursor:pointer;pointer-events:all;transition:all .2s;position:relative}
+.pal-dot:hover,.pal-dot.on{border-color:#fff;transform:scale(1.2);box-shadow:0 0 12px currentColor}
+
+.midi-tag{display:inline-block;background:rgba(210,177,76,.2);border:1px solid rgba(210,177,76,.4);color:#D2B14C;font-size:8px;padding:2px 5px;border-radius:3px;margin-left:4px;letter-spacing:.5px;vertical-align:middle;animation:none}
+.midi-tag.flash{animation:midiBlink .1s}
+@keyframes midiBlink{0%{background:rgba(210,177,76,.6)}100%{background:rgba(210,177,76,.2)}}
+
+.am{position:fixed;left:24px;top:50%;transform:translateY(-50%);z-index:200;display:flex;gap:8px;align-items:flex-end;transition:opacity .4s}
+.am.hid{opacity:0;pointer-events:none}
+.mb{width:8px;height:80px;background:rgba(255,255,255,.04);border-radius:4px;position:relative;overflow:hidden}
+.mb::after{content:attr(data-l);position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.25);font-family:'Courier New',monospace;font-size:7px;letter-spacing:.5px;text-transform:uppercase}
+.mf{position:absolute;bottom:0;width:100%;border-radius:4px;transition:height .06s}
+.mb:nth-child(1) .mf{background:#ff3366}
+.mb:nth-child(2) .mf{background:#D2B14C}
+.mb:nth-child(3) .mf{background:#00FFB0}
+.mb:nth-child(4) .mf{background:#A0B4D4}
+.mb:nth-child(5) .mf{background:#aa66ff}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<video id="vid" playsinline autoplay muted></video>
+
+<div class="hud hud-tl">NH — SYNAPTIC MIRROR v3.1<br><span id="hMode">FLUID</span></div>
+<div class="hud hud-tr"><span id="hFps">60</span> FPS<br><span id="hRes"></span></div>
+<div class="hud hud-bl"><span id="hSrc">GEN</span> · <span id="hMic">MIC OFF</span><br><span id="hTch">—</span> · <span id="hMidi">—</span> · <span id="hGyro">—</span></div>
+<div class="hud hud-br">BPM <span id="hBpm">120</span> <span id="hBt">○</span><br><span id="hBtSrc">TAP</span></div>
+
+<div class="am" id="am">
+<div class="mb" data-l="SUB"><div class="mf" id="mS"></div></div>
+<div class="mb" data-l="LOW"><div class="mf" id="mL"></div></div>
+<div class="mb" data-l="MID"><div class="mf" id="mM"></div></div>
+<div class="mb" data-l="HI"><div class="mf" id="mH"></div></div>
+<div class="mb" data-l="PRE"><div class="mf" id="mP"></div></div>
+</div>
+
+<div class="bar" id="bar">
+<button class="b src" id="bGen">Gen</button>
+<button class="b" id="bCam">Cam</button>
+<div class="sep"></div>
+<button class="b" id="bMic">Mic</button>
+<div class="sep"></div>
+<button class="b on" data-m="fluid">Fluid</button>
+<button class="b" data-m="rdiff">R-Diff</button>
+<button class="b" data-m="fractal">Fractal</button>
+<button class="b" data-m="displace">Displace</button>
+<button class="b" data-m="chromatic">Chroma</button>
+<button class="b" data-m="feedback">Feedback</button>
+<button class="b" data-m="kaleid">Kaleid</button>
+<button class="b" data-m="edge">Edge</button>
+<div class="sep"></div>
+<button class="b rst" id="bRst">↺</button>
+<button class="b" id="bFS" title="Fullscreen">⛶</button>
+<button class="b" id="bGyro" title="Gyroscope">◎</button>
+<button class="b" id="bPal" title="Palette">◆</button>
+<button class="b" id="bMidi" title="MIDI Learn">♪</button>
+</div>
+
+<div class="pal-sel" id="palSel"></div>
+
+<div class="pbar" id="pbar">
+<div class="ps" data-label="Intensity" data-p="intensity" data-v=".5"><div class="track"></div><div class="pf" style="height:50%"></div><div class="pk" style="bottom:50%"></div></div>
+<div class="ps" data-label="Speed" data-p="speed" data-v=".5"><div class="track"></div><div class="pf" style="height:50%"></div><div class="pk" style="bottom:50%"></div></div>
+<div class="ps" data-label="Decay" data-p="decay" data-v=".7"><div class="track"></div><div class="pf" style="height:70%"></div><div class="pk" style="bottom:70%"></div></div>
+<div class="ps" data-label="Hue" data-p="hue" data-v="0"><div class="track"></div><div class="pf" style="height:0%"></div><div class="pk" style="bottom:0%"></div></div>
+<div class="ps" data-label="Audio" data-p="audioMix" data-v=".8"><div class="track"></div><div class="pf" style="height:80%"></div><div class="pk" style="bottom:80%"></div></div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════
+// SHADER SOURCES
+// ═══════════════════════════════════════════
+
+const VS = `#version 300 es
+in vec2 a;
+out vec2 uv;
+void main(){uv=a*.5+.5;gl_Position=vec4(a,0,1);}`;
+
+const FS_SPLAT = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uPt;
+uniform vec3 uClr;
+uniform float uRad;
+uniform float uAspect;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec2 d=uv-uPt;d.x*=uAspect;
+  o=texture(uTex,uv)+vec4(uClr*exp(-dot(d,d)/uRad),0);
+}`;
+
+const FS_ADVECT = `#version 300 es
+precision highp float;
+uniform sampler2D uVel;
+uniform sampler2D uSrc;
+uniform float uDt;
+uniform float uDiss;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec2 c=uv-texture(uVel,uv).xy*uDt;
+  o=texture(uSrc,c)*uDiss;
+}`;
+
+const FS_DIVERGE = `#version 300 es
+precision highp float;
+uniform sampler2D uVel;
+uniform vec2 uTx;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float L=texture(uVel,uv-vec2(uTx.x,0)).x;
+  float R=texture(uVel,uv+vec2(uTx.x,0)).x;
+  float B=texture(uVel,uv-vec2(0,uTx.y)).y;
+  float T=texture(uVel,uv+vec2(0,uTx.y)).y;
+  o=vec4(.5*(R-L+T-B),0,0,1);
+}`;
+
+const FS_PRESSURE = `#version 300 es
+precision highp float;
+uniform sampler2D uPrs;
+uniform sampler2D uDiv;
+uniform vec2 uTx;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float L=texture(uPrs,uv-vec2(uTx.x,0)).x;
+  float R=texture(uPrs,uv+vec2(uTx.x,0)).x;
+  float B=texture(uPrs,uv-vec2(0,uTx.y)).x;
+  float T=texture(uPrs,uv+vec2(0,uTx.y)).x;
+  float d=texture(uDiv,uv).x;
+  o=vec4((L+R+B+T-d)*.25,0,0,1);
+}`;
+
+const FS_GRADSUB = `#version 300 es
+precision highp float;
+uniform sampler2D uPrs;
+uniform sampler2D uVel;
+uniform vec2 uTx;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float L=texture(uPrs,uv-vec2(uTx.x,0)).x;
+  float R=texture(uPrs,uv+vec2(uTx.x,0)).x;
+  float B=texture(uPrs,uv-vec2(0,uTx.y)).x;
+  float T=texture(uPrs,uv+vec2(0,uTx.y)).x;
+  vec2 v=texture(uVel,uv).xy-vec2(R-L,T-B)*.5;
+  o=vec4(v,0,1);
+}`;
+
+const FS_CURL = `#version 300 es
+precision highp float;
+uniform sampler2D uVel;
+uniform vec2 uTx;
+uniform float uCurl;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float L=texture(uVel,uv-vec2(uTx.x,0)).y;
+  float R=texture(uVel,uv+vec2(uTx.x,0)).y;
+  float B=texture(uVel,uv-vec2(0,uTx.y)).x;
+  float T=texture(uVel,uv+vec2(0,uTx.y)).x;
+  float curl=R-L-T+B;
+  vec2 v=texture(uVel,uv).xy;
+  // Vorticity confinement
+  float cL=abs(texture(uVel,uv-vec2(uTx.x,0)).y-texture(uVel,uv-2.*vec2(uTx.x,0)).y);
+  float cR=abs(texture(uVel,uv+vec2(uTx.x,0)).y-texture(uVel,uv+2.*vec2(uTx.x,0)).y);
+  float cB=abs(texture(uVel,uv-vec2(0,uTx.y)).x-texture(uVel,uv-2.*vec2(0,uTx.y)).x);
+  float cT=abs(texture(uVel,uv+vec2(0,uTx.y)).x-texture(uVel,uv+2.*vec2(0,uTx.y)).x);
+  vec2 force=vec2(abs(cT)-abs(cB),abs(cL)-abs(cR));
+  float len=length(force)+1e-5;
+  force=force/len*curl*uCurl;
+  o=vec4(v+force,0,1);
+}`;
+
+const FS_RD = `#version 300 es
+precision highp float;
+uniform sampler2D uState;
+uniform vec2 uTx;
+uniform float uFeed;
+uniform float uKill;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec2 st=texture(uState,uv).rg;
+  float a=st.r,b=st.g;
+  vec2 L=texture(uState,uv-vec2(uTx.x,0)).rg;
+  vec2 R=texture(uState,uv+vec2(uTx.x,0)).rg;
+  vec2 T=texture(uState,uv+vec2(0,uTx.y)).rg;
+  vec2 B=texture(uState,uv-vec2(0,uTx.y)).rg;
+  vec2 TL=texture(uState,uv+vec2(-uTx.x,uTx.y)).rg;
+  vec2 TR=texture(uState,uv+vec2(uTx.x,uTx.y)).rg;
+  vec2 BL=texture(uState,uv+vec2(-uTx.x,-uTx.y)).rg;
+  vec2 BR=texture(uState,uv+vec2(uTx.x,-uTx.y)).rg;
+  vec2 lap=(L+R+T+B)*.2+(TL+TR+BL+BR)*.05-st;
+  float rct=a*b*b;
+  float da=1.*lap.r-rct+uFeed*(1.-a);
+  float db=.5*lap.g+rct-(uFeed+uKill)*b;
+  o=vec4(clamp(a+da,0.,1.),clamp(b+db,0.,1.),0,1);
+}`;
+
+const FS_FRACTAL = `#version 300 es
+precision highp float;
+uniform vec2 uC;
+uniform float uZoom;
+uniform vec2 uOff;
+uniform float uTime;
+uniform float uIter;
+in vec2 uv;
+out vec4 o;
+vec3 pal(float t){
+  return .5+.5*cos(6.2832*(vec3(1,.7,.4)*t+vec3(0,.15,.2)+uTime*.05));
+}
+void main(){
+  vec2 z=(uv-.5)*2./uZoom+uOff;
+  float i;
+  for(i=0.;i<300.;i++){
+    if(i>=uIter)break;
+    z=vec2(z.x*z.x-z.y*z.y,2.*z.x*z.y)+uC;
+    if(dot(z,z)>256.)break;
+  }
+  float t=i/uIter;
+  if(i<uIter){
+    float l=log(dot(z,z))*.5;
+    float nu=log(l/log(2.))/log(2.);
+    t=(i+1.-nu)/uIter;
+  }
+  vec3 c=pal(t*3.+uTime*.02);
+  if(i>=uIter)c=vec3(0);
+  o=vec4(c,1);
+}`;
+
+const FS_SOURCE = `#version 300 es
+precision highp float;
+uniform float uTime;
+uniform float uSub;
+uniform float uMid;
+uniform float uEnergy;
+uniform float uHue;
+in vec2 uv;
+out vec4 o;
+vec3 hsv(float h,float s,float v){
+  vec3 c=clamp(abs(mod(h*6.+vec3(0,4,2),6.)-3.)-1.,0.,1.);
+  return v*mix(vec3(1),c,s);
+}
+void main(){
+  float t=uTime;
+  vec2 p=(uv-.5)*4.;
+  float v=0.;
+  v+=sin(p.x*(2.1+uSub*3.)+t*.7+sin(p.y*1.3+t*.5)*(2.+uMid*3.))*.3;
+  v+=sin(p.y*(3.2+uMid*2.)-t*.9+cos(p.x*1.7-t*.3)*1.5)*.25;
+  v+=sin((p.x+p.y)*1.8+t*1.1)*.2;
+  float r=length(p);
+  v+=sin(r*(3.+uSub*8.)-t*(1.3+uEnergy*3.))*.25;
+  v=v*.5+.5;
+  float h=fract(v*.33+uHue+t*.02+uSub*.15);
+  float s=.7+uMid*.3;
+  float l=v*.7+uEnergy*.2;
+  o=vec4(hsv(h,s,l),1);
+}`;
+
+const FS_DISPLACE = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform float uTime;
+uniform float uInt;
+uniform float uSpd;
+uniform float uSub;
+uniform float uBeat;
+uniform vec2 uTch[10];
+uniform int uTchN;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float t=uTime*uSpd;
+  vec2 d=vec2(
+    sin(uv.y*12.+t*2.)*uInt*.05+sin(uv.y*6.+t)*uSub*.08,
+    cos(uv.x*12.+t*1.5)*uInt*.05+cos(uv.x*6.+t*.7)*uSub*.06
+  );
+  for(int i=0;i<10;i++){
+    if(i>=uTchN)break;
+    vec2 dd=uv-uTch[i];
+    float dist=length(dd);
+    if(dist<.3)d+=normalize(dd)*((.3-dist)/.3)*uInt*.15;
+  }
+  float bp=pow(max(0.,1.-uBeat*3.),3.);
+  d.x+=sin(uv.y*30.+uv.x*20.)*bp*.04;
+  d.y+=cos(uv.x*25.-uv.y*15.)*bp*.03;
+  o=texture(uSrc,uv+d);
+}`;
+
+const FS_CHROMATIC = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform float uTime;
+uniform float uInt;
+uniform float uSpd;
+uniform float uEnergy;
+uniform float uSub;
+uniform float uBeat;
+uniform vec2 uTch[10];
+uniform int uTchN;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float t=uTime*uSpd;
+  float bp=pow(max(0.,1.-uBeat*3.),2.);
+  float sp=uInt*.03+.005+bp*.04+uEnergy*.05;
+  for(int i=0;i<10;i++){
+    if(i>=uTchN)break;
+    float dist=length(uv-uTch[i]);
+    if(dist<.2)sp+=((.2-dist)/.2)*.05;
+  }
+  float a1=t*.5,a2=a1+2.094,a3=a1+4.189;
+  float sd=uSub*.03;
+  float r=texture(uSrc,uv+vec2(cos(a1)*sp+sd,sin(a1)*sp)).r;
+  float g=texture(uSrc,uv+vec2(cos(a2)*sp*.5,sin(a2)*sp*.5)).g;
+  float b=texture(uSrc,uv+vec2(cos(a3)*sp-sd,sin(a3)*sp)).b;
+  o=vec4(r,g,b,1);
+}`;
+
+const FS_FEEDBACK = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform sampler2D uPrev;
+uniform float uDecay;
+uniform float uZoom;
+uniform float uRot;
+uniform float uHue;
+uniform float uTime;
+in vec2 uv;
+out vec4 o;
+vec3 hueShift(vec3 c,float h){
+  float a=h*6.2832;
+  float s=sin(a),cs=cos(a);
+  mat3 m=mat3(.299+.701*cs+.168*s,.587-.587*cs+.330*s,.114-.114*cs-.497*s,
+              .299-.299*cs-.328*s,.587+.413*cs+.035*s,.114-.114*cs+.292*s,
+              .299-.299*cs+1.25*s,.587-.587*cs-1.05*s,.114+.886*cs-.203*s);
+  return m*c;
+}
+void main(){
+  vec2 c=uv-.5;
+  float cs=cos(uRot),sn=sin(uRot);
+  c=mat2(cs,-sn,sn,cs)*c;
+  c/=uZoom;
+  c+=.5;
+  vec4 prev=texture(uPrev,c)*uDecay;
+  vec4 curr=texture(uSrc,uv);
+  vec3 mixed=max(curr.rgb,prev.rgb*.97);
+  if(uHue>.01)mixed=hueShift(mixed,uHue);
+  o=vec4(mixed,1);
+}`;
+
+const FS_KALEID = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform float uSegs;
+uniform float uRot;
+uniform vec2 uCenter;
+uniform float uHue;
+uniform float uTime;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec2 p=uv-uCenter;
+  float a=atan(p.y,p.x)+uRot;
+  float r=length(p);
+  float seg=3.14159265*2./uSegs;
+  a=mod(a,seg);
+  if(a>seg*.5)a=seg-a;
+  vec2 tc=vec2(cos(a),sin(a))*r+.5;
+  vec3 c=texture(uSrc,tc).rgb;
+  if(uHue>.01){
+    float h=uHue*6.2832;
+    float sn=sin(h),cs=cos(h);
+    mat3 m=mat3(.299+.701*cs+.168*sn,.587-.587*cs+.330*sn,.114-.114*cs-.497*sn,
+                .299-.299*cs-.328*sn,.587+.413*cs+.035*sn,.114-.114*cs+.292*sn,
+                .299-.299*cs+1.25*sn,.587-.587*cs-1.05*sn,.114+.886*cs-.203*sn);
+    c=m*c;
+  }
+  o=vec4(c,1);
+}`;
+
+const FS_EDGE = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uTx;
+uniform float uInt;
+uniform float uTime;
+in vec2 uv;
+out vec4 o;
+void main(){
+  float tl=dot(texture(uSrc,uv+vec2(-uTx.x,uTx.y)).rgb,vec3(.299,.587,.114));
+  float t=dot(texture(uSrc,uv+vec2(0,uTx.y)).rgb,vec3(.299,.587,.114));
+  float tr=dot(texture(uSrc,uv+uTx).rgb,vec3(.299,.587,.114));
+  float l=dot(texture(uSrc,uv-vec2(uTx.x,0)).rgb,vec3(.299,.587,.114));
+  float r=dot(texture(uSrc,uv+vec2(uTx.x,0)).rgb,vec3(.299,.587,.114));
+  float bl=dot(texture(uSrc,uv-uTx).rgb,vec3(.299,.587,.114));
+  float b=dot(texture(uSrc,uv-vec2(0,uTx.y)).rgb,vec3(.299,.587,.114));
+  float br=dot(texture(uSrc,uv+vec2(uTx.x,-uTx.y)).rgb,vec3(.299,.587,.114));
+  float gx=-tl-2.*l-bl+tr+2.*r+br;
+  float gy=-tl-2.*t-tr+bl+2.*b+br;
+  float edge=sqrt(gx*gx+gy*gy);
+  float angle=atan(gy,gx);
+  edge=smoothstep(.05,.3,edge)*uInt*2.;
+  vec3 neon=.5+.5*cos(angle+uTime*.5+vec3(0,2.094,4.189));
+  o=vec4(neon*edge,1);
+}`;
+
+const FS_BLOOM_EXT = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform float uThreshold;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec3 c=texture(uSrc,uv).rgb;
+  float br=dot(c,vec3(.2126,.7152,.0722));
+  o=vec4(c*smoothstep(uThreshold,uThreshold+.3,br),1);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec4 s=vec4(0);
+  s+=texture(uSrc,uv-4.*uDir)*.0162;
+  s+=texture(uSrc,uv-3.*uDir)*.0540;
+  s+=texture(uSrc,uv-2.*uDir)*.1218;
+  s+=texture(uSrc,uv-1.*uDir)*.1901;
+  s+=texture(uSrc,uv)*.2043;
+  s+=texture(uSrc,uv+1.*uDir)*.1901;
+  s+=texture(uSrc,uv+2.*uDir)*.1218;
+  s+=texture(uSrc,uv+3.*uDir)*.0540;
+  s+=texture(uSrc,uv+4.*uDir)*.0162;
+  o=s;
+}`;
+
+const FS_DISPLAY = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform sampler2D uBloom;
+uniform float uBloomStr;
+uniform vec2 uRes;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec3 c=texture(uSrc,uv).rgb;
+  c+=texture(uBloom,uv).rgb*uBloomStr;
+  // Vignette
+  vec2 q=uv*2.-1.;
+  float vig=1.-dot(q*q,q*q)*.4;
+  c*=vig;
+  // Scanlines
+  c*=.96+.04*sin(uv.y*uRes.y*1.5);
+  // Gamma
+  c=pow(c,vec3(.95));
+  o=vec4(c,1);
+}`;
+
+const FS_COPY = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+in vec2 uv;
+out vec4 o;
+void main(){o=texture(uSrc,uv);}`;
+
+const FS_DYE_INJECT = `#version 300 es
+precision highp float;
+uniform sampler2D uDye;
+uniform sampler2D uCam;
+uniform float uMix;
+in vec2 uv;
+out vec4 o;
+void main(){
+  vec3 dye=texture(uDye,uv).rgb;
+  vec3 cam=texture(uCam,vec2(uv.x,uv.y)).rgb;
+  // Inject camera color where there's not much dye already
+  float dyeStr=dot(dye,vec3(.33));
+  float inject=uMix*smoothstep(0.,.4,1.-dyeStr);
+  o=vec4(mix(dye,cam*1.2,inject),1);
+}`;
+
+const FS_XFADE = `#version 300 es
+precision highp float;
+uniform sampler2D uA;
+uniform sampler2D uB;
+uniform float uMix;
+in vec2 uv;
+out vec4 o;
+void main(){
+  o=mix(texture(uA,uv),texture(uB,uv),uMix);
+}`;
+
+// ═══════════════════════════════════════════
+// WEBGL ENGINE
+// ═══════════════════════════════════════════
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {alpha:false,depth:false,stencil:false,antialias:false,preserveDrawingBuffer:false});
+
+if (!gl) { document.body.innerHTML = '<div style="color:#ff3366;font:20px monospace;padding:40px">WebGL2 not supported</div>'; throw 'no gl'; }
+
+gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+let W, H, simW, simH, dyeW, dyeH;
+
+// Fullscreen quad
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; }
+  return s;
+}
+
+function prog(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); return null; }
+  // Cache uniform locations
+  const ul = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    const name = info.name.replace('[0]','');
+    ul[name] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, ul };
+}
+
+const P = {};
+function initPrograms() {
+  P.splat = prog(VS, FS_SPLAT);
+  P.advect = prog(VS, FS_ADVECT);
+  P.diverge = prog(VS, FS_DIVERGE);
+  P.pressure = prog(VS, FS_PRESSURE);
+  P.gradsub = prog(VS, FS_GRADSUB);
+  P.curl = prog(VS, FS_CURL);
+  P.rd = prog(VS, FS_RD);
+  P.fractal = prog(VS, FS_FRACTAL);
+  P.source = prog(VS, FS_SOURCE);
+  P.displace = prog(VS, FS_DISPLACE);
+  P.chromatic = prog(VS, FS_CHROMATIC);
+  P.feedback = prog(VS, FS_FEEDBACK);
+  P.kaleid = prog(VS, FS_KALEID);
+  P.edge = prog(VS, FS_EDGE);
+  P.bloomExt = prog(VS, FS_BLOOM_EXT);
+  P.blur = prog(VS, FS_BLUR);
+  P.display = prog(VS, FS_DISPLAY);
+  P.copy = prog(VS, FS_COPY);
+  P.dyeInject = prog(VS, FS_DYE_INJECT);
+  P.xfade = prog(VS, FS_XFADE);
+}
+
+function useProg(pr) {
+  gl.useProgram(pr.p);
+  const al = gl.getAttribLocation(pr.p, 'a');
+  gl.enableVertexAttribArray(al);
+  gl.vertexAttribPointer(al, 2, gl.FLOAT, false, 0, 0);
+  return pr.ul;
+}
+
+function draw() { gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
+
+function createFBO(w, h, intFmt, fmt, type, filter) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, intFmt, w, h, 0, fmt, type, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, w, h);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo, w, h };
+}
+
+function createDblFBO(w, h, intFmt, fmt, type, filter) {
+  let a = createFBO(w, h, intFmt, fmt, type, filter);
+  let b = createFBO(w, h, intFmt, fmt, type, filter);
+  return {
+    get read() { return a; },
+    get write() { return b; },
+    swap() { const t = a; a = b; b = t; }
+  };
+}
+
+function bindFBO(fbo) {
+  if (fbo) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
+    gl.viewport(0, 0, fbo.w, fbo.h);
+  } else {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, W, H);
+  }
+}
+
+function bindTex(unit, tex) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+}
+
+// FBOs
+let velocity, pressure, divergence, dye;
+let rdState;
+let fbA, fbB; // General ping-pong
+let bloomFB, blurFB;
+let sourceFB;
+let xfadeFB; // Crossfade snapshot
+
+function initFBOs() {
+  const hf = gl.HALF_FLOAT;
+  const f = gl.FLOAT;
+  const rgba16f = gl.RGBA16F;
+  const rg16f = gl.RG16F;
+  const rgba = gl.RGBA;
+  const rg = gl.RG;
+  const lin = gl.LINEAR;
+  const near = gl.NEAREST;
+
+  simW = Math.round(256); simH = Math.round(256);
+  dyeW = Math.round(Math.min(W, 1024)); dyeH = Math.round(Math.min(H, 1024));
+  const bw = dyeW >> 2, bh = dyeH >> 2;
+
+  velocity = createDblFBO(simW, simH, rg16f, rg, hf, lin);
+  pressure = createDblFBO(simW, simH, rg16f, rg, hf, lin);
+  divergence = createFBO(simW, simH, rg16f, rg, hf, near);
+  dye = createDblFBO(dyeW, dyeH, rgba16f, rgba, hf, lin);
+  rdState = createDblFBO(simW * 2, simH * 2, rgba16f, rgba, hf, lin);
+  fbA = createDblFBO(dyeW, dyeH, rgba16f, rgba, hf, lin);
+  fbB = createFBO(dyeW, dyeH, rgba16f, rgba, hf, lin);
+  sourceFB = createFBO(dyeW, dyeH, rgba16f, rgba, hf, lin);
+  bloomFB = createFBO(bw, bh, rgba16f, rgba, hf, lin);
+  blurFB = createFBO(bw, bh, rgba16f, rgba, hf, lin);
+  xfadeFB = createFBO(dyeW, dyeH, rgba16f, rgba, hf, lin);
+}
+
+// Video texture
+let vidTex;
+function initVidTex() {
+  vidTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, vidTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let mode = 'fluid';
+let inputSrc = 'gen';
+let camReady = false;
+let uiVisible = true;
+let lastTap = 0;
+
+const par = { intensity: .5, speed: .5, decay: .7, hue: 0, audioMix: .8 };
+
+const touches = [];
+let touchPrimary = null;
+
+let bpm = 120, bPhase = 0, bLastT = 0, tapTimes = [], beatSrc = 'tap';
+let fCnt = 0, fpsT = 0, fps = 60;
+let time = 0, lastT = 0;
+
+// v3.1 — Crossfade
+let xfadeProgress = 1, xfadeDuration = .5, xfadeFrom = null, xfading = false;
+
+// v3.1 — MIDI
+let midiAccess = null, midiLearnMode = false, midiLearnTarget = null;
+const midiMap = {}; // { cc_number: param_name }
+const midiDefaultMap = { 1:'intensity', 2:'speed', 3:'decay', 4:'hue', 5:'audioMix' };
+const midiNoteMap = { 36:'fluid',37:'rdiff',38:'fractal',39:'displace',40:'chromatic',41:'feedback',42:'kaleid',43:'edge' };
+
+// v3.1 — Gyroscope
+let gyroActive = false, gyroData = { alpha:0, beta:0, gamma:0, ax:0, ay:0, az:0 };
+
+// v3.1 — Palettes
+const PALETTES = [
+  { name:'NH', primary:'#00FFB0', secondary:'#D2B14C', accent:'#ff3366', bg:'#0c0e27', colors:[0,.12,.95] },
+  { name:'Infrared', primary:'#FF2040', secondary:'#FF6020', accent:'#FFD000', bg:'#1a0005', colors:[0,.03,.1] },
+  { name:'Void', primary:'#6633CC', secondary:'#00CCFF', accent:'#FF00FF', bg:'#050010', colors:[.75,.85,.55] },
+  { name:'Neon', primary:'#00FF00', secondary:'#FF00FF', accent:'#FFFF00', bg:'#0a0a0a', colors:[.33,.83,.17] },
+  { name:'Ocean', primary:'#00B4D8', secondary:'#0077B6', accent:'#90E0EF', bg:'#03045E', colors:[.55,.6,.52] },
+  { name:'Ember', primary:'#FF6D00', secondary:'#FF9E00', accent:'#FFEA00', bg:'#1a0800', colors:[.08,.1,.14] },
+];
+let currentPalette = 0;
+
+// v3.1 — Fullscreen + Wake Lock
+let wakeLock = null, isFullscreen = false;
+
+// ═══════════════════════════════════════════
+// AUDIO ENGINE
+// ═══════════════════════════════════════════
+let actx, analyser, freqD, timeD, micOn = false, micStream;
+const au = { sub:0, low:0, mid:0, hi:0, pres:0, energy:0, peak:0 };
+const aus = { sub:0, low:0, mid:0, hi:0, pres:0, energy:0, peak:0 };
+let beatHist = new Float32Array(60), beatIdx = 0, lastABeat = 0, aBeatTimes = [];
+
+async function startMic() {
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const src = actx.createMediaStreamSource(micStream);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = .75;
+    src.connect(analyser);
+    freqD = new Uint8Array(analyser.frequencyBinCount);
+    timeD = new Uint8Array(analyser.fftSize);
+    micOn = true;
+    document.getElementById('hMic').textContent = 'MIC ON';
+    document.getElementById('bMic').classList.add('on');
+  } catch(e) {
+    document.getElementById('hMic').textContent = 'MIC DENIED';
+  }
+}
+
+function stopMic() {
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (actx) actx.close();
+  micOn = false; actx = null; analyser = null;
+  document.getElementById('hMic').textContent = 'MIC OFF';
+  document.getElementById('bMic').classList.remove('on');
+  for (const k in au) au[k] = aus[k] = 0;
+}
+
+function processAudio(t) {
+  if (!micOn || !analyser) return;
+  analyser.getByteFrequencyData(freqD);
+  analyser.getByteTimeDomainData(timeD);
+  const bins = freqD.length, ny = actx.sampleRate/2, bHz = ny/bins;
+  const se=Math.floor(80/bHz), le=Math.floor(300/bHz), me=Math.floor(2000/bHz), he=Math.floor(8000/bHz), pe=Math.floor(16000/bHz);
+  function avg(s,e) { let sum=0; const n=Math.max(1,e-s); for(let i=s;i<e&&i<bins;i++)sum+=freqD[i]; return sum/n/255; }
+  au.sub=avg(0,se); au.low=avg(se,le); au.mid=avg(le,me); au.hi=avg(me,he); au.pres=avg(he,pe);
+  au.energy=(au.sub*2+au.low*1.5+au.mid+au.hi*.8+au.pres*.5)/5.8;
+  let mx=0; for(let i=0;i<timeD.length;i++){const a=Math.abs(timeD[i]-128)/128;if(a>mx)mx=a;} au.peak=mx;
+  for(const k in au) aus[k]+=(au[k]-aus[k])*.25;
+  // Beat detection
+  const kick=au.sub*.6+au.low*.4;
+  beatHist[beatIdx]=kick; beatIdx=(beatIdx+1)%60;
+  let a2=0; for(let i=0;i<60;i++)a2+=beatHist[i]; a2/=60;
+  const thr=1.4+(1-par.audioMix)*.6;
+  if(kick>a2*thr&&kick>.15&&t-lastABeat>200){
+    lastABeat=t; bLastT=t; bPhase=0;
+    aBeatTimes.push(t); if(aBeatTimes.length>8)aBeatTimes.shift();
+    if(aBeatTimes.length>=3){
+      let s=0; for(let i=1;i<aBeatTimes.length;i++)s+=aBeatTimes[i]-aBeatTimes[i-1];
+      const ai=s/(aBeatTimes.length-1);
+      if(ai>250&&ai<1500){bpm=Math.round(60000/ai);document.getElementById('hBpm').textContent=bpm;}
+    }
+    document.getElementById('hBt').textContent='●';
+    setTimeout(()=>document.getElementById('hBt').textContent='○',80);
+  }
+  // Meters
+  document.getElementById('mS').style.height=(aus.sub*100)+'%';
+  document.getElementById('mL').style.height=(aus.low*100)+'%';
+  document.getElementById('mM').style.height=(aus.mid*100)+'%';
+  document.getElementById('mH').style.height=(aus.hi*100)+'%';
+  document.getElementById('mP').style.height=(aus.pres*100)+'%';
+}
+
+// ═══════════════════════════════════════════
+// EFFECTS
+// ═══════════════════════════════════════════
+const amix = () => micOn ? par.audioMix : 0;
+const asub = () => aus.sub * amix();
+const amid = () => aus.mid * amix();
+const ahi = () => aus.hi * amix();
+const aen = () => aus.energy * amix();
+const apk = () => aus.peak * amix();
+
+function renderSource() {
+  bindFBO(sourceFB);
+  if (inputSrc === 'cam' && camReady) {
+    const v = document.getElementById('vid');
+    if (v.readyState >= 2) {
+      const u = useProg(P.copy);
+      gl.bindTexture(gl.TEXTURE_2D, vidTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, v);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.uniform1i(u.uSrc, 0);
+      draw();
+      return;
+    }
+    // Fall through to GEN if video not ready yet
+  }
+  // GEN source (procedural)
+  const u = useProg(P.source);
+  const pal = PALETTES[currentPalette];
+  gl.uniform1f(u.uTime, time * (.3 + par.speed * 1.4));
+  gl.uniform1f(u.uSub, asub());
+  gl.uniform1f(u.uMid, amid());
+  gl.uniform1f(u.uEnergy, aen());
+  gl.uniform1f(u.uHue, par.hue + pal.colors[0]);
+  draw();
+}
+
+// --- FLUID ---
+let lastSplatT = 0;
+function fluidStep(dt) {
+  const tx = [1/simW, 1/simH];
+  const asp = simW / simH;
+
+  // Splat touches as forces + dye
+  for (const tc of touches) {
+    const px = tc.x / W, py = 1 - tc.y / H;
+    // Velocity splat
+    bindFBO(velocity.write);
+    let u = useProg(P.splat);
+    bindTex(0, velocity.read.tex);
+    gl.uniform1i(u.uTex, 0);
+    gl.uniform2f(u.uPt, px, py);
+    const dx = tc.dx || 0, dy = tc.dy || 0;
+    gl.uniform3f(u.uClr, dx * 30, -dy * 30, 0);
+    gl.uniform1f(u.uRad, .0005 + asub() * .002);
+    gl.uniform1f(u.uAspect, asp);
+    draw();
+    velocity.swap();
+
+    // Dye splat
+    bindFBO(dye.write);
+    u = useProg(P.splat);
+    bindTex(0, dye.read.tex);
+    gl.uniform1i(u.uTex, 0);
+    gl.uniform2f(u.uPt, px, py);
+    const hue = (time * .1 + par.hue + asub() * .3) % 1;
+    const r = .5 + .5 * Math.cos(hue * 6.2832);
+    const g = .5 + .5 * Math.cos(hue * 6.2832 + 2.094);
+    const b = .5 + .5 * Math.cos(hue * 6.2832 + 4.189);
+    gl.uniform3f(u.uClr, r * 1.5, g * 1.5, b * 1.5);
+    gl.uniform1f(u.uRad, .0003 + asub() * .001);
+    gl.uniform1f(u.uAspect, dyeW / dyeH);
+    draw();
+    dye.swap();
+  }
+
+  // Audio: inject turbulence on beat
+  if (bPhase < .1 && aus.peak > .3) {
+    const px = .5 + Math.sin(time * 2) * .3;
+    const py = .5 + Math.cos(time * 1.7) * .3;
+    bindFBO(velocity.write);
+    let u = useProg(P.splat);
+    bindTex(0, velocity.read.tex);
+    gl.uniform1i(u.uTex, 0);
+    gl.uniform2f(u.uPt, px, py);
+    gl.uniform3f(u.uClr, (Math.random()-.5)*20*apk(), (Math.random()-.5)*20*apk(), 0);
+    gl.uniform1f(u.uRad, .001 + asub() * .005);
+    gl.uniform1f(u.uAspect, asp);
+    draw();
+    velocity.swap();
+
+    bindFBO(dye.write);
+    u = useProg(P.splat);
+    bindTex(0, dye.read.tex);
+    gl.uniform1i(u.uTex, 0);
+    gl.uniform2f(u.uPt, px, py);
+    const h2 = Math.random();
+    gl.uniform3f(u.uClr, .5+.5*Math.cos(h2*6.28), .5+.5*Math.cos(h2*6.28+2), .5+.5*Math.cos(h2*6.28+4));
+    gl.uniform1f(u.uRad, .001 + asub() * .003);
+    gl.uniform1f(u.uAspect, dyeW / dyeH);
+    draw();
+    dye.swap();
+  }
+
+  // Vorticity confinement
+  bindFBO(velocity.write);
+  let u = useProg(P.curl);
+  bindTex(0, velocity.read.tex);
+  gl.uniform1i(u.uVel, 0);
+  gl.uniform2f(u.uTx, tx[0], tx[1]);
+  gl.uniform1f(u.uCurl, 30 + par.intensity * 40 + asub() * 30);
+  draw();
+  velocity.swap();
+
+  // Advect velocity
+  bindFBO(velocity.write);
+  u = useProg(P.advect);
+  bindTex(0, velocity.read.tex);
+  bindTex(1, velocity.read.tex);
+  gl.uniform1i(u.uVel, 0);
+  gl.uniform1i(u.uSrc, 1);
+  gl.uniform1f(u.uDt, dt * (.5 + par.speed));
+  gl.uniform1f(u.uDiss, .995);
+  draw();
+  velocity.swap();
+
+  // Divergence
+  bindFBO(divergence);
+  u = useProg(P.diverge);
+  bindTex(0, velocity.read.tex);
+  gl.uniform1i(u.uVel, 0);
+  gl.uniform2f(u.uTx, tx[0], tx[1]);
+  draw();
+
+  // Clear pressure
+  bindFBO(pressure.write);
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  pressure.swap();
+
+  // Pressure solve (Jacobi iterations)
+  for (let i = 0; i < 25; i++) {
+    bindFBO(pressure.write);
+    u = useProg(P.pressure);
+    bindTex(0, pressure.read.tex);
+    bindTex(1, divergence.tex);
+    gl.uniform1i(u.uPrs, 0);
+    gl.uniform1i(u.uDiv, 1);
+    gl.uniform2f(u.uTx, tx[0], tx[1]);
+    draw();
+    pressure.swap();
+  }
+
+  // Gradient subtraction
+  bindFBO(velocity.write);
+  u = useProg(P.gradsub);
+  bindTex(0, pressure.read.tex);
+  bindTex(1, velocity.read.tex);
+  gl.uniform1i(u.uPrs, 0);
+  gl.uniform1i(u.uVel, 1);
+  gl.uniform2f(u.uTx, tx[0], tx[1]);
+  draw();
+  velocity.swap();
+
+  // Advect dye
+  bindFBO(dye.write);
+  u = useProg(P.advect);
+  bindTex(0, velocity.read.tex);
+  bindTex(1, dye.read.tex);
+  gl.uniform1i(u.uVel, 0);
+  gl.uniform1i(u.uSrc, 1);
+  gl.uniform1f(u.uDt, dt * (.5 + par.speed));
+  gl.uniform1f(u.uDiss, .99 - par.decay * .01);
+  draw();
+  dye.swap();
+
+  // v3.1 — Camera as dye source (inject camera texture into fluid dye field)
+  if (inputSrc === 'cam' && camReady) {
+    const v = document.getElementById('vid');
+    if (v.readyState >= 2) {
+      gl.bindTexture(gl.TEXTURE_2D, vidTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, v);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      bindFBO(dye.write);
+      const ui = useProg(P.dyeInject);
+      bindTex(0, dye.read.tex);
+      bindTex(1, vidTex);
+      gl.uniform1i(ui.uDye, 0);
+      gl.uniform1i(ui.uCam, 1);
+      gl.uniform1f(ui.uMix, .15 + par.intensity * .35 + asub() * .2);
+      draw();
+      dye.swap();
+    }
+  }
+}
+
+// --- REACTION-DIFFUSION ---
+let rdInit = false;
+function rdStep() {
+  if (!rdInit) {
+    // Seed initial state
+    const w = rdState.read.w, h = rdState.read.h;
+    const data = new Float32Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      data[i*4] = 1; // A = 1
+      data[i*4+1] = 0; // B = 0
+      // Random seed spots
+      const x = (i % w) / w, y = Math.floor(i / w) / h;
+      if (Math.random() < .001 || (Math.abs(x-.5)<.02 && Math.abs(y-.5)<.02)) {
+        data[i*4+1] = 1;
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, rdState.read.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+    gl.bindTexture(gl.TEXTURE_2D, rdState.write.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+    rdInit = true;
+  }
+
+  // Touch seeds chemical B
+  for (const tc of touches) {
+    const px = tc.x / W, py = 1 - tc.y / H;
+    bindFBO(rdState.write);
+    const u = useProg(P.splat);
+    bindTex(0, rdState.read.tex);
+    gl.uniform1i(u.uTex, 0);
+    gl.uniform2f(u.uPt, px, py);
+    gl.uniform3f(u.uClr, 0, 1, 0);
+    gl.uniform1f(u.uRad, .0005);
+    gl.uniform1f(u.uAspect, rdState.read.w / rdState.read.h);
+    draw();
+    rdState.swap();
+  }
+
+  const tx = [1/rdState.read.w, 1/rdState.read.h];
+  // Audio modulates feed/kill rates
+  const feed = .037 + amid() * .02 + par.speed * .01;
+  const kill = .06 + asub() * .008 + par.intensity * .005;
+
+  // Multiple simulation steps per frame
+  const steps = 8 + Math.floor(par.speed * 12);
+  for (let i = 0; i < steps; i++) {
+    bindFBO(rdState.write);
+    const u = useProg(P.rd);
+    bindTex(0, rdState.read.tex);
+    gl.uniform1i(u.uState, 0);
+    gl.uniform2f(u.uTx, tx[0], tx[1]);
+    gl.uniform1f(u.uFeed, feed);
+    gl.uniform1f(u.uKill, kill);
+    draw();
+    rdState.swap();
+  }
+}
+
+function rdToDisplay() {
+  // Render RD state to fbA for display
+  bindFBO(fbA.write);
+  const u = useProg(P.copy);
+  bindTex(0, rdState.read.tex);
+  gl.uniform1i(u.uSrc, 0);
+  draw();
+  fbA.swap();
+  // The RD is stored as (A, B, 0, 1) - colorize B channel
+  // Actually let me render it properly - use a display pass
+  // For now, the copy shows the raw state which maps R=A(white), G=B(pattern)
+  // The bloom + display will make it look great
+}
+
+// --- FRACTAL ---
+function fractalRender() {
+  bindFBO(fbA.write);
+  const u = useProg(P.fractal);
+  // Julia constant driven by audio
+  const cr = -.7 + asub() * .4 + Math.sin(time * .3) * .1;
+  const ci = .27015 + amid() * .3 + Math.cos(time * .4) * .1;
+  gl.uniform2f(u.uC, cr, ci);
+  gl.uniform1f(u.uZoom, 1 + par.intensity * 3 + apk() * 2);
+  gl.uniform2f(u.uOff, Math.sin(time * .1) * .1, Math.cos(time * .13) * .1);
+  gl.uniform1f(u.uTime, time);
+  gl.uniform1f(u.uIter, 80 + par.intensity * 120);
+  draw();
+  fbA.swap();
+}
+
+// --- SOURCE-BASED EFFECTS ---
+function sourceEffect(program, setupFn) {
+  renderSource();
+  bindFBO(fbA.write);
+  const u = useProg(program);
+  bindTex(0, sourceFB.tex);
+  gl.uniform1i(u.uSrc, 0);
+  setupFn(u);
+  draw();
+  fbA.swap();
+}
+
+function setTouchUniforms(u) {
+  const arr = [];
+  for (let i = 0; i < 10; i++) {
+    if (i < touches.length) { arr.push(touches[i].x / W, 1 - touches[i].y / H); }
+    else { arr.push(-1, -1); }
+  }
+  gl.uniform2fv(u['uTch'], arr);
+  gl.uniform1i(u.uTchN, touches.length);
+}
+
+// --- FEEDBACK ---
+let feedbackInit = false;
+function feedbackRender() {
+  renderSource();
+  if (!feedbackInit) {
+    bindFBO(fbA.write);
+    const u = useProg(P.copy);
+    bindTex(0, sourceFB.tex);
+    gl.uniform1i(u.uSrc, 0);
+    draw();
+    fbA.swap();
+    feedbackInit = true;
+  }
+  bindFBO(fbA.write);
+  const u = useProg(P.feedback);
+  bindTex(0, sourceFB.tex);
+  bindTex(1, fbA.read.tex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform1i(u.uPrev, 1);
+  gl.uniform1f(u.uDecay, .9 + par.decay * .098);
+  const bp = Math.pow(Math.max(0, 1 - bPhase * 3), 2);
+  gl.uniform1f(u.uZoom, 1.003 + par.intensity * .015 + asub() * .03 + bp * .015);
+  gl.uniform1f(u.uRot, Math.sin(time * par.speed) * .002 * par.intensity + amid() * .008);
+  gl.uniform1f(u.uHue, par.hue);
+  gl.uniform1f(u.uTime, time);
+  draw();
+  fbA.swap();
+}
+
+// ═══════════════════════════════════════════
+// POST-PROCESSING
+// ═══════════════════════════════════════════
+function bloom(inputTex) {
+  // Extract bright
+  bindFBO(bloomFB);
+  let u = useProg(P.bloomExt);
+  bindTex(0, inputTex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform1f(u.uThreshold, .6 - aen() * .3);
+  draw();
+
+  // Horizontal blur
+  bindFBO(blurFB);
+  u = useProg(P.blur);
+  bindTex(0, bloomFB.tex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uDir, 1/bloomFB.w, 0);
+  draw();
+
+  // Vertical blur
+  bindFBO(bloomFB);
+  u = useProg(P.blur);
+  bindTex(0, blurFB.tex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uDir, 0, 1/blurFB.h);
+  draw();
+
+  // Second pass for wider bloom
+  bindFBO(blurFB);
+  u = useProg(P.blur);
+  bindTex(0, bloomFB.tex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uDir, 2/bloomFB.w, 0);
+  draw();
+
+  bindFBO(bloomFB);
+  u = useProg(P.blur);
+  bindTex(0, blurFB.tex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uDir, 0, 2/blurFB.h);
+  draw();
+
+  return bloomFB.tex;
+}
+
+function displayFinal(inputTex) {
+  const bloomTex = bloom(inputTex);
+  bindFBO(null);
+  const u = useProg(P.display);
+  bindTex(0, inputTex);
+  bindTex(1, bloomTex);
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform1i(u.uBloom, 1);
+  gl.uniform1f(u.uBloomStr, .4 + par.intensity * .6 + apk() * .5);
+  gl.uniform2f(u.uRes, W, H);
+  draw();
+}
+
+// ═══════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════
+function render(t) {
+  t *= .001;
+  const dt = Math.min(t - lastT, .05);
+  lastT = t;
+  time = t;
+
+  processAudio(t * 1000);
+
+  // Beat
+  if (!micOn || beatSrc === 'tap') {
+    const interval = 60 / bpm;
+    bPhase = ((t - bLastT * .001) % interval) / interval;
+    if (t - bLastT * .001 >= interval) {
+      bLastT = t * 1000;
+      document.getElementById('hBt').textContent = '●';
+      setTimeout(() => document.getElementById('hBt').textContent = '○', 80);
+    }
+  }
+
+  // Update touch deltas
+  for (const tc of touches) {
+    if (tc.px !== undefined) {
+      tc.dx = (tc.x - tc.px) / W;
+      tc.dy = (tc.y - tc.py) / H;
+    }
+    tc.px = tc.x; tc.py = tc.y;
+  }
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+
+  let outputTex;
+
+  switch (mode) {
+    case 'fluid':
+      fluidStep(dt);
+      outputTex = dye.read.tex;
+      break;
+
+    case 'rdiff':
+      rdStep();
+      rdToDisplay();
+      outputTex = fbA.read.tex;
+      break;
+
+    case 'fractal':
+      fractalRender();
+      outputTex = fbA.read.tex;
+      break;
+
+    case 'displace':
+      sourceEffect(P.displace, u => {
+        gl.uniform1f(u.uTime, time);
+        gl.uniform1f(u.uInt, par.intensity);
+        gl.uniform1f(u.uSpd, par.speed);
+        gl.uniform1f(u.uSub, asub());
+        gl.uniform1f(u.uBeat, bPhase);
+        setTouchUniforms(u);
+      });
+      outputTex = fbA.read.tex;
+      break;
+
+    case 'chromatic':
+      sourceEffect(P.chromatic, u => {
+        gl.uniform1f(u.uTime, time);
+        gl.uniform1f(u.uInt, par.intensity);
+        gl.uniform1f(u.uSpd, par.speed);
+        gl.uniform1f(u.uEnergy, aen());
+        gl.uniform1f(u.uSub, asub());
+        gl.uniform1f(u.uBeat, bPhase);
+        setTouchUniforms(u);
+      });
+      outputTex = fbA.read.tex;
+      break;
+
+    case 'feedback':
+      feedbackRender();
+      outputTex = fbA.read.tex;
+      break;
+
+    case 'kaleid':
+      renderSource();
+      bindFBO(fbA.write);
+      const uk = useProg(P.kaleid);
+      bindTex(0, sourceFB.tex);
+      gl.uniform1i(uk.uSrc, 0);
+      gl.uniform1f(uk.uSegs, 3 + par.intensity * 15);
+      const bp2 = Math.pow(Math.max(0, 1 - bPhase * 3), 2);
+      gl.uniform1f(uk.uRot, time * (.2 + asub() * 2) + bp2 * .5);
+      const cx = .5 + (touchPrimary ? (touchPrimary.x / W - .5) * .3 : 0);
+      const cy = .5 + (touchPrimary ? (.5 - touchPrimary.y / H) * .3 : 0);
+      gl.uniform2f(uk.uCenter, cx, cy);
+      gl.uniform1f(uk.uHue, par.hue);
+      gl.uniform1f(uk.uTime, time);
+      draw();
+      fbA.swap();
+      outputTex = fbA.read.tex;
+      break;
+
+    case 'edge':
+      renderSource();
+      bindFBO(fbA.write);
+      const ue = useProg(P.edge);
+      bindTex(0, sourceFB.tex);
+      gl.uniform1i(ue.uSrc, 0);
+      gl.uniform2f(ue.uTx, 1/dyeW, 1/dyeH);
+      gl.uniform1f(ue.uInt, par.intensity);
+      gl.uniform1f(ue.uTime, time);
+      draw();
+      fbA.swap();
+      outputTex = fbA.read.tex;
+      break;
+  }
+
+  // Final display with bloom + post + crossfade
+  if (xfading && xfadeFrom) {
+    xfadeProgress += (1/60) / xfadeDuration;
+    if (xfadeProgress >= 1) { xfadeProgress = 1; xfading = false; xfadeFrom = null; }
+    // Blend old snapshot with new output
+    bindFBO(fbB);
+    const ux = useProg(P.xfade);
+    bindTex(0, xfadeFB.tex);
+    bindTex(1, outputTex);
+    gl.uniform1i(ux.uA, 0);
+    gl.uniform1i(ux.uB, 1);
+    // Smooth ease-in-out
+    const t01 = xfadeProgress;
+    const ease = t01 < .5 ? 2*t01*t01 : -1+(4-2*t01)*t01;
+    gl.uniform1f(ux.uMix, ease);
+    draw();
+    displayFinal(fbB.tex);
+  } else {
+    displayFinal(outputTex);
+  }
+
+  // v3.1 — Gyroscope: inject tilt as fluid forces
+  if (gyroActive && mode === 'fluid') {
+    const gx = gyroData.gamma / 90; // -1 to 1
+    const gy = gyroData.beta / 90;
+    bindFBO(velocity.write);
+    const ug = useProg(P.splat);
+    bindTex(0, velocity.read.tex);
+    gl.uniform1i(ug.uTex, 0);
+    gl.uniform2f(ug.uPt, .5 + gx * .3, .5 - gy * .3);
+    gl.uniform3f(ug.uClr, gx * 15 * par.intensity, gy * 15 * par.intensity, 0);
+    gl.uniform1f(ug.uRad, .002);
+    gl.uniform1f(ug.uAspect, simW / simH);
+    draw();
+    velocity.swap();
+  }
+
+  // FPS
+  fCnt++;
+  if (t - fpsT > .5) {
+    fps = Math.round(fCnt / (t - fpsT));
+    fCnt = 0; fpsT = t;
+    document.getElementById('hFps').textContent = fps;
+  }
+
+  requestAnimationFrame(render);
+}
+
+// ═══════════════════════════════════════════
+// INPUT
+// ═══════════════════════════════════════════
+function updT(e) {
+  e.preventDefault();
+  touches.length = 0;
+  if (e.touches) {
+    for (let i = 0; i < e.touches.length; i++) touches.push({ x: e.touches[i].clientX, y: e.touches[i].clientY });
+  } else {
+    touches.push({ x: e.clientX, y: e.clientY });
+  }
+  touchPrimary = touches[0] || null;
+  document.getElementById('hTch').textContent = touches.length + ' PTS';
+}
+function clrT(e) {
+  e.preventDefault();
+  if (e.touches && e.touches.length > 0) { updT(e); return; }
+  touches.length = 0; touchPrimary = null;
+  document.getElementById('hTch').textContent = '—';
+}
+
+canvas.addEventListener('touchstart', updT, { passive: false });
+canvas.addEventListener('touchmove', updT, { passive: false });
+canvas.addEventListener('touchend', clrT, { passive: false });
+canvas.addEventListener('mousedown', e => { updT(e); canvas._md = true; });
+canvas.addEventListener('mousemove', e => { if (canvas._md) updT(e); });
+canvas.addEventListener('mouseup', e => { canvas._md = false; clrT(e); });
+
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 3) { tapBeat(); return; }
+  const now = Date.now();
+  if (now - lastTap < 300) {
+    uiVisible = !uiVisible;
+    ['bar','pbar','am','palSel'].forEach(id => document.getElementById(id).classList.toggle('hid', !uiVisible));
+  }
+  lastTap = now;
+}, { passive: true });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); tapBeat(); }
+  if (e.key === 'h') { uiVisible = !uiVisible; ['bar','pbar','am','palSel'].forEach(id => document.getElementById(id).classList.toggle('hid', !uiVisible)); }
+  const mk = { '1':'fluid','2':'rdiff','3':'fractal','4':'displace','5':'chromatic','6':'feedback','7':'kaleid','8':'edge' };
+  if (mk[e.key]) setMode(mk[e.key]);
+  if (e.key === 'c') toggleCam();
+  if (e.key === 'm') toggleMic();
+  if (e.key === 'r') resetAll();
+  if (e.key === 'f') toggleFullscreen();
+  if (e.key === 'g') toggleGyro();
+  if (e.key === 'p') togglePaletteSelector();
+  if (e.key === 'l') toggleMIDILearn();
+});
+
+function tapBeat() {
+  const now = performance.now();
+  tapTimes.push(now); if (tapTimes.length > 6) tapTimes.shift();
+  if (tapTimes.length >= 2) {
+    let s = 0; for (let i = 1; i < tapTimes.length; i++) s += tapTimes[i] - tapTimes[i-1];
+    bpm = Math.round(60000 / (s / (tapTimes.length - 1)));
+    bpm = Math.max(40, Math.min(240, bpm));
+    document.getElementById('hBpm').textContent = bpm;
+    bLastT = now;
+  }
+  beatSrc = 'tap';
+  document.getElementById('hBtSrc').textContent = 'TAP';
+}
+
+// ═══════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════
+function setMode(m) {
+  if (m === mode) return;
+  // v3.1 — Snapshot current frame for crossfade
+  if (typeof xfadeFB !== 'undefined' && xfadeFB) {
+    // Copy current screen to xfade buffer
+    bindFBO(xfadeFB);
+    const u = useProg(P.copy);
+    // Use whichever texture was last displayed
+    const prevTex = mode === 'fluid' ? dye.read.tex : fbA.read.tex;
+    bindTex(0, prevTex);
+    gl.uniform1i(u.uSrc, 0);
+    draw();
+    xfadeFrom = mode;
+    xfadeProgress = 0;
+    xfading = true;
+  }
+  mode = m;
+  document.getElementById('hMode').textContent = m.toUpperCase();
+  document.querySelectorAll('[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  feedbackInit = false;
+}
+
+function resetAll() {
+  // Clear all framebuffers
+  const fbos = [velocity, pressure, dye, rdState, fbA];
+  for (const f of fbos) {
+    if (f.read) {
+      bindFBO(f.read); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+      bindFBO(f.write); gl.clear(gl.COLOR_BUFFER_BIT);
+      if (f === rdState) {
+        // Re-seed RD
+        rdInit = false;
+      }
+    }
+  }
+  bindFBO(fbB); gl.clear(gl.COLOR_BUFFER_BIT);
+  feedbackInit = false;
+  // Reset params to defaults
+  par.intensity = .5; par.speed = .5; par.decay = .7; par.hue = 0; par.audioMix = .8;
+  document.querySelectorAll('.ps').forEach(sl => {
+    const v = sl.dataset.p === 'decay' ? .7 : sl.dataset.p === 'audioMix' ? .8 : sl.dataset.p === 'hue' ? 0 : .5;
+    par[sl.dataset.p] = v;
+    sl.querySelector('.pf').style.height = (v*100)+'%';
+    sl.querySelector('.pk').style.bottom = (v*100)+'%';
+  });
+}
+
+document.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.m)));
+
+async function toggleCam() {
+  if (inputSrc === 'cam') {
+    inputSrc = 'gen';
+    const v = document.getElementById('vid');
+    if (v.srcObject) v.srcObject.getTracks().forEach(t => t.stop());
+    camReady = false;
+    document.getElementById('bGen').classList.add('src');
+    document.getElementById('bCam').classList.remove('src');
+    document.getElementById('hSrc').textContent = 'GEN';
+  } else {
+    try {
+      // v3.1 fix: auto-detect mobile (environment=rear) vs desktop (user=webcam)
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && screen.width < 1200);
+      const facing = isMobile ? 'environment' : 'user';
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      const v = document.getElementById('vid');
+      v.srcObject = stream; await v.play();
+      camReady = true; inputSrc = 'cam';
+      document.getElementById('bGen').classList.remove('src');
+      document.getElementById('bCam').classList.add('src');
+      document.getElementById('hSrc').textContent = 'CAM';
+    } catch (e) { document.getElementById('hSrc').textContent = 'CAM DENIED'; }
+  }
+}
+
+function toggleMic() {
+  if (micOn) { stopMic(); beatSrc = 'tap'; document.getElementById('hBtSrc').textContent = 'TAP'; }
+  else { startMic().then(() => { if (micOn) { beatSrc = 'audio'; document.getElementById('hBtSrc').textContent = 'AUDIO'; } }); }
+}
+
+document.getElementById('bGen').addEventListener('click', () => { if (inputSrc !== 'gen') toggleCam(); });
+document.getElementById('bCam').addEventListener('click', () => { if (inputSrc !== 'cam') toggleCam(); });
+document.getElementById('bMic').addEventListener('click', toggleMic);
+document.getElementById('bRst').addEventListener('click', resetAll);
+
+// Sliders v3.1 — wider touch, active feedback, MIDI learn on long press
+document.querySelectorAll('.ps').forEach(sl => {
+  let drag = false, longPressTimer = null;
+  const upd = cy => {
+    const r = sl.getBoundingClientRect();
+    let v = Math.max(0, Math.min(1, 1 - (cy - r.top) / r.height));
+    par[sl.dataset.p] = v;
+    sl.querySelector('.pf').style.height = (v*100)+'%';
+    sl.querySelector('.pk').style.bottom = (v*100)+'%';
+  };
+  const activate = () => { document.querySelectorAll('.ps').forEach(s=>s.classList.remove('active')); sl.classList.add('active'); };
+  const deactivate = () => { sl.classList.remove('active'); clearTimeout(longPressTimer); };
+  sl.addEventListener('mousedown', e => { drag = true; activate(); upd(e.clientY); });
+  sl.addEventListener('touchstart', e => {
+    drag = true; activate(); upd(e.touches[0].clientY);
+    // Long press = MIDI learn
+    longPressTimer = setTimeout(() => {
+      if (midiLearnMode) {
+        midiLearnTarget = sl.dataset.p;
+        document.querySelectorAll('.ps').forEach(s=>s.classList.remove('midi-learn'));
+        sl.classList.add('midi-learn');
+      }
+    }, 800);
+  }, { passive: true });
+  document.addEventListener('mousemove', e => { if (drag) upd(e.clientY); });
+  document.addEventListener('touchmove', e => { if (drag) { clearTimeout(longPressTimer); upd(e.touches[0].clientY); } }, { passive: true });
+  document.addEventListener('mouseup', () => { drag = false; deactivate(); });
+  document.addEventListener('touchend', () => { drag = false; deactivate(); });
+});
+
+// ═══════════════════════════════════════════
+// v3.1 — WEB MIDI API
+// ═══════════════════════════════════════════
+async function initMIDI() {
+  if (!navigator.requestMIDIAccess) { document.getElementById('hMidi').textContent = 'NO MIDI'; return; }
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    midiAccess.onstatechange = handleMIDIStateChange;
+    connectMIDIInputs();
+  } catch(e) { document.getElementById('hMidi').textContent = 'MIDI DENIED'; }
+}
+
+function connectMIDIInputs() {
+  let count = 0;
+  for (const input of midiAccess.inputs.values()) {
+    input.onmidimessage = handleMIDIMessage;
+    count++;
+  }
+  document.getElementById('hMidi').textContent = count > 0 ? 'MIDI ' + count + 'x' : 'MIDI —';
+  if (count > 0) document.getElementById('bMidi').classList.add('on');
+  else document.getElementById('bMidi').classList.remove('on');
+}
+
+function handleMIDIStateChange(e) { connectMIDIInputs(); }
+
+function handleMIDIMessage(e) {
+  const [status, cc, val] = e.data;
+  const cmd = status & 0xF0;
+
+  // CC (Control Change)
+  if (cmd === 0xB0) {
+    const norm = val / 127;
+    // MIDI Learn mode
+    if (midiLearnMode && midiLearnTarget) {
+      midiMap[cc] = midiLearnTarget;
+      midiLearnTarget = null;
+      midiLearnMode = false;
+      document.querySelectorAll('.ps').forEach(s=>s.classList.remove('midi-learn'));
+      document.getElementById('bMidi').classList.remove('on');
+      document.getElementById('bMidi').style.borderColor = '';
+      // Flash confirmation
+      const tag = document.querySelector('.midi-tag');
+      if (tag) { tag.textContent = 'CC' + cc + '→' + midiMap[cc]; tag.classList.remove('flash'); void tag.offsetWidth; tag.classList.add('flash'); }
+      return;
+    }
+    // Apply mapped CC or default
+    const param = midiMap[cc] || midiDefaultMap[cc];
+    if (param && par.hasOwnProperty(param)) {
+      par[param] = norm;
+      // Update slider visual
+      document.querySelectorAll('.ps').forEach(sl => {
+        if (sl.dataset.p === param) {
+          sl.querySelector('.pf').style.height = (norm*100)+'%';
+          sl.querySelector('.pk').style.bottom = (norm*100)+'%';
+          sl.classList.add('active');
+          clearTimeout(sl._midiTimeout);
+          sl._midiTimeout = setTimeout(() => sl.classList.remove('active'), 300);
+        }
+      });
+    }
+  }
+
+  // Note On → switch mode
+  if (cmd === 0x90 && val > 0) {
+    const m = midiNoteMap[cc];
+    if (m) setMode(m);
+  }
+}
+
+function toggleMIDILearn() {
+  midiLearnMode = !midiLearnMode;
+  if (midiLearnMode) {
+    document.getElementById('bMidi').style.borderColor = '#D2B14C';
+    document.getElementById('bMidi').classList.add('on');
+  } else {
+    document.getElementById('bMidi').style.borderColor = '';
+    document.getElementById('bMidi').classList.remove('on');
+    document.querySelectorAll('.ps').forEach(s=>s.classList.remove('midi-learn'));
+    midiLearnTarget = null;
+  }
+}
+
+// ═══════════════════════════════════════════
+// v3.1 — GYROSCOPE / ACCELEROMETER
+// ═══════════════════════════════════════════
+async function toggleGyro() {
+  if (gyroActive) {
+    gyroActive = false;
+    document.getElementById('hGyro').textContent = '—';
+    document.getElementById('bGyro').classList.remove('on');
+    return;
+  }
+  // iOS 13+ requires permission
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm !== 'granted') { document.getElementById('hGyro').textContent = 'DENIED'; return; }
+    } catch(e) { document.getElementById('hGyro').textContent = 'DENIED'; return; }
+  }
+  window.addEventListener('deviceorientation', e => {
+    gyroData.alpha = e.alpha || 0;
+    gyroData.beta = e.beta || 0;
+    gyroData.gamma = e.gamma || 0;
+  });
+  window.addEventListener('devicemotion', e => {
+    const a = e.accelerationIncludingGravity;
+    if (a) { gyroData.ax = a.x || 0; gyroData.ay = a.y || 0; gyroData.az = a.z || 0; }
+  });
+  gyroActive = true;
+  document.getElementById('hGyro').textContent = 'GYRO';
+  document.getElementById('bGyro').classList.add('on');
+}
+
+// ═══════════════════════════════════════════
+// v3.1 — PALETTE SYSTEM
+// ═══════════════════════════════════════════
+function initPalettes() {
+  const sel = document.getElementById('palSel');
+  PALETTES.forEach((pal, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'pal-dot' + (i === 0 ? ' on' : '');
+    dot.title = pal.name;
+    dot.style.background = `linear-gradient(135deg, ${pal.primary}, ${pal.secondary})`;
+    dot.style.color = pal.primary;
+    dot.addEventListener('click', () => setPalette(i));
+    sel.appendChild(dot);
+  });
+}
+
+function setPalette(idx) {
+  currentPalette = idx;
+  const pal = PALETTES[idx];
+  // Update slider + UI accent colors via CSS custom properties
+  document.documentElement.style.setProperty('--nh-primary', pal.primary);
+  // Update slider fill color
+  document.querySelectorAll('.pf, .pk').forEach(el => { el.style.background = pal.primary; el.style.boxShadow = `0 0 10px ${pal.primary}60`; });
+  // Update active button border
+  const style = document.querySelector('style');
+  // Update palette dots
+  document.querySelectorAll('.pal-dot').forEach((d,i) => d.classList.toggle('on', i === idx));
+  // Update HUD glow
+  document.querySelectorAll('.hud').forEach(h => h.style.textShadow = `0 0 6px ${pal.primary}50`);
+  // Active mode button color
+  document.querySelectorAll('.b.on:not(.src)').forEach(b => {
+    b.style.borderColor = pal.primary;
+    b.style.color = pal.primary;
+  });
+}
+
+function togglePaletteSelector() {
+  const sel = document.getElementById('palSel');
+  sel.classList.toggle('show');
+}
+
+// ═══════════════════════════════════════════
+// v3.1 — FULLSCREEN + WAKE LOCK
+// ═══════════════════════════════════════════
+async function toggleFullscreen() {
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+      isFullscreen = true;
+      document.getElementById('bFS').classList.add('on');
+      // Acquire wake lock
+      if ('wakeLock' in navigator) {
+        try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+      }
+    } catch(e) {}
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    isFullscreen = false;
+    document.getElementById('bFS').classList.remove('on');
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+  }
+}
+
+// Re-acquire wake lock on visibility change
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && isFullscreen && !wakeLock && 'wakeLock' in navigator) {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+  }
+});
+
+// Fullscreen change listener
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    isFullscreen = false;
+    document.getElementById('bFS').classList.remove('on');
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+  }
+});
+
+// ═══════════════════════════════════════════
+// v3.1 — BUTTON BINDINGS (new)
+// ═══════════════════════════════════════════
+document.getElementById('bFS').addEventListener('click', toggleFullscreen);
+document.getElementById('bGyro').addEventListener('click', toggleGyro);
+document.getElementById('bPal').addEventListener('click', togglePaletteSelector);
+document.getElementById('bMidi').addEventListener('click', toggleMIDILearn);
+
+// ═══════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  document.getElementById('hRes').textContent = W + '×' + H;
+  initFBOs();
+  rdInit = false;
+  feedbackInit = false;
+}
+window.addEventListener('resize', resize);
+
+function boot() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  document.getElementById('hRes').textContent = W + '×' + H;
+  initPrograms();
+  initFBOs();
+  initVidTex();
+  initPalettes();
+  initMIDI();
+  requestAnimationFrame(render);
+}
+
+boot();
+</script>
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}</script>
+</body>
+</html>

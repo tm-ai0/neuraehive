@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #0a0a0e;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+      #audio-gate {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 10, 14, 0.55);
+        backdrop-filter: blur(2px);
+        z-index: 10;
+        transition: opacity 0.4s ease;
+      }
+      #audio-gate.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #audio-gate button {
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #e8edf2;
+        background: transparent;
+        border: 1px solid rgba(232, 237, 242, 0.35);
+        border-radius: 999px;
+        padding: 12px 28px;
+        cursor: pointer;
+      }
+      #audio-gate button:hover {
+        border-color: rgba(232, 237, 242, 0.8);
+      }
+      #audio-gate p {
+        font-family: system-ui, sans-serif;
+        font-size: 12px;
+        color: rgba(232, 237, 242, 0.55);
+        margin-top: 14px;
+        text-align: center;
+      }
+      #audio-gate .content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #debug-panel {
+        position: fixed;
+        left: 20px;
+        bottom: 20px;
+        z-index: 20;
+        font-family: system-ui, sans-serif;
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: rgba(232, 237, 242, 0.7);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #debug-panel .debug-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      #debug-panel input[type="range"] {
+        width: 180px;
+        accent-color: #e8edf2;
+      }
+      #debug-panel .debug-row span {
+        min-width: 2.5em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="audio-gate">
+      <div class="content">
+        <button id="audio-gate-button" type="button">Activer le micro</button>
+        <p id="audio-gate-message"></p>
+      </div>
+    </div>
+    <div id="debug-panel">
+      <div class="debug-row">
+        <label for="debug-fracture">uFracture</label>
+        <input id="debug-fracture" type="range" min="0" max="2" step="0.01" value="0" />
+        <span id="debug-fracture-value">0.00</span>
+      </div>
+      <div class="debug-row">
+        <label for="debug-aberration">uAberration</label>
+        <input id="debug-aberration" type="range" min="0" max="1" step="0.01" value="0" />
+        <span id="debug-aberration-value">0.00</span>
+      </div>
+      <div class="debug-row">
+        <label for="debug-dissolve">uDissolve</label>
+        <input id="debug-dissolve" type="range" min="0" max="1" step="0.01" value="0" />
+        <span id="debug-dissolve-value">0.00</span>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

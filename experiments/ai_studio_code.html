@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AETHERIA // Live Audiovisual Instrument</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030307;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "SF Pro Display", monospace;
+            color: #d1d5db;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Interface HUD */
+        #hud {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: rgba(8, 10, 18, 0.72);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            padding: 16px 22px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s ease;
+            max-width: 92vw;
+        }
+
+        #hud.idle {
+            opacity: 0.18;
+            transform: translateX(-50%) translateY(8px);
+        }
+
+        #hud:hover {
+            opacity: 1 !important;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 10px;
+        }
+
+        .title-block {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4d6d;
+            box-shadow: 0 0 10px #ff4d6d;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .status-dot.active {
+            background: #00f0ff;
+            box-shadow: 0 0 12px #00f0ff;
+        }
+
+        .title {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2.5px;
+            text-transform: uppercase;
+            color: #ffffff;
+        }
+
+        .audio-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #ffffff;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.25s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .audio-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .audio-btn.listening {
+            background: rgba(0, 240, 255, 0.15);
+            border-color: rgba(0, 240, 255, 0.5);
+            color: #00f0ff;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 130px);
+            gap: 16px;
+        }
+
+        @media (max-width: 680px) {
+            .controls-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: #8e95a5;
+        }
+
+        .control-val {
+            color: #00f0ff;
+            font-family: monospace;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.8);
+            transition: transform 0.15s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+
+        #meter-container {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+            height: 12px;
+        }
+
+        .meter-bar {
+            width: 3px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            transform-origin: bottom;
+            transform: scaleY(0.1);
+            transition: transform 0.05s ease;
+        }
+
+        #hint {
+            position: absolute;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.4);
+            pointer-events: none;
+            transition: opacity 1s ease;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="hint">Glissez la souris ou le doigt pour sculpter le vortex</div>
+
+    <div id="canvas-container">
+        <canvas id="glcanvas"></canvas>
+    </div>
+
+    <div id="hud">
+        <div class="header-row">
+            <div class="title-block">
+                <div class="status-dot" id="mic-status"></div>
+                <div class="title">Aetheria // Audio Instrument</div>
+            </div>
+
+            <div id="meter-container">
+                <div class="meter-bar" id="mb-1"></div>
+                <div class="meter-bar" id="mb-2"></div>
+                <div class="meter-bar" id="mb-3"></div>
+                <div class="meter-bar" id="mb-4"></div>
+                <div class="meter-bar" id="mb-5"></div>
+            </div>
+
+            <button class="audio-btn" id="btn-audio">
+                <span id="btn-audio-icon">🎙</span>
+                <span id="btn-audio-label">Activer Micro</span>
+            </button>
+        </div>
+
+        <div class="controls-grid">
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Turbulence</span>
+                    <span class="control-val" id="val-chaos">1.2</span>
+                </div>
+                <input type="range" id="param-chaos" min="0.1" max="3.0" step="0.05" value="1.20">
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Symétrie</span>
+                    <span class="control-val" id="val-sym">4</span>
+                </div>
+                <input type="range" id="param-sym" min="1" max="12" step="1" value="4">
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Spectre</span>
+                    <span class="control-val" id="val-palette">0.0</span>
+                </div>
+                <input type="range" id="param-palette" min="0.0" max="1.0" step="0.01" value="0.0">
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Sensibilité</span>
+                    <span class="control-val" id="val-gain">1.5</span>
+                </div>
+                <input type="range" id="param-gain" min="0.2" max="3.5" step="0.1" value="1.5">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("glcanvas");
+        const gl = canvas.getContext("webgl", {
+            alpha: false,
+            antialias: false,
+            preserveDrawingBuffer: true,
+            powerPreference: "high-performance",
+            depth: false
+        });
+
+        if (!gl) {
+            alert("WebGL non supporté sur ce navigateur.");
+        }
+
+        const NUM_PARTICLES = 160000;
+
+        /* SHADER PARTICULES (VERTEX) */
+        const particleVS = `
+            precision highp float;
+            attribute vec3 aSeed;
+
+            uniform float uTime;
+            uniform vec2 uResolution;
+            uniform vec2 uMouse;
+            uniform float uMouseStrength;
+            uniform float uBass;
+            uniform float uMid;
+            uniform float uTreble;
+            uniform float uChaos;
+            uniform float uSymmetry;
+            uniform float uPalette;
+            uniform float uGain;
+
+            varying vec4 vColor;
+
+            vec3 palette(in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d) {
+                return a + b * cos(6.28318 * (c * t + d));
+            }
+
+            vec3 curlField(vec3 p, float t) {
+                float x = sin(p.y * 1.5 + t * 0.4) + sin(p.z * 2.2 + t * 0.3);
+                float y = sin(p.z * 1.8 + t * 0.5) + sin(p.x * 1.4 + t * 0.2);
+                float z = sin(p.x * 1.3 + t * 0.35) + sin(p.y * 1.9 + t * 0.45);
+                return vec3(x, y, z) * 0.45;
+            }
+
+            void main() {
+                float id = aSeed.z;
+                float baseAngle = aSeed.x;
+                float baseRadius = aSeed.y;
+
+                float speed = 0.15 + (uMid * 0.4 + uBass * 0.3) * uGain;
+                float t = uTime * speed + id * 6.28318;
+
+                float sym = max(1.0, uSymmetry);
+                float sector = 6.2831853 / sym;
+                float foldedAngle = mod(baseAngle + uTime * 0.05, sector);
+                if (mod(floor((baseAngle + uTime * 0.05) / sector), 2.0) == 1.0) {
+                    foldedAngle = sector - foldedAngle;
+                }
+
+                float bassPulse = uBass * uGain * 0.7;
+                float r = baseRadius * (1.0 + sin(t * 1.5 + id * 10.0) * (0.25 * uChaos)) + bassPulse * 0.4;
+
+                vec3 pos;
+                pos.x = cos(foldedAngle) * r;
+                pos.y = sin(foldedAngle) * r;
+                pos.z = sin(baseAngle * sym + t) * (0.3 + uTreble * uGain * 0.6);
+
+                vec3 curl = curlField(pos * (1.0 + uChaos * 0.8), uTime * 0.6);
+                pos += curl * uChaos * (0.5 + uMid * uGain * 0.5);
+
+                vec2 mouseOffset = pos.xy - uMouse;
+                float mouseDist = length(mouseOffset);
+                if (mouseDist > 0.001) {
+                    vec2 mouseDir = mouseOffset / mouseDist;
+                    float influence = exp(-mouseDist * 2.8) * uMouseStrength;
+                    vec2 vortex = vec2(-mouseDir.y, mouseDir.x);
+                    pos.xy += (vortex * 0.35 - mouseDir * 0.15) * influence;
+                }
+
+                float aspect = uResolution.x / uResolution.y;
+                float fov = 1.35;
+                float zDepth = pos.z + 2.2;
+                vec2 projected = (pos.xy / zDepth) * fov;
+                projected.x /= aspect;
+
+                gl_Position = vec4(projected, pos.z * 0.1, 1.0);
+
+                float pSize = (1.6 + uTreble * uGain * 3.5 + (1.0 / zDepth) * 2.0);
+                gl_PointSize = clamp(pSize * (uResolution.y / 900.0), 1.0, 32.0);
+
+                float colorIndex = length(pos.xy) * 0.6 + id * 0.3 + uPalette + (uTime * 0.03);
+
+                vec3 palA = palette(colorIndex, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(1.0,1.0,1.0), vec3(0.0,0.33,0.67));
+                vec3 palB = palette(colorIndex, vec3(0.8,0.5,0.4), vec3(0.2,0.4,0.2), vec3(2.0,1.0,1.0), vec3(0.0,0.25,0.25));
+                vec3 palC = palette(colorIndex, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(1.0,0.7,0.4), vec3(0.0,0.15,0.20));
+
+                vec3 col = mix(palA, mix(palB, palC, uPalette), uPalette);
+                col += vec3(0.2, 0.4, 0.7) * (uBass * uGain * 0.6);
+
+                float alpha = clamp(0.35 + (uMid * uGain * 0.4) + (0.2 / zDepth), 0.15, 0.9);
+                vColor = vec4(col, alpha);
+            }
+        `;
+
+        /* SHADER PARTICULES (FRAGMENT) */
+        const particleFS = `
+            precision highp float;
+            varying vec4 vColor;
+
+            void main() {
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord);
+                if (dist > 0.5) discard;
+
+                float core = exp(-dist * 9.0);
+                float halo = exp(-dist * 3.0) * 0.6;
+                float intensity = core + halo;
+
+                gl_FragColor = vec4(vColor.rgb * (1.0 + core * 1.5), vColor.a * intensity);
+            }
+        `;
+
+        /* SHADER DU VOILE DE RÉMANENCE (TRAIL PERSISTENCE) */
+        const quadVS = `
+            attribute vec2 aPos;
+            void main() {
+                gl_Position = vec4(aPos, 0.0, 1.0);
+            }
+        `;
+
+        const fadeFS = `
+            precision highp float;
+            uniform vec4 uFadeColor;
+            void main() {
+                gl_FragColor = uFadeColor;
+            }
+        `;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            return shader;
+        }
+
+        function createProgram(gl, vsSource, fsSource) {
+            const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            return prog;
+        }
+
+        const particleProgram = createProgram(gl, particleVS, particleFS);
+        const fadeProgram = createProgram(gl, quadVS, fadeFS);
+
+        const uLocs = {
+            time: gl.getUniformLocation(particleProgram, "uTime"),
+            res: gl.getUniformLocation(particleProgram, "uResolution"),
+            mouse: gl.getUniformLocation(particleProgram, "uMouse"),
+            mouseStrength: gl.getUniformLocation(particleProgram, "uMouseStrength"),
+            bass: gl.getUniformLocation(particleProgram, "uBass"),
+            mid: gl.getUniformLocation(particleProgram, "uMid"),
+            treble: gl.getUniformLocation(particleProgram, "uTreble"),
+            chaos: gl.getUniformLocation(particleProgram, "uChaos"),
+            sym: gl.getUniformLocation(particleProgram, "uSymmetry"),
+            palette: gl.getUniformLocation(particleProgram, "uPalette"),
+            gain: gl.getUniformLocation(particleProgram, "uGain")
+        };
+
+        const uFadeColorLoc = gl.getUniformLocation(fadeProgram, "uFadeColor");
+
+        const particleSeeds = new Float32Array(NUM_PARTICLES * 3);
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+            const idx = i * 3;
+            particleSeeds[idx] = i * 2.3999632;
+            particleSeeds[idx + 1] = Math.pow(Math.random(), 0.65) * 1.5 + 0.05;
+            particleSeeds[idx + 2] = Math.random();
+        }
+
+        const particleBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, particleBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, particleSeeds, gl.STATIC_DRAW);
+        const aSeedLoc = gl.getAttribLocation(particleProgram, "aSeed");
+
+        const quadBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+             1, -1,
+            -1,  1,
+            -1,  1,
+             1, -1,
+             1,  1
+        ]), gl.STATIC_DRAW);
+        const aPosLoc = gl.getAttribLocation(fadeProgram, "aPos");
+
+        let audioCtx = null;
+        let analyser = null;
+        let micStream = null;
+        let isMicActive = false;
+        const freqData = new Uint8Array(64);
+
+        let smoothBass = 0.0, smoothMid = 0.0, smoothTreble = 0.0;
+
+        function getSyntheticAudioEnergy(time) {
+            return {
+                bass: (Math.sin(time * 2.2) * 0.5 + 0.5) * (Math.sin(time * 0.7) * 0.3 + 0.7) * 0.5,
+                mid: (Math.sin(time * 3.5 + 1.2) * 0.5 + 0.5) * 0.35,
+                treble: (Math.cos(time * 4.8 + 2.0) * 0.5 + 0.5) * 0.25
+            };
+        }
+
+        async function toggleMicrophone() {
+            if (isMicActive) {
+                if (micStream) micStream.getTracks().forEach(track => track.stop());
+                isMicActive = false;
+                updateAudioUI(false);
+                return;
+            }
+
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                const source = audioCtx.createMediaStreamSource(micStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 128;
+                analyser.smoothingTimeConstant = 0.8;
+                source.connect(analyser);
+
+                isMicActive = true;
+                updateAudioUI(true);
+            } catch (err) {
+                console.warn("Accès micro refusé ou indisponible:", err);
+                isMicActive = false;
+                updateAudioUI(false);
+            }
+        }
+
+        function updateAudioUI(active) {
+            const btn = document.getElementById("btn-audio");
+            const status = document.getElementById("mic-status");
+            const label = document.getElementById("btn-audio-label");
+            if (active) {
+                btn.classList.add("listening");
+                status.classList.add("active");
+                label.textContent = "Micro Actif";
+            } else {
+                btn.classList.remove("listening");
+                status.classList.remove("active");
+                label.textContent = "Activer Micro";
+            }
+        }
+
+        document.getElementById("btn-audio").addEventListener("click", toggleMicrophone);
+
+        const mouse = { targetX: 0.0, targetY: 0.0, x: 0.0, y: 0.0, strength: 0.0, targetStrength: 0.0 };
+        const hud = document.getElementById("hud");
+        let idleTimer = null;
+
+        function resetIdleTimer() {
+            hud.classList.remove("idle");
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => hud.classList.add("idle"), 3200);
+        }
+
+        window.addEventListener("pointermove", (e) => {
+            const aspect = canvas.width / canvas.height;
+            mouse.targetX = ((e.clientX / window.innerWidth) * 2.0 - 1.0) * aspect * 0.85;
+            mouse.targetY = (-(e.clientY / window.innerHeight) * 2.0 + 1.0) * 0.85;
+            mouse.targetStrength = 1.0;
+            resetIdleTimer();
+        });
+
+        window.addEventListener("pointerdown", () => {
+            mouse.targetStrength = 2.0;
+            resetIdleTimer();
+        });
+
+        window.addEventListener("pointerup", () => { mouse.targetStrength = 1.0; });
+        window.addEventListener("pointerleave", () => { mouse.targetStrength = 0.0; });
+
+        const params = { chaos: 1.2, symmetry: 4, palette: 0.0, gain: 1.5 };
+
+        function bindControl(sliderId, valId, key, formatFn) {
+            const slider = document.getElementById(sliderId);
+            const valDisplay = document.getElementById(valId);
+            slider.addEventListener("input", (e) => {
+                const val = parseFloat(e.target.value);
+                params[key] = val;
+                valDisplay.textContent = formatFn ? formatFn(val) : val.toString();
+                resetIdleTimer();
+            });
+        }
+
+        bindControl("param-chaos", "val-chaos", "chaos", v => v.toFixed(2));
+        bindControl("param-sym", "val-sym", "symmetry", v => parseInt(v));
+        bindControl("param-palette", "val-palette", "palette", v => v.toFixed(2));
+        bindControl("param-gain", "val-gain", "gain", v => v.toFixed(1));
+
+        let width = 0, height = 0;
+
+        function resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const displayWidth = Math.floor(window.innerWidth * dpr);
+            const displayHeight = Math.floor(window.innerHeight * dpr);
+
+            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+                width = displayWidth;
+                height = displayHeight;
+            }
+        }
+
+        window.addEventListener("resize", resize);
+        resize();
+        resetIdleTimer();
+
+        const meterBars = [
+            document.getElementById("mb-1"),
+            document.getElementById("mb-2"),
+            document.getElementById("mb-3"),
+            document.getElementById("mb-4"),
+            document.getElementById("mb-5")
+        ];
+
+        let lastTime = 0, globalTime = 0;
+
+        gl.clearColor(0.012, 0.012, 0.025, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        function render(now) {
+            now *= 0.001;
+            const delta = Math.min(now - (lastTime || now), 0.1);
+            lastTime = now;
+            globalTime += delta;
+
+            resize();
+
+            let bass = 0, mid = 0, treble = 0;
+
+            if (isMicActive && analyser) {
+                analyser.getByteFrequencyData(freqData);
+                let bSum = 0, mSum = 0, tSum = 0;
+                for (let i = 0; i < 4; i++) bSum += freqData[i];
+                for (let i = 4; i < 16; i++) mSum += freqData[i];
+                for (let i = 16; i < 48; i++) tSum += freqData[i];
+
+                bass = (bSum / 4) / 255.0;
+                mid = (mSum / 12) / 255.0;
+                treble = (tSum / 32) / 255.0;
+
+                for (let i = 0; i < 5; i++) {
+                    const val = freqData[i * 6] / 255.0;
+                    meterBars[i].style.transform = `scaleY(${Math.max(0.1, val)})`;
+                    meterBars[i].style.background = val > 0.6 ? '#00f0ff' : 'rgba(255,255,255,0.4)';
+                }
+            } else {
+                const synth = getSyntheticAudioEnergy(globalTime);
+                bass = synth.bass;
+                mid = synth.mid;
+                treble = synth.treble;
+
+                for (let i = 0; i < 5; i++) {
+                    const wave = Math.sin(globalTime * 3.0 + i * 0.8) * 0.2 + 0.25;
+                    meterBars[i].style.transform = `scaleY(${wave})`;
+                    meterBars[i].style.background = 'rgba(255,255,255,0.2)';
+                }
+            }
+
+            smoothBass += (bass - smoothBass) * 0.18;
+            smoothMid += (mid - smoothMid) * 0.15;
+            smoothTreble += (treble - smoothTreble) * 0.2;
+
+            mouse.x += (mouse.targetX - mouse.x) * 0.08;
+            mouse.y += (mouse.targetY - mouse.y) * 0.08;
+            mouse.strength += (mouse.targetStrength - mouse.strength) * 0.05;
+
+            gl.viewport(0, 0, width, height);
+
+            /* 1. EFFACEMENT PROGRESSIF (TRAÎNÉES LUMINEUSES) */
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            gl.useProgram(fadeProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+            gl.enableVertexAttribArray(aPosLoc);
+            gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+            
+            // Opacité 0.085 pour une traînée douce et persistante
+            gl.uniform4f(uFadeColorLoc, 0.012, 0.012, 0.025, 0.085);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            /* 2. RENDU DES PARTICULES EN FUSION ADDITIVE */
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+
+            gl.useProgram(particleProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, particleBuffer);
+            gl.enableVertexAttribArray(aSeedLoc);
+            gl.vertexAttribPointer(aSeedLoc, 3, gl.FLOAT, false, 0, 0);
+
+            gl.uniform1f(uLocs.time, globalTime);
+            gl.uniform2f(uLocs.res, width, height);
+            gl.uniform2f(uLocs.mouse, mouse.x, mouse.y);
+            gl.uniform1f(uLocs.mouseStrength, mouse.strength);
+            gl.uniform1f(uLocs.bass, smoothBass);
+            gl.uniform1f(uLocs.mid, smoothMid);
+            gl.uniform1f(uLocs.treble, smoothTreble);
+            gl.uniform1f(uLocs.chaos, params.chaos);
+            gl.uniform1f(uLocs.sym, params.symmetry);
+            gl.uniform1f(uLocs.palette, params.palette);
+            gl.uniform1f(uLocs.gain, params.gain);
+
+            gl.drawArrays(gl.POINTS, 0, NUM_PARTICLES);
+
+            requestAnimationFrame(render);
+        }
+
+        requestAnimationFrame(render);
+
+        setTimeout(() => {
+            const hint = document.getElementById("hint");
+            if (hint) hint.style.opacity = "0";
+        }, 5000);
+    </script>
+</body>
+</html>

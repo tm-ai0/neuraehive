@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NH — Synaptic Mirror v3.1 · Guide Complet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#08080c;--bg2:#0e0e14;--bg3:#13131c;--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.1);--green:#00FFB0;--gold:#D2B14C;--blue:#A0B4D4;--brown:#88735C;--red:#ff3366;--purple:#aa66ff;--orange:#FF6D00;--cyan:#00B4D8;--text:#c8c8d0;--dim:rgba(255,255,255,0.35);--mono:'JetBrains Mono',monospace;--serif:'Instrument Serif',Georgia,serif }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:14px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  body{max-width:860px;margin:0 auto;padding:60px 32px 120px}
+  .header{border-bottom:1px solid var(--border);padding-bottom:40px;margin-bottom:48px}
+  .tag{display:inline-block;font-size:9px;letter-spacing:3px;text-transform:uppercase;padding:4px 12px;border-radius:2px;margin-bottom:16px}
+  .tag-green{color:var(--green);border:1px solid rgba(0,255,176,0.2)}.tag-gold{color:var(--gold);border:1px solid rgba(210,177,76,0.25)}
+  .header h1{font-family:var(--serif);font-size:48px;font-weight:400;color:#fff;line-height:1.1;margin-bottom:8px}
+  .header h1 em{color:var(--green);font-style:italic}
+  .header .sub{font-size:13px;color:var(--dim);letter-spacing:.5px}
+  .header .meta{margin-top:20px;display:flex;gap:24px;flex-wrap:wrap}
+  .meta-item{font-size:11px;color:var(--dim);letter-spacing:.5px}.meta-item span{color:var(--green)}
+  .section{margin-bottom:56px}
+  .section-title{font-family:var(--serif);font-size:28px;font-weight:400;color:#fff;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+  .section-title em{color:var(--green);font-style:italic}
+  .subsection{margin-bottom:32px}
+  .subsection h3{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--green);margin-bottom:12px}
+  p{margin-bottom:12px;font-size:13px;color:var(--text)} strong{color:#fff;font-weight:500}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+  @media(max-width:640px){.card-grid{grid-template-columns:1fr}}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:20px;transition:border-color .2s}
+  .card:hover{border-color:var(--border2)}
+  .card .num{font-size:10px;color:var(--dim);letter-spacing:1px;margin-bottom:8px}
+  .card .name{font-size:15px;color:#fff;font-weight:500;margin-bottom:6px}
+  .card .desc{font-size:12px;color:var(--dim);line-height:1.6}
+  .card .badge{display:inline-block;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;padding:2px 8px;border-radius:2px;margin-top:8px}
+  .key-grid{display:grid;grid-template-columns:80px 1fr;gap:0;margin-bottom:24px}
+  .key-cell{padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px}
+  .key-cell:nth-child(odd){background:var(--bg2);color:var(--green);font-weight:500;letter-spacing:1px}
+  .key-cell:nth-child(even){color:var(--text)}
+  .pal-row{display:flex;gap:12px;margin-bottom:12px;align-items:center}
+  .swatch{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,0.1);flex-shrink:0}.swatch-lg{width:32px;height:32px}
+  .pal-name{font-size:12px;color:#fff;font-weight:500;min-width:80px}
+  .pal-colors{font-size:11px;color:var(--dim)}
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:20px 0;font-size:11px}
+  .flow-box{background:var(--bg2);border:1px solid var(--border);padding:8px 14px;border-radius:4px;color:var(--text);white-space:nowrap}
+  .flow-box.accent{border-color:rgba(0,255,176,0.2);color:var(--green)}
+  .flow-arrow{color:var(--dim);font-size:16px}
+  .cl-item{display:flex;gap:16px;margin-bottom:16px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:6px}
+  .cl-num{font-size:20px;font-family:var(--serif);color:var(--green);min-width:32px;text-align:center;padding-top:2px}
+  .cl-body h4{font-size:13px;color:#fff;font-weight:500;margin-bottom:4px}
+  .cl-body p{font-size:12px;color:var(--dim);margin:0}
+  .midi-grid{display:grid;grid-template-columns:100px 1fr 1fr;gap:0;margin-bottom:24px}
+  .midi-cell{padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px}
+  .midi-cell.hdr{background:var(--bg3);color:var(--gold);font-weight:500;letter-spacing:1px;text-transform:uppercase;font-size:9px}
+  .spec-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .spec-label{color:var(--dim)}.spec-value{color:#fff;text-align:right}
+  .tip{background:var(--bg2);border-left:3px solid var(--gold);padding:16px 20px;margin:20px 0;border-radius:0 6px 6px 0}
+  .tip .label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+  .tip p{font-size:12px;margin:0;color:var(--text)}
+  .tip-green{border-left-color:var(--green)}.tip-green .label{color:var(--green)}
+  .footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--border);text-align:center;font-size:10px;color:var(--dim);letter-spacing:1px}
+  .footer a{color:var(--green);text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="tag tag-green">Guide Complet</div>
+  <div class="tag tag-gold" style="margin-left:8px">v3.1</div>
+  <h1>Synaptic <em>Mirror</em></h1>
+  <div class="sub">Moteur visuel WebGL2 temps réel — NeuroaeHive</div>
+  <div class="meta">
+    <div class="meta-item">Live · <span>nh.thomasmaury.fr</span></div>
+    <div class="meta-item">~64KB · <span>10 shaders</span></div>
+    <div class="meta-item">60 FPS · <span>tablette + desktop</span></div>
+    <div class="meta-item">Mars 2026 · <span>PWA</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Quick <em>Start</em></div>
+  <div class="subsection">
+    <h3>C'est quoi ?</h3>
+    <p>Synaptic Mirror est un instrument audiovisuel live. Il génère des visuels en temps réel via des shaders GPU, réactifs au son, au toucher, à la caméra, aux contrôleurs MIDI, et au gyroscope. Tout tient dans un seul fichier HTML de 64KB, tourne à 60 FPS sur une tablette, et fonctionne en PWA installable.</p>
+  </div>
+  <div class="subsection">
+    <h3>En 30 secondes</h3>
+    <p><strong>1.</strong> Ouvre <strong>nh.thomasmaury.fr</strong> sur ta tablette ou ton PC</p>
+    <p><strong>2.</strong> Appuie sur <strong>Mic</strong> — les visuels réagissent maintenant à ta musique</p>
+    <p><strong>3.</strong> <strong>Touche / clique et drag</strong> sur l'écran — ça injecte des forces dans le fluide</p>
+    <p><strong>4.</strong> Switch entre les modes avec les <strong>boutons</strong> ou les touches <strong>1-8</strong></p>
+    <p><strong>5.</strong> Active la <strong>Cam</strong> — ton visage devient la source des visuels</p>
+    <p><strong>6.</strong> Passe en <strong>Fullscreen</strong> (touche F) pour le mode perf</p>
+  </div>
+  <div class="tip">
+    <div class="label">Astuce Performance</div>
+    <p>Le meilleur workflow live : <strong>Mic ON</strong> + musique qui tourne + switch entre modes au feeling. Les basses injectent automatiquement des turbulences dans le fluid, les mids modulent les paramètres. Joue avec les sliders Intensity et Speed pour régler l'énergie.</p>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Sources <em>d'entrée</em></div>
+  <div class="card-grid">
+    <div class="card"><div class="num">SOURCE 01</div><div class="name">GEN — Procédural</div><div class="desc">Flow field sinusoïdal avec palette HSV. Activé par défaut. Génère des motifs organiques réactifs à l'audio. Le hue offset est modulé par la palette active.</div></div>
+    <div class="card"><div class="num">SOURCE 02</div><div class="name">CAM — Caméra</div><div class="desc">Flux vidéo temps réel. Sur mobile → caméra arrière. Sur desktop → webcam. Auto-détecté. Alimente le fluid comme source de dye en mode Fluid.</div><div class="badge" style="background:rgba(0,255,176,.1);color:var(--green);">v3.1 — cam→fluid fix</div></div>
+    <div class="card"><div class="num">SOURCE 03</div><div class="name">MIC — Audio</div><div class="desc">Web Audio API, FFT 2048, 5 bandes spectrales (SUB/LOW/MID/HI/PRESENCE). Beat detection adaptatif. Les basses injectent des splats, les mids modulent les paramètres.</div></div>
+    <div class="card"><div class="num">SOURCE 04</div><div class="name">MIDI — Contrôleurs</div><div class="desc">Web MIDI API, auto-detect USB. CC1-5 → sliders. Notes 36-43 → modes. MIDI Learn customisable.</div><div class="badge" style="background:rgba(210,177,76,.1);color:var(--gold);">v3.1 — nouveau</div></div>
+    <div class="card"><div class="num">SOURCE 05</div><div class="name">GYRO — Accéléromètre</div><div class="desc">DeviceOrientation + DeviceMotion. Le tilt de la tablette injecte des forces directionnelles dans le fluid.</div><div class="badge" style="background:rgba(210,177,76,.1);color:var(--gold);">v3.1 — nouveau</div></div>
+    <div class="card"><div class="num">SOURCE 06</div><div class="name">TOUCH — Multipoint</div><div class="desc">Touch multipoint (10 pts max). Chaque point injecte force + dye dans le fluid, seeds chimique B dans R-Diff, déplace le centre du kaléidoscope.</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">8 <em>Effets</em> GPU</div>
+  <div class="card-grid">
+    <div class="card" style="border-left:3px solid var(--green);"><div class="num">01 · TOUCHE 1</div><div class="name">FLUID</div><div class="desc">Navier-Stokes GPU. Splat→Advect→Divergence→Pressure (25 Jacobi)→GradSub→Vorticity. La cam injecte du dye, le touch/audio injectent des forces.</div></div>
+    <div class="card" style="border-left:3px solid var(--purple);"><div class="num">02 · TOUCHE 2</div><div class="name">R-DIFF</div><div class="desc">Réaction-diffusion Gray-Scott. 8-20 steps/frame. Le touch seed chimique B. L'audio module feed/kill → patterns organiques.</div></div>
+    <div class="card" style="border-left:3px solid var(--gold);"><div class="num">03 · TOUCHE 3</div><div class="name">FRACTAL</div><div class="desc">Ensemble de Julia, smooth coloring. Constantes C pilotées par audio. Palette cyclique + temps.</div></div>
+    <div class="card" style="border-left:3px solid var(--blue);"><div class="num">04 · TOUCHE 4</div><div class="name">DISPLACE</div><div class="desc">Distorsion par flow field. L'image source est déformée par champs sinusoïdaux + touch + beats.</div></div>
+    <div class="card" style="border-left:3px solid var(--red);"><div class="num">05 · TOUCHE 5</div><div class="name">CHROMA</div><div class="desc">Séparation chromatique RGB rotative. Spread modulé par audio energy + beats + touch proximity.</div></div>
+    <div class="card" style="border-left:3px solid var(--orange);"><div class="num">06 · TOUCHE 6</div><div class="name">FEEDBACK</div><div class="desc">Boucle vidéo avec zoom + rotation + hue shift. Persistence par Decay. Psychédélique.</div></div>
+    <div class="card" style="border-left:3px solid var(--cyan);"><div class="num">07 · TOUCHE 7</div><div class="name">KALEID</div><div class="desc">Kaléidoscope 3-18 segments. Rotation par audio sub + beats. Centre suit le touch.</div></div>
+    <div class="card" style="border-left:3px solid #fff;"><div class="num">08 · TOUCHE 8</div><div class="name">EDGE</div><div class="desc">Détection Sobel + neon coloring. L'angle des contours détermine la couleur arc-en-ciel.</div></div>
+  </div>
+  <div class="tip tip-green"><div class="label">Combos recommandés</div><p><strong>Fluid+Cam+Mic</strong> = visuels réactifs. <strong>Feedback+Cam</strong> = trip psychédélique. <strong>Kaleid+Cam+Mic</strong> = mandala vivant. <strong>Edge+Cam</strong> = néon cyberpunk. <strong>R-Diff+Touch</strong> = patterns organiques.</p></div>
+</div>
+
+<div class="section">
+  <div class="section-title"><em>Paramètres</em> (Sliders)</div>
+  <div class="key-grid">
+    <div class="key-cell">Intensity</div><div class="key-cell">Force / amplitude des effets. Plus c'est haut, plus c'est chaotique.</div>
+    <div class="key-cell">Speed</div><div class="key-cell">Vitesse des animations, de la simulation fluide, et du nombre de steps R-Diff.</div>
+    <div class="key-cell">Decay</div><div class="key-cell">Persistance des traces. Haut = traîne longue. Bas = disparition rapide.</div>
+    <div class="key-cell">Hue</div><div class="key-cell">Décalage global des couleurs. Tourne la roue chromatique.</div>
+    <div class="key-cell">Audio</div><div class="key-cell">Mix de réactivité audio (0-1). Module aussi la sensibilité du beat detection.</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><em>Contrôles</em></div>
+  <div class="subsection"><h3>Clavier</h3>
+    <div class="key-grid">
+      <div class="key-cell">1-8</div><div class="key-cell">Switch les 8 modes (avec crossfade)</div>
+      <div class="key-cell">H</div><div class="key-cell">Hide / show UI</div>
+      <div class="key-cell">C</div><div class="key-cell">Toggle caméra (GEN ↔ CAM)</div>
+      <div class="key-cell">M</div><div class="key-cell">Toggle microphone</div>
+      <div class="key-cell">R</div><div class="key-cell">Reset (clear buffers + params défaut)</div>
+      <div class="key-cell">F</div><div class="key-cell">Fullscreen + wake lock</div>
+      <div class="key-cell">G</div><div class="key-cell">Toggle gyroscope</div>
+      <div class="key-cell">P</div><div class="key-cell">Toggle palette selector</div>
+      <div class="key-cell">L</div><div class="key-cell">MIDI Learn mode</div>
+      <div class="key-cell">Space</div><div class="key-cell">Tap tempo BPM</div>
+    </div>
+  </div>
+  <div class="subsection"><h3>Touch (tablette)</h3>
+    <div class="key-grid">
+      <div class="key-cell">1 doigt</div><div class="key-cell">Drag = injecte force/dye</div>
+      <div class="key-cell">2× tap</div><div class="key-cell">Hide / show UI</div>
+      <div class="key-cell">3 doigts</div><div class="key-cell">Tap tempo BPM</div>
+      <div class="key-cell">Long</div><div class="key-cell">Long-press slider en MIDI Learn = cible</div>
+    </div>
+  </div>
+  <div class="subsection"><h3>MIDI</h3>
+    <p>Auto-détecté au boot. Le HUD affiche "MIDI 2x" (nombre de devices).</p>
+    <div class="midi-grid">
+      <div class="midi-cell hdr">Input</div><div class="midi-cell hdr">Défaut</div><div class="midi-cell hdr">Action</div>
+      <div class="midi-cell">CC 1</div><div class="midi-cell">Intensity</div><div class="midi-cell">Slider 0→1</div>
+      <div class="midi-cell">CC 2</div><div class="midi-cell">Speed</div><div class="midi-cell">Slider 0→1</div>
+      <div class="midi-cell">CC 3</div><div class="midi-cell">Decay</div><div class="midi-cell">Slider 0→1</div>
+      <div class="midi-cell">CC 4</div><div class="midi-cell">Hue</div><div class="midi-cell">Slider 0→1</div>
+      <div class="midi-cell">CC 5</div><div class="midi-cell">Audio Mix</div><div class="midi-cell">Slider 0→1</div>
+      <div class="midi-cell">Note 36-43</div><div class="midi-cell">—</div><div class="midi-cell">Switch modes 1-8</div>
+    </div>
+    <div class="tip"><div class="label">MIDI Learn</div><p><strong>1.</strong> Bouton ♪ (ou L) → mode Learn actif (bordure dorée). <strong>2.</strong> Long-press slider = cible (pulse doré). <strong>3.</strong> Bouge un potard → CC mappé. Les mappings ne persistent pas entre sessions.</p></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">6 <em>Palettes</em></div>
+  <div class="pal-row"><div class="swatch swatch-lg" style="background:linear-gradient(135deg,#00FFB0,#D2B14C);"></div><div class="pal-name">NH</div><div class="pal-colors">#00FFB0 · #D2B14C · #ff3366 — Default</div></div>
+  <div class="pal-row"><div class="swatch swatch-lg" style="background:linear-gradient(135deg,#FF2040,#FF6020);"></div><div class="pal-name">Infrared</div><div class="pal-colors">#FF2040 · #FF6020 · #FFD000 — Chaleur</div></div>
+  <div class="pal-row"><div class="swatch swatch-lg" style="background:linear-gradient(135deg,#6633CC,#00CCFF);"></div><div class="pal-name">Void</div><div class="pal-colors">#6633CC · #00CCFF · #FF00FF — Deep space</div></div>
+  <div class="pal-row"><div class="swatch swatch-lg" style="background:linear-gradient(135deg,#00FF00,#FF00FF);"></div><div class="pal-name">Neon</div><div class="pal-colors">#00FF00 · #FF00FF · #FFFF00 — Cyberpunk</div></div>
+  <div class="pal-row"><div class="swatch swatch-lg" style="background:linear-gradient(135deg,#00B4D8,#0077B6);"></div><div class="pal-name">Ocean</div><div class="pal-colors">#00B4D8 · #0077B6 · #90E0EF — Profondeur</div></div>
+  <div class="pal-row"><div class="swatch swatch-lg" style="background:linear-gradient(135deg,#FF6D00,#FF9E00);"></div><div class="pal-name">Ember</div><div class="pal-colors">#FF6D00 · #FF9E00 · #FFEA00 — Feu</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Post-<em>Processing</em></div>
+  <div class="flow">
+    <div class="flow-box accent">Effect</div><div class="flow-arrow">→</div><div class="flow-box">Bloom Extract</div><div class="flow-arrow">→</div><div class="flow-box">Blur ×2</div><div class="flow-arrow">→</div><div class="flow-box">Composite</div><div class="flow-arrow">→</div><div class="flow-box">Vignette</div><div class="flow-arrow">→</div><div class="flow-box">Scanlines</div><div class="flow-arrow">→</div><div class="flow-box">Gamma</div><div class="flow-arrow">→</div><div class="flow-box accent">Screen</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><em>Crossfade</em> Transitions</div>
+  <p>Switch de mode → snapshot du frame dans xfadeFB → blend ease-in-out 0.5s vers le nouveau mode. Plus de cuts brutaux.</p>
+</div>
+
+<div class="section">
+  <div class="section-title">Architecture <em>Technique</em></div>
+  <div class="spec-row"><span class="spec-label">Renderer</span><span class="spec-value">WebGL2 (GLSL 300 es)</span></div>
+  <div class="spec-row"><span class="spec-label">Textures</span><span class="spec-value">Half-float (RGBA16F / RG16F)</span></div>
+  <div class="spec-row"><span class="spec-label">Sim resolution</span><span class="spec-value">256×256</span></div>
+  <div class="spec-row"><span class="spec-label">Dye resolution</span><span class="spec-value">min(W,1024) × min(H,1024)</span></div>
+  <div class="spec-row"><span class="spec-label">Audio FFT</span><span class="spec-value">2048 bins, 5 bandes</span></div>
+  <div class="spec-row"><span class="spec-label">Shaders</span><span class="spec-value">10 (8 effets + DyeInject + Xfade)</span></div>
+  <div class="spec-row"><span class="spec-label">Total size</span><span class="spec-value">~64KB (single HTML)</span></div>
+  <div class="spec-row"><span class="spec-label">Target FPS</span><span class="spec-value">60 (tablette) / 120+ (desktop)</span></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Changelog v3.0 → <em>v3.1</em></div>
+  <div class="cl-item"><div class="cl-num">1</div><div class="cl-body"><h4>Camera → Fluid Dye Injection</h4><p>Shader FS_DYE_INJECT. La cam alimente le fluid comme dye. Mix modulé par Intensity + audio.</p></div></div>
+  <div class="cl-item"><div class="cl-num">2</div><div class="cl-body"><h4>Slider UX Refonte</h4><p>Zone touch 8→44px, track 6px, knob 22px, labels non-coupés, glow actif, MIDI Learn long-press.</p></div></div>
+  <div class="cl-item"><div class="cl-num">3</div><div class="cl-body"><h4>Camera Fallback + Orientation Fix</h4><p>Fallback vers GEN si readyState<2. Auto-detect facingMode mobile/desktop. FLIP_Y orientation.</p></div></div>
+  <div class="cl-item"><div class="cl-num">4</div><div class="cl-body"><h4>Web MIDI API</h4><p>Auto-detect USB. CC1-5 → params. Notes 36-43 → modes. MIDI Learn custom.</p></div></div>
+  <div class="cl-item"><div class="cl-num">5</div><div class="cl-body"><h4>Fullscreen + Wake Lock</h4><p>Fullscreen API + Screen Wake Lock. Re-acquire auto sur visibilitychange.</p></div></div>
+  <div class="cl-item"><div class="cl-num">6</div><div class="cl-body"><h4>Gyroscope / Accelerometer</h4><p>Tilt → forces fluid. Permission iOS 13+ gérée.</p></div></div>
+  <div class="cl-item"><div class="cl-num">7</div><div class="cl-body"><h4>6 Palettes</h4><p>NH, Infrared, Void, Neon, Ocean, Ember. UI + hue offset GEN.</p></div></div>
+  <div class="cl-item"><div class="cl-num">8</div><div class="cl-body"><h4>Crossfade Transitions</h4><p>FS_XFADE + xfadeFB snapshot. Ease-in-out 0.5s entre modes.</p></div></div>
+</div>
+
+<div class="section">
+  <div class="section-title"><em>Fichiers</em></div>
+  <div class="spec-row"><span class="spec-label">App live</span><span class="spec-value">deploy/index.html (~64KB)</span></div>
+  <div class="spec-row"><span class="spec-label">PWA</span><span class="spec-value">deploy/manifest.json + sw.js + icons</span></div>
+  <div class="spec-row"><span class="spec-label">Ce guide</span><span class="spec-value">nh-synaptic-mirror-recap.html</span></div>
+  <div class="spec-row"><span class="spec-label">Reprise</span><span class="spec-value">🚨_PROMPT_REPRISE_SM.txt</span></div>
+  <div class="spec-row"><span class="spec-label">Backup v3.0</span><span class="spec-value">deploy/index - Copy.html</span></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Roadmap <em>v4</em></div>
+  <div class="card-grid">
+    <div class="card"><div class="name">Dual Mode</div><div class="desc">WebSocket tablette→PC via api.thomasmaury.fr</div></div>
+    <div class="card"><div class="name">Multi-Chain</div><div class="desc">Chaînage multi-effets configurable</div></div>
+    <div class="card"><div class="name">Presets</div><div class="desc">Save/load params + MIDI maps</div></div>
+    <div class="card"><div class="name">Pixel Sort / Slit-Scan / Datamosh</div><div class="desc">Nouveaux effets GPU glitch</div></div>
+    <div class="card"><div class="name">Auto-Pilot</div><div class="desc">Params LFO autonomes — mode installation</div></div>
+    <div class="card"><div class="name">Recording</div><div class="desc">captureStream → MediaRecorder export</div></div>
+  </div>
+</div>
+
+<div class="footer">NeuroaeHive · Synaptic Mirror v3.1 · Mars 2026<br><a href="https://nh.thomasmaury.fr">nh.thomasmaury.fr</a> · Thomas Maury</div>
+</body>
+</html>

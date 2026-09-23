@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Interference Field</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0A0A0F; overflow: hidden; }
+    #field {
+      display: block;
+      touch-action: none;
+      overscroll-behavior: contain;
+    }
+  </style>
+</head>
+<body>
+<canvas id="field"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // --- Config -----------------------------------------------------------
+  var DAMPING      = 0.986;
+  var SRC_FREQ     = 0.045;  // radians/frame (~2.5s period)
+  var MAX_COLS     = 180;    // grid cap -- lower than 2D version for 3D perf
+  var MAX_ROWS     = 110;
+  var HEIGHT_SCALE = 1.5;    // world units per unit wave amplitude
+  var BOX_GAP      = 0.82;   // fraction of cell occupied by box (rest = gap)
+  var INJECT_R     = 2.5;    // injection disc radius in grid cells (tune here)
+
+  // Precomputed disc offsets for inject() -- built once, reused every frame.
+  // Linear falloff: w(d) = 1 - d/R, normalised so sum of weights = 1.
+  var _disc = (function () {
+    var iR = Math.ceil(INJECT_R), totalW = 0, d, w;
+    var tmp = [];
+    for (var dy = -iR; dy <= iR; dy++) {
+      for (var dx = -iR; dx <= iR; dx++) {
+        d = Math.sqrt(dx * dx + dy * dy);
+        if (d > INJECT_R) continue;
+        w = 1.0 - d / INJECT_R;
+        tmp.push([dx, dy, w]);
+        totalW += w;
+      }
+    }
+    for (var k = 0; k < tmp.length; k++) tmp[k][2] /= totalW;
+    return tmp;
+  }());
+
+  // Double-tap palette presets (WCAG 2.5.1 -- 2 entries, toggle on each double-tap)
+  // [TEAL_R, TEAL_G, TEAL_B, AMBER_R, AMBER_G, AMBER_B] (0-1 floats)
+  var PALETTE_PRESETS = [
+    [204/255,  68/255, 255/255,   0/255, 204/255, 170/255], // #CC44FF / #00CCAA (default)
+    [ 34/255, 102/255, 255/255, 255/255,  51/255,  68/255]  // #2266FF / #FF3344 (bleu/rouge)
+  ];
+
+  // prefers-reduced-motion: reduce amplitude + faster decay, never cut motion
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var AMP_MAX = reducedMotion ? 0.30 : 1.0;
+  var DAMP    = reducedMotion ? DAMPING * 0.994 : DAMPING;
+
+  // Phase 1 palette (linear RGB, 0-1 range for Three.js)
+  var BG_R    = 10  / 255, BG_G    = 10  / 255, BG_B    = 15  / 255;
+  var TEAL_R  = 204 / 255, TEAL_G  =  68 / 255, TEAL_B  = 255 / 255; // #CC44FF
+  var AMBER_R =   0 / 255, AMBER_G = 204 / 255, AMBER_B = 170 / 255; // #00CCAA
+
+  // --- Renderer ---------------------------------------------------------
+  var canvas   = document.getElementById('field');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: false });
+  renderer.setPixelRatio(1); // no DPR upscale: intentional for mobile perf
+
+  // --- Scene ------------------------------------------------------------
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0A0A0F);
+
+  // --- Shaders for InstancedMesh ---------------------------------------
+  // THREE.js r128 already declares instanceMatrix in the vertex prefix when
+  // USE_INSTANCING is set -- do not re-declare it.
+  // Lighting computed per-vertex in world space (works for scale+translate
+  // instanceMatrix with axis-aligned BoxGeometry normals).
+  // uRound (0-1) drives a rounded-box SDF in the fragment shader -- no extra vertices.
+  // vHalfExt = world-space half-extents extracted from instanceMatrix diagonal,
+  // passed to the fragment shader for an anisotropic SDF (avoids asymmetric gaps
+  // that appeared when the uniform local r=0.18 was stretched by non-uniform scale).
+  var VERT_SHADER = [
+    'attribute vec3 iColor;',
+    'varying vec3 vColor;',
+    'varying vec3 vLocalPos;',
+    'varying vec3 vHalfExt;',
+    'void main() {',
+    '  vHalfExt = vec3(instanceMatrix[0][0], instanceMatrix[1][1], instanceMatrix[2][2]) * 0.5;',
+    '  vec3 wNormal = normalize(mat3(instanceMatrix) * normal);',
+    '  float diff = max(dot(wNormal, normalize(vec3(2.0, 8.0, 5.0))), 0.0);',
+    '  float light = 0.55 + 0.55 * diff;',
+    '  vColor = iColor * light;',
+    '  vLocalPos = position;',
+    '  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);',
+    '}'
+  ].join('\n');
+  // Rounded-box SDF (Inigo Quilez formula) in world space:
+  //   p = vLocalPos scaled to world coords (vLocalPos is +-0.5, full size = 2*halfExt).
+  //   r = corner radius in world units, proportional to smallest dimension.
+  //   K_FRAC = 0.35 => 35% of min half-extent at uRound=1 (tune here if too subtle or too strong).
+  var FRAG_SHADER = [
+    'precision highp float;',
+    'uniform float uRound;',
+    'varying vec3 vColor;',
+    'varying vec3 vLocalPos;',
+    'varying vec3 vHalfExt;',
+    'void main() {',
+    '  vec3 p = vLocalPos * 2.0 * vHalfExt;',
+    '  float r = uRound * min(vHalfExt.x, min(vHalfExt.y, vHalfExt.z)) * 0.35;',
+    '  vec3 q = abs(p) - (vHalfExt - r);',
+    '  float d = length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;',
+    '  if (d > 0.0) discard;',
+    '  gl_FragColor = vec4(vColor, 1.0);',
+    '}'
+  ].join('\n');
+
+  // --- Camera -----------------------------------------------------------
+  // Perspective, slightly tilted (~40deg from vertical): reveals 3D relief
+  // while keeping the grid mostly overhead and filling the screen.
+  var camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+  camera.position.set(0, 10, 10);
+  camera.lookAt(0, 0, 0);
+
+  // --- Wave simulation state --------------------------------------------
+  var cols, rows, scale;
+  var curr, prev;
+
+  // --- 3D grid state ----------------------------------------------------
+  var cellW, cellD, gridOriginX, gridOriginZ;
+  var instancedMesh = null;
+
+  // --- Perspective-correct touch -> grid mapping ------------------------
+  // Reuse raycaster/plane/pt across frames (avoid per-frame allocation).
+  var _tRay   = new THREE.Raycaster();
+  var _tPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0
+  var _tPt    = new THREE.Vector3();
+  var W_px = 1, H_px = 1; // canvas CSS dimensions, updated in init()
+
+  // --- Ground coverage --------------------------------------------------
+  // Raycast screen corners onto the y=0 plane to get the camera frustum
+  // footprint. Used to size the grid so it always fills the entire screen.
+  function computeGroundCoverage() {
+    var raycaster = new THREE.Raycaster();
+    var plane     = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0
+    var ndc = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    var minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    var pt   = new THREE.Vector3();
+    for (var n = 0; n < 4; n++) {
+      raycaster.setFromCamera({ x: ndc[n][0], y: ndc[n][1] }, camera);
+      if (raycaster.ray.intersectPlane(plane, pt)) {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.z < minZ) minZ = pt.z;
+        if (pt.z > maxZ) maxZ = pt.z;
+      }
+    }
+    // Fallback if any corner ray misses y=0 (should not happen with this camera)
+    if (!isFinite(minX)) { minX = -30; maxX = 30; minZ = -30; maxZ = 15; }
+    return { minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ };
+  }
+
+  // --- Build InstancedMesh ----------------------------------------------
+  // One BoxGeometry(1,1,1) instance per grid cell.
+  // X/Z scale and world position set once in init; only Y position (amplitude)
+  // and instance color are updated every frame -- minimises per-frame work.
+  function rebuildMesh() {
+    var N = cols * rows;
+
+    if (instancedMesh) {
+      scene.remove(instancedMesh);
+      instancedMesh.geometry.dispose();
+      instancedMesh.material.dispose();
+      instancedMesh = null;
+    }
+
+    var scaleX = cellW * BOX_GAP;
+    var scaleZ = cellD * BOX_GAP;
+    // Box height proportional to cell size (pin-board aesthetic)
+    var boxH   = Math.min(cellW, cellD) * 1.1;
+
+    // Per-instance color attribute on the geometry (not on the mesh).
+    // THREE.js r128 instanceColor (mesh.instanceColor) doesn't work reliably
+    // on all WebGL implementations -- use a custom InstancedBufferAttribute.
+    var cArr = new Float32Array(N * 3);
+    for (var j = 0; j < N; j++) {
+      cArr[j * 3]     = BG_R;
+      cArr[j * 3 + 1] = BG_G;
+      cArr[j * 3 + 2] = BG_B;
+    }
+    var iColorAttr = new THREE.InstancedBufferAttribute(cArr, 3);
+    iColorAttr.usage = THREE.DynamicDrawUsage;
+
+    var geo = new THREE.BoxGeometry(1, 1, 1);
+    geo.setAttribute('iColor', iColorAttr);
+
+    var mat = new THREE.ShaderMaterial({
+      uniforms:       { uRound: { value: 0.0 } },
+      vertexShader:   VERT_SHADER,
+      fragmentShader: FRAG_SHADER
+    });
+
+    instancedMesh = new THREE.InstancedMesh(geo, mat, N);
+    instancedMesh.frustumCulled = false; // grid fills screen, skip per-instance culling
+    instancedMesh.instanceMatrix.usage = THREE.DynamicDrawUsage;
+    scene.add(instancedMesh);
+
+    var mArr = instancedMesh.instanceMatrix.array;
+    for (var gy = 0; gy < rows; gy++) {
+      for (var gx = 0; gx < cols; gx++) {
+        var i  = gy * cols + gx;
+        var tx = gridOriginX + gx * cellW + cellW * 0.5;
+        var tz = gridOriginZ + gy * cellD + cellD * 0.5;
+        // Column-major 4x4 matrix (Three.js convention):
+        // [sx, 0,  0,  0,   0, sy, 0,  0,   0,  0, sz, 0,   tx, ty, tz, 1]
+        var b = i * 16;
+        mArr[b]      = scaleX; // m00 -- X scale
+        mArr[b + 5]  = boxH;   // m11 -- Y scale (fixed box height)
+        mArr[b + 10] = scaleZ; // m22 -- Z scale
+        mArr[b + 12] = tx;     // tx  -- updated per frame (only ty changes)
+        mArr[b + 13] = 0;      // ty  -- Y position = wave amplitude * HEIGHT_SCALE
+        mArr[b + 14] = tz;     // tz
+        mArr[b + 15] = 1;      // w
+        // All other elements default to 0 (Float32Array init)
+      }
+    }
+    instancedMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // --- Init / Resize ----------------------------------------------------
+  function init() {
+    var W = window.innerWidth;
+    var H = window.innerHeight;
+
+    W_px = W; H_px = H;
+    renderer.setSize(W, H);
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
+    // Force camera matrixWorld to reflect current position + lookAt before raycasting.
+    // camera.lookAt() sets quaternion but does NOT update matrixWorld immediately;
+    // THREE.js only does this inside renderer.render(). Without this call, the first
+    // computeGroundCoverage() sees identity matrixWorld -> zero coverage -> invisible grid.
+    camera.updateMatrixWorld(true);
+
+    // Wave grid: capped to MAX_COLS/MAX_ROWS, minimum cell 4px
+    scale = Math.max(Math.ceil(W / MAX_COLS), Math.ceil(H / MAX_ROWS), 4);
+    cols  = Math.ceil(W / scale);
+    rows  = Math.ceil(H / scale);
+    curr  = new Float32Array(cols * rows);
+    prev  = new Float32Array(cols * rows);
+
+    // 3D grid: size to cover camera frustum + 22% margin on each side.
+    // The margin absorbs wave height parallax so no background shows at edges.
+    var cov = computeGroundCoverage();
+    var mX  = (cov.maxX - cov.minX) * 0.22;
+    var mZ  = (cov.maxZ - cov.minZ) * 0.22;
+    var worldW  = cov.maxX - cov.minX + 2 * mX;
+    var worldD  = cov.maxZ - cov.minZ + 2 * mZ;
+    gridOriginX = cov.minX - mX;
+    gridOriginZ = cov.minZ - mZ;
+    cellW = worldW / cols;
+    cellD = worldD / rows;
+
+    rebuildMesh();
+
+    // Reset ambient source phases to avoid discontinuity on resize
+    sources[0].phase = 0;
+    sources[1].phase = Math.PI;
+  }
+
+  // --- Hugo Elias 2D wave propagation -----------------------------------
+  // next[i] = ((left+right+up+down)/2 - prev[i]) * damping
+  // Written into prev in-place (safe: reads only from curr), then swapped.
+  function step() {
+    var C = cols;
+    for (var y = 1; y < rows - 1; y++) {
+      for (var x = 1; x < cols - 1; x++) {
+        var i = y * C + x;
+        prev[i] = (
+          (curr[i - 1] + curr[i + 1] + curr[i - C] + curr[i + C]) * 0.5 - prev[i]
+        ) * DAMP;
+      }
+    }
+    var tmp = curr; curr = prev; prev = tmp;
+  }
+
+  // Inject wave energy across a circular disc (radius INJECT_R grid cells).
+  // Linear falloff + energy normalisation: same total energy regardless of R.
+  // Applied identically to touch and ambient sources for visual consistency.
+  function inject(gx, gy, amp) {
+    var s  = amp * AMP_MAX;
+    var C  = cols;
+    var cx = Math.round(gx);
+    var cy = Math.round(gy);
+    for (var k = 0; k < _disc.length; k++) {
+      var e  = _disc[k];
+      var bx = cx + e[0];
+      var by = cy + e[1];
+      if (bx < 1 || bx >= cols - 1 || by < 1 || by >= rows - 1) continue;
+      curr[by * C + bx] += s * e[2];
+    }
+  }
+
+  // --- Per-frame: push wave state into InstancedMesh --------------------
+  // Only two values change per instance per frame:
+  //   instanceMatrix[i*16 + 13] = Y world position (= amplitude * HEIGHT_SCALE)
+  //   geometry.attributes.iColor = teal/amber mix
+  function updateInstances() {
+    var N    = cols * rows;
+    var H    = HEIGHT_SCALE;
+    var mArr = instancedMesh.instanceMatrix.array;
+    var cArr = instancedMesh.geometry.attributes.iColor.array;
+
+    for (var i = 0; i < N; i++) {
+      var v = curr[i];
+      var t = v < -1 ? -1 : v > 1 ? 1 : v;
+
+      mArr[i * 16 + 13] = v * H; // Y world position
+
+      var r, g, b;
+      if (t >= 0) {
+        r = BG_R + (AMBER_R - BG_R) * t;
+        g = BG_G + (AMBER_G - BG_G) * t;
+        b = BG_B + (AMBER_B - BG_B) * t;
+      } else {
+        var nt = -t;
+        r = BG_R + (TEAL_R  - BG_R) * nt;
+        g = BG_G + (TEAL_G  - BG_G) * nt;
+        b = BG_B + (TEAL_B  - BG_B) * nt;
+      }
+      // Luminosity boost: crests bright regardless of hue -- colorblind accessible.
+      // |t| drives brightness so both peaks and troughs stand out visually.
+      var luma = 1.0 + (t < 0 ? -t : t) * 0.55;
+      var ci = i * 3;
+      cArr[ci]     = r * luma < 1 ? r * luma : 1;
+      cArr[ci + 1] = g * luma < 1 ? g * luma : 1;
+      cArr[ci + 2] = b * luma < 1 ? b * luma : 1;
+    }
+
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    instancedMesh.geometry.attributes.iColor.needsUpdate = true;
+  }
+
+  // --- Phase 1: two fixed ambient oscillating sources -------------------
+  // Offset by PI so interference pattern is visible from frame 1.
+  var sources = [
+    { fx: 0.30, fy: 0.40, phase: 0       },
+    { fx: 0.70, fy: 0.60, phase: Math.PI }
+  ];
+
+  // --- Phase 4: tilt/gyro -----------------------------------------------
+  // Drifts the two ambient sources in 2D (X=gamma, Z=beta) as a slow
+  // background bias. Never first-plan; total silence on failure.
+  // TILT_SCALE and TILT_MAX: starting values, tune on device.
+  var TILT_SCALE    = 0.015;  // degrees -> grid-fraction per degree
+  var TILT_MAX      = 0.35;   // max displacement per axis (fraction of grid)
+  var TILT_EMA      = 0.08;   // EMA coefficient (~12-frame lag at 60fps = slow drift)
+
+  var tiltX         = 0;      // smoothed X offset applied to sources (driven by gamma)
+  var tiltZ         = 0;      // smoothed Z offset applied to sources (driven by beta)
+  var tiltBaseB     = null;   // beta at first sample -- delta baseline, not absolute
+  var tiltBaseG     = null;   // gamma at first sample
+  var tiltPermAsked = false;  // request at most once per session (first pointerdown)
+
+  function attachTiltListener() {
+    window.addEventListener('deviceorientation', function (e) {
+      if (e.beta === null || e.gamma === null) return;
+      // First sample: capture baseline, no motion yet.
+      if (tiltBaseB === null) { tiltBaseB = e.beta; tiltBaseG = e.gamma; return; }
+      var tx = (e.gamma - tiltBaseG) * TILT_SCALE;
+      var tz = (e.beta  - tiltBaseB) * TILT_SCALE;
+      if (tx < -TILT_MAX) tx = -TILT_MAX; else if (tx > TILT_MAX) tx = TILT_MAX;
+      if (tz < -TILT_MAX) tz = -TILT_MAX; else if (tz > TILT_MAX) tz = TILT_MAX;
+      tiltX += (tx - tiltX) * TILT_EMA;
+      tiltZ += (tz - tiltZ) * TILT_EMA;
+    });
+  }
+
+  function requestTiltPermission() {
+    tiltPermAsked = true;
+    if (typeof DeviceOrientationEvent === 'undefined') return;
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iOS 13+ (and Chrome 151+ desktop/Android): must call synchronously in gesture.
+      DeviceOrientationEvent.requestPermission()
+        .then(function (state) { if (state === 'granted') attachTiltListener(); })
+        .catch(function () { /* silent -- tiltX/Z stay 0, no visual change */ });
+    } else {
+      attachTiltListener(); // no permission gate on this browser
+    }
+  }
+
+  // --- Phase 2+3: multi-touch (up to 2 pointers) -----------------------
+  // ptr[0] and ptr[1] are independent slots; both can be active simultaneously.
+  // With 1 active pointer: behavior identical to phase 2.
+  // With 2 active pointers: distance drives touchFreq, centroid Y drives drift.
+  function makeSlot() {
+    return { id: null, x: 0, y: 0, px: 0, py: 0, pt: 0, velAmp: 0, dwellAmp: 0 };
+  }
+  var ptr = [makeSlot(), makeSlot()];
+  var activeCount  = 0;
+  var driftY       = 0;   // centroid vertical offset (-1 to +1)
+  // Double-tap state (WCAG 2.5.1 single-pointer palette alternative)
+  var paletteIdx = 0;
+  var lastTapT = 0, lastTapX = 0, lastTapY = 0;
+  var DOUBLE_TAP_MS = 300, DOUBLE_TAP_PX = 30;
+
+  function findSlot(id) {
+    return ptr[0].id === id ? 0 : ptr[1].id === id ? 1 : -1;
+  }
+  function freeSlot() {
+    return ptr[0].id === null ? 0 : ptr[1].id === null ? 1 : -1;
+  }
+
+  canvas.addEventListener('pointerdown', function (e) {
+    // Phase 4: request orientation permission on the very first touch (synchronous
+    // in a user-gesture handler -- required by iOS Safari; harmless elsewhere).
+    if (!tiltPermAsked) requestTiltPermission();
+
+    var slot = freeSlot();
+    if (slot === -1) return; // 2 pointers already tracked
+    var p = ptr[slot];
+    p.id = e.pointerId;
+    p.x = p.px = e.clientX; p.y = p.py = e.clientY; p.pt = e.timeStamp;
+    p.velAmp = 0; p.dwellAmp = 0;
+    canvas.setPointerCapture(e.pointerId);
+    activeCount++;
+  });
+
+  canvas.addEventListener('pointermove', function (e) {
+    var slot = findSlot(e.pointerId);
+    if (slot === -1) return;
+    var p = ptr[slot];
+    var dt = e.timeStamp - p.pt;
+    if (dt > 0) {
+      var dx = e.clientX - p.px, dy = e.clientY - p.py;
+      var va = 1.0 - Math.exp(-Math.sqrt(dx * dx + dy * dy) / dt * 0.55);
+      p.velAmp = Math.max(p.velAmp * 0.80, va);
+    }
+    p.x = e.clientX; p.y = e.clientY;
+    p.px = p.x; p.py = p.y; p.pt = e.timeStamp;
+
+    // Centroid drift (2 fingers): vertical bias for directional wave injection
+    if (activeCount === 2 && ptr[0].id !== null && ptr[1].id !== null) {
+      driftY = ((ptr[0].y + ptr[1].y) * 0.5 / H_px - 0.5) * 2; // -1 top, +1 bottom
+    }
+  });
+
+  function onRelease(e) {
+    var slot = findSlot(e.pointerId);
+    if (slot === -1) return;
+    var p = ptr[slot];
+
+    // Double-tap detection (single-pointer only, WCAG 2.5.1 palette alternative)
+    if (activeCount === 1) {
+      var now = e.timeStamp;
+      var tdx = p.x - lastTapX, tdy = p.y - lastTapY;
+      if (now - lastTapT < DOUBLE_TAP_MS &&
+          Math.sqrt(tdx * tdx + tdy * tdy) < DOUBLE_TAP_PX) {
+        paletteIdx = (paletteIdx + 1) % PALETTE_PRESETS.length;
+        var pal = PALETTE_PRESETS[paletteIdx];
+        TEAL_R = pal[0]; TEAL_G = pal[1]; TEAL_B = pal[2];
+        AMBER_R = pal[3]; AMBER_G = pal[4]; AMBER_B = pal[5];
+      }
+      lastTapT = now; lastTapX = p.x; lastTapY = p.y;
+    }
+
+    p.id = null; p.velAmp = 0; p.dwellAmp = 0;
+    activeCount = Math.max(0, activeCount - 1);
+    if (activeCount < 2) driftY = 0;
+  }
+  canvas.addEventListener('pointerup',     onRelease);
+  canvas.addEventListener('pointercancel', onRelease);
+
+  // --- Main loop --------------------------------------------------------
+  // step() runs first so injections land in the post-propagation buffer.
+  // updateInstances reads curr[] after both step and inject, so displayed
+  // values are always >= 0 at injection points (inject adds on top of step output
+  // instead of being overwritten by the -prev term in the next step call).
+  function loop() {
+    var i, s;
+
+    step();
+
+    // Ambient oscillating sources (phase 1 visual) with tilt drift offset.
+    // tiltX/tiltZ are 0 when gyro is absent or not yet active -- no effect.
+    for (i = 0; i < sources.length; i++) {
+      s = sources[i];
+      s.phase += SRC_FREQ;
+      var sfx = s.fx + tiltX;
+      var sfz = s.fy + tiltZ;
+      if (sfx < 0.05) sfx = 0.05; else if (sfx > 0.95) sfx = 0.95;
+      if (sfz < 0.05) sfz = 0.05; else if (sfz > 0.95) sfz = 0.95;
+      inject(sfx * cols, sfz * rows, Math.sin(s.phase) * 0.45);
+    }
+
+    // Touch injection: continuous push, amplitude from velAmp (drag) + dwellAmp (hold)
+    for (var pi = 0; pi < 2; pi++) {
+      var p = ptr[pi];
+      if (p.id === null) continue;
+      var ndcX = p.x / W_px *  2 - 1;
+      var ndcY = p.y / H_px * -2 + 1;
+      _tRay.setFromCamera({ x: ndcX, y: ndcY }, camera);
+      var gx, gy;
+      if (_tRay.ray.intersectPlane(_tPlane, _tPt)) {
+        gx = (_tPt.x - gridOriginX) / cellW;
+        gy = (_tPt.z - gridOriginZ) / cellD;
+      } else {
+        gx = p.x / scale; gy = p.y / scale;
+      }
+      p.dwellAmp += (1.0 - p.dwellAmp) * 0.035;
+      var baseAmp = Math.max(p.velAmp, p.dwellAmp * 0.55);
+      inject(gx, gy, baseAmp);
+      p.velAmp *= 0.85;
+    }
+
+    // Centroid drift (2-finger gesture): gentle directional wave bias
+    if (activeCount >= 2 && Math.abs(driftY) > 0.05) {
+      var db = driftY * 0.04;
+      for (var dx2 = 1; dx2 < cols - 1; dx2++) {
+        curr[cols + dx2]            += db;  // row 1 (top)
+        curr[(rows - 2) * cols + dx2] -= db; // row rows-2 (bottom)
+      }
+    }
+
+    updateInstances();
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', init);
+  init();
+  loop();
+})();
+</script>
+</body>
+</html>

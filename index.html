@@ -1,0 +1,1636 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>NeuraeHive — Thomas Maury</title>
+    <meta
+      name="description"
+      content="NeuraeHive — Real-time audiovisual instruments and live AI installations by Thomas Maury."
+    />
+    <meta property="og:title" content="NeuraeHive — Thomas Maury" />
+    <meta
+      property="og:description"
+      content="Real-time audiovisual instruments and live AI installations."
+    />
+    <meta
+      property="og:image"
+      content="https://nh.thomasmaury.fr/og-image.png"
+    />
+    <meta property="og:url" content="https://nh.thomasmaury.fr" />
+    <meta name="theme-color" content="#0a0a0f" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400&family=Space+Mono:wght@400;700&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --cyan: #00ccaa;
+        --magenta: #cc44ff;
+        --amber: #ff9d3d;
+        --lime: #a3e635;
+        --violet: #8b5cf6;
+        --slate: #8a94a6;
+        --red: #ff4455;
+        --rose: #c34ea0;
+        --noct-blue: #5b7fff;
+        --mint: #00ffd5;
+        --gold: #f0b429;
+        --ash: #e0c9a0;
+        --electric: #3b82f6;
+        --bg: #0a0a0f;
+        --bg-card: #0e0e16;
+        --text: #e8e8f0;
+        --text-dim: rgba(232, 232, 240, 0.55);
+        --border: rgba(255, 255, 255, 0.06);
+      }
+
+      html {
+        font-size: 16px;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Outfit', sans-serif;
+        font-weight: 300;
+        min-height: 100vh;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ── Background canvas ── */
+      .bg-canvas {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .bg-orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(120px);
+        opacity: 0;
+        animation: orbFadeIn 2s ease forwards;
+      }
+
+      .bg-orb--1 {
+        width: 500px;
+        height: 500px;
+        background: var(--cyan);
+        opacity: 0;
+        top: -10%;
+        left: -8%;
+        animation-delay: 0.3s;
+      }
+      .bg-orb--1.visible {
+        opacity: 0.07;
+      }
+
+      .bg-orb--2 {
+        width: 400px;
+        height: 400px;
+        background: var(--magenta);
+        bottom: -5%;
+        right: -5%;
+        animation-delay: 0.6s;
+      }
+      .bg-orb--2.visible {
+        opacity: 0.05;
+      }
+
+      .bg-orb--3 {
+        width: 300px;
+        height: 300px;
+        background: var(--mint);
+        top: 40%;
+        left: 50%;
+        transform: translateX(-50%);
+        animation-delay: 0.9s;
+      }
+      .bg-orb--3.visible {
+        opacity: 0.03;
+      }
+
+      @keyframes orbFadeIn {
+        to {
+          opacity: var(--orb-opacity, 0.06);
+        }
+      }
+
+      /* ── Grain overlay ── */
+      .grain {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        opacity: 0.035;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        background-size: 200px;
+      }
+
+      /* ── Layout ── */
+      .container {
+        position: relative;
+        z-index: 2;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 24px;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+
+      /* ── Header ── */
+      .header {
+        text-align: center;
+        margin-bottom: 48px;
+        opacity: 0;
+        animation: fadeUp 0.8s ease 0.2s forwards;
+      }
+
+      .title {
+        font-family: 'Syne', sans-serif;
+        font-weight: 800;
+        font-size: clamp(1.7rem, 4.5vw, 3rem);
+        letter-spacing: -0.02em;
+        line-height: 1.05;
+        background: linear-gradient(
+          135deg,
+          var(--text) 0%,
+          var(--cyan) 50%,
+          var(--mint) 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 16px;
+      }
+
+      .section-label {
+        width: 100%;
+        text-align: left;
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 0.95rem;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: rgba(232, 232, 240, 0.55);
+        margin-bottom: 22px;
+      }
+      .section-label--grid {
+        grid-column: 1 / -1;
+        margin: 24px 0 0;
+      }
+
+      .subtitle {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 200;
+        font-size: clamp(0.95rem, 2vw, 1.15rem);
+        color: var(--text-dim);
+        line-height: 1.6;
+        max-width: 560px;
+        margin: 0 auto;
+      }
+
+      .header__note {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.65rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(232, 232, 240, 0.4);
+        margin-top: 14px;
+      }
+
+      /* ── Projects grid ── */
+      .projects {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+        width: 100%;
+        margin-bottom: 80px;
+      }
+
+      /* ── Project card ── */
+      .card {
+        position: relative;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 36px 28px 32px;
+        text-decoration: none;
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        overflow: hidden;
+        transition:
+          border-color 0.4s ease,
+          transform 0.3s ease;
+        opacity: 0;
+        animation: fadeUp 0.7s ease forwards;
+      }
+
+      .card:nth-child(1) {
+        animation-delay: 0.5s;
+      }
+      .card:nth-child(2) {
+        animation-delay: 0.7s;
+      }
+      .card:nth-child(3) {
+        animation-delay: 0.9s;
+      }
+      .card:nth-child(4) {
+        animation-delay: 1.1s;
+      }
+      .card:nth-child(5) {
+        animation-delay: 1.3s;
+      }
+      .card:nth-child(6) {
+        animation-delay: 1.5s;
+      }
+      .card:nth-child(7) {
+        animation-delay: 1.7s;
+      }
+      .card:nth-child(8) {
+        animation-delay: 1.9s;
+      }
+      .card:nth-child(9) {
+        animation-delay: 2.1s;
+      }
+      .card:nth-child(10) {
+        animation-delay: 2.3s;
+      }
+      .card:nth-child(11) {
+        animation-delay: 2.5s;
+      }
+
+      .card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+        opacity: 0;
+        transition: opacity 0.5s ease;
+        pointer-events: none;
+      }
+
+      .card--sm::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(0, 204, 170, 0.08),
+          transparent 70%
+        );
+      }
+      .card--ci::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(224, 201, 160, 0.08),
+          transparent 70%
+        );
+      }
+      .card--pu::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(163, 230, 53, 0.08),
+          transparent 70%
+        );
+      }
+      .card--if::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(139, 92, 246, 0.08),
+          transparent 70%
+        );
+      }
+      .card--mg::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(138, 148, 166, 0.08),
+          transparent 70%
+        );
+      }
+      .card--gp::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(255, 68, 85, 0.08),
+          transparent 70%
+        );
+      }
+      .card--an::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(195, 78, 160, 0.08),
+          transparent 70%
+        );
+      }
+      .card--nt::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(240, 180, 41, 0.08),
+          transparent 70%
+        );
+      }
+      .card--sc::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(59, 130, 246, 0.08),
+          transparent 70%
+        );
+      }
+
+      .card:hover::before {
+        opacity: 1;
+      }
+      .card:hover {
+        border-color: rgba(255, 255, 255, 0.12);
+        transform: translateY(-3px);
+      }
+
+      /* Glossy border spotlight following the cursor */
+      .card::after,
+      .apps-banner::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1px;
+        background: radial-gradient(
+          220px circle at var(--mx, 50%) var(--my, 50%),
+          var(--glow-color, rgba(255, 255, 255, 0.5)),
+          transparent 70%
+        );
+        -webkit-mask:
+          linear-gradient(#fff 0 0) content-box,
+          linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask:
+          linear-gradient(#fff 0 0) content-box,
+          linear-gradient(#fff 0 0);
+        mask-composite: exclude;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        pointer-events: none;
+      }
+      .card:hover::after,
+      .apps-banner:hover::after {
+        opacity: 0.6;
+      }
+
+      .card--sm {
+        --glow-color: var(--cyan);
+      }
+      .card--ci {
+        --glow-color: var(--ash);
+      }
+      .card--pu {
+        --glow-color: var(--lime);
+      }
+      .card--if {
+        --glow-color: var(--violet);
+      }
+      .card--mg {
+        --glow-color: var(--slate);
+      }
+      .card--gp {
+        --glow-color: var(--red);
+      }
+      .card--an {
+        --glow-color: var(--rose);
+      }
+      .card--nt {
+        --glow-color: var(--gold);
+      }
+      .card--sc {
+        --glow-color: var(--electric);
+      }
+      .apps-banner {
+        --glow-color: var(--noct-blue);
+      }
+      .apps-banner--limbra {
+        --glow-color: var(--gold);
+      }
+
+      /* Glow line on top */
+      .card__glow {
+        position: absolute;
+        top: 0;
+        left: 20%;
+        right: 20%;
+        height: 1px;
+        opacity: 0;
+        transition:
+          opacity 0.5s ease,
+          left 0.5s ease,
+          right 0.5s ease;
+      }
+      .card--sm .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--cyan),
+          transparent
+        );
+      }
+      .card--ci .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--ash),
+          transparent
+        );
+      }
+      .card--pu .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--lime),
+          transparent
+        );
+      }
+      .card--if .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--violet),
+          transparent
+        );
+      }
+      .card--mg .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--slate),
+          transparent
+        );
+      }
+      .card--gp .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--red),
+          transparent
+        );
+      }
+      .card--an .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--rose),
+          transparent
+        );
+      }
+      .card--nt .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--gold),
+          transparent
+        );
+      }
+      .card--sc .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--electric),
+          transparent
+        );
+      }
+
+      .card:hover .card__glow {
+        opacity: 0.8;
+        left: 10%;
+        right: 10%;
+      }
+
+      /* Status pill */
+      .card__status {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.6rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 100px;
+        width: fit-content;
+      }
+      .card--sm .card__status {
+        color: var(--cyan);
+        background: rgba(0, 204, 170, 0.1);
+        border: 1px solid rgba(0, 204, 170, 0.2);
+      }
+      .card--ci .card__status {
+        color: var(--ash);
+        background: rgba(224, 201, 160, 0.1);
+        border: 1px solid rgba(224, 201, 160, 0.2);
+      }
+      .card--pu .card__status {
+        color: var(--lime);
+        background: rgba(163, 230, 53, 0.1);
+        border: 1px solid rgba(163, 230, 53, 0.2);
+      }
+      .card--if .card__status {
+        color: var(--violet);
+        background: rgba(139, 92, 246, 0.1);
+        border: 1px solid rgba(139, 92, 246, 0.2);
+      }
+      .card--mg .card__status {
+        color: var(--slate);
+        background: rgba(138, 148, 166, 0.1);
+        border: 1px solid rgba(138, 148, 166, 0.2);
+      }
+      .card--gp .card__status {
+        color: var(--red);
+        background: rgba(255, 68, 85, 0.1);
+        border: 1px solid rgba(255, 68, 85, 0.2);
+      }
+      .card--an .card__status {
+        color: var(--rose);
+        background: rgba(195, 78, 160, 0.1);
+        border: 1px solid rgba(195, 78, 160, 0.2);
+      }
+      .card--nt .card__status {
+        color: var(--gold);
+        background: rgba(240, 180, 41, 0.1);
+        border: 1px solid rgba(240, 180, 41, 0.2);
+      }
+      .card--sc .card__status {
+        color: var(--electric);
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+      }
+
+      .card__title {
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 1.5rem;
+        letter-spacing: -0.01em;
+      }
+
+      .card__desc {
+        font-weight: 200;
+        font-size: 0.9rem;
+        line-height: 1.65;
+        color: var(--text-dim);
+      }
+
+      .card__tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: auto;
+        padding-top: 8px;
+      }
+
+      .tag {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.55rem;
+        letter-spacing: 0.05em;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(232, 232, 240, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .card__arrow {
+        position: absolute;
+        bottom: 28px;
+        right: 24px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transform: translate(-6px, 6px);
+        transition:
+          opacity 0.3s ease,
+          transform 0.3s ease;
+      }
+      .card__arrow svg {
+        stroke: var(--text-dim);
+      }
+      .card:hover .card__arrow {
+        opacity: 1;
+        transform: translate(0, 0);
+      }
+
+      /* ── Footer ── */
+      .footer {
+        text-align: center;
+        padding-bottom: 40px;
+        opacity: 0;
+        animation: fadeUp 0.6s ease 1s forwards;
+      }
+
+      .footer__author {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 300;
+        font-size: 0.85rem;
+        color: rgba(232, 232, 240, 0.4);
+        margin-bottom: 8px;
+        letter-spacing: 0.02em;
+      }
+
+      .footer__text {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.6rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: rgba(232, 232, 240, 0.3);
+      }
+
+      .footer__link {
+        color: rgba(232, 232, 240, 0.4);
+        text-decoration: none;
+        transition: color 0.3s ease;
+      }
+      .footer__link:hover {
+        color: var(--cyan);
+      }
+
+      /* ── Animations ── */
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ── Pulse animation for live status ── */
+      .pulse-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin-right: 6px;
+        position: relative;
+        top: -1px;
+      }
+      .card--sm .pulse-dot {
+        background: var(--cyan);
+      }
+      .card--ci .pulse-dot {
+        background: var(--ash);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      .card--pu .pulse-dot {
+        background: var(--lime);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      .card--if .pulse-dot {
+        background: var(--violet);
+      }
+      .card--mg .pulse-dot {
+        background: var(--slate);
+      }
+      .card--gp .pulse-dot {
+        background: var(--red);
+      }
+      .card--an .pulse-dot {
+        background: var(--rose);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      .card--nt .pulse-dot {
+        background: var(--gold);
+      }
+      .card--sc .pulse-dot {
+        background: var(--electric);
+      }
+
+      /* ── External product card (Noctaliæ) ── */
+      .card--external {
+        border-style: dashed;
+        border-color: rgba(91, 127, 255, 0.25);
+      }
+      .card--external:hover {
+        border-color: rgba(91, 127, 255, 0.5);
+      }
+      .card--external::before {
+        background: radial-gradient(
+          circle at var(--mx, 30%) var(--my, 20%),
+          rgba(91, 127, 255, 0.1),
+          transparent 70%
+        );
+      }
+      .card--external .card__glow {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--noct-blue),
+          transparent
+        );
+      }
+      .card--external .card__status {
+        color: var(--noct-blue);
+        background: rgba(91, 127, 255, 0.1);
+        border: 1px solid rgba(91, 127, 255, 0.2);
+      }
+      .card--external .external-badge {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.55rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(232, 232, 240, 0.35);
+        position: absolute;
+        top: 28px;
+        right: 24px;
+      }
+
+      .card--external .pulse-dot {
+        background: var(--noct-blue);
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* ── Compact card variant ── */
+      .card--compact {
+        padding: 22px 20px 20px;
+        grid-column: span 1;
+        justify-self: start;
+        width: 100%;
+        max-width: 340px;
+      }
+      .card--compact .card__title {
+        font-size: 1.15rem;
+      }
+      .card--compact .card__desc {
+        font-size: 0.8rem;
+      }
+
+      /* ── Mini card variant (tools) ── */
+      .card--mini {
+        padding: 16px 18px 14px;
+        max-width: 260px;
+        gap: 10px;
+      }
+      .card--mini .card__title {
+        font-size: 1rem;
+      }
+      .card--mini .card__desc {
+        font-size: 0.72rem;
+        line-height: 1.5;
+      }
+      .card--mini .card__tags {
+        padding-top: 4px;
+      }
+      .card--mini .card__arrow {
+        bottom: 14px;
+        right: 14px;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          box-shadow: 0 0 0 0 rgba(255, 157, 61, 0.4);
+        }
+        50% {
+          opacity: 0.7;
+          box-shadow: 0 0 0 6px rgba(255, 157, 61, 0);
+        }
+      }
+
+      /* ── Top bar ── */
+      .topbar {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 52px;
+        opacity: 0;
+        animation: fadeUp 0.6s ease 0.1s forwards;
+      }
+      .topbar__brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+      }
+      .topbar__logo {
+        width: 36px;
+        height: auto;
+        opacity: 0.9;
+      }
+      .topbar__name {
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 1.1rem;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: rgba(232, 232, 240, 0.75);
+        transition: color 0.3s ease;
+      }
+      .topbar__brand:hover .topbar__name {
+        color: var(--cyan);
+      }
+      .topbar__links {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.62rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .topbar__links a {
+        color: rgba(232, 232, 240, 0.35);
+        text-decoration: none;
+        transition: color 0.3s ease;
+      }
+      .topbar__links a:hover {
+        color: var(--cyan);
+      }
+      .lang-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin-left: 14px;
+        padding: 4px 10px;
+        border-radius: 100px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .lang-opt {
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        font: inherit;
+        letter-spacing: inherit;
+        text-transform: inherit;
+        color: rgba(232, 232, 240, 0.3);
+        transition: color 0.3s ease;
+      }
+      .lang-opt:hover {
+        color: rgba(232, 232, 240, 0.6);
+      }
+      .lang-opt.active {
+        color: var(--cyan);
+      }
+      .lang-pill__sep {
+        color: rgba(232, 232, 240, 0.15);
+      }
+
+      /* ── Apps banner (compact, below header) ── */
+      .apps-banner {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        width: 100%;
+        background: var(--bg-card);
+        border: 1px dashed rgba(91, 127, 255, 0.25);
+        border-radius: 14px;
+        padding: 14px 20px;
+        text-decoration: none;
+        color: var(--text);
+        position: relative;
+        overflow: hidden;
+        transition:
+          border-color 0.4s ease,
+          transform 0.3s ease;
+        opacity: 0;
+        animation: fadeUp 0.7s ease 0.35s forwards;
+      }
+      .apps-banner::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
+        background: radial-gradient(
+          circle at var(--mx, 15%) var(--my, 50%),
+          rgba(91, 127, 255, 0.1),
+          transparent 60%
+        );
+        opacity: 0;
+        transition: opacity 0.5s ease;
+        pointer-events: none;
+      }
+      .apps-banner:hover {
+        border-color: rgba(91, 127, 255, 0.5);
+        transform: translateY(-2px);
+      }
+      .apps-banner:hover::before {
+        opacity: 1;
+      }
+      .apps-banner__logo {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+        filter: drop-shadow(0 0 10px rgba(0, 255, 213, 0.18));
+      }
+      .apps-banner__title {
+        display: block;
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
+      }
+      .apps-banner__desc {
+        display: block;
+        font-weight: 200;
+        font-size: 0.78rem;
+        color: var(--text-dim);
+        margin-top: 2px;
+      }
+      .apps-banner__arrow {
+        margin-left: auto;
+        font-family: 'Space Mono', monospace;
+        font-size: 0.85rem;
+        color: var(--text-dim);
+        flex-shrink: 0;
+        transition:
+          color 0.3s ease,
+          transform 0.3s ease;
+      }
+      .apps-banner:hover .apps-banner__arrow {
+        color: var(--noct-blue);
+        transform: translate(2px, -2px);
+      }
+
+      .apps-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+        width: 100%;
+        margin-bottom: 56px;
+      }
+
+      .apps-banner--limbra {
+        border-color: rgba(210, 177, 76, 0.25);
+      }
+      .apps-banner--limbra:hover {
+        border-color: rgba(210, 177, 76, 0.5);
+      }
+      .apps-banner--limbra::before {
+        background: radial-gradient(
+          circle at var(--mx, 15%) var(--my, 50%),
+          rgba(210, 177, 76, 0.1),
+          transparent 60%
+        );
+      }
+      .apps-banner--limbra .apps-banner__logo {
+        filter: drop-shadow(0 0 10px rgba(210, 177, 76, 0.18));
+      }
+      .apps-banner--limbra:hover .apps-banner__arrow {
+        color: var(--gold);
+      }
+
+      /* ── Responsive ── */
+      @media (min-width: 641px) {
+        .container {
+          padding-top: 7vh;
+          padding-bottom: 5vh;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .apps-row {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .apps-banner {
+          padding: 12px 16px;
+          gap: 12px;
+        }
+        .apps-banner__desc {
+          font-size: 0.72rem;
+        }
+        .topbar {
+          margin-bottom: 36px;
+        }
+        .topbar__name {
+          font-size: 0.72rem;
+          letter-spacing: 0.16em;
+        }
+        .container {
+          padding: 0 20px;
+          justify-content: flex-start;
+          padding-top: 8vh;
+        }
+        .header {
+          margin-bottom: 48px;
+        }
+        .projects {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .card {
+          padding: 28px 22px 26px;
+        }
+        .card__title {
+          font-size: 1.3rem;
+        }
+        .card__arrow {
+          opacity: 0.5;
+          transform: translate(0, 0);
+        }
+        .bg-orb {
+          filter: blur(80px);
+        }
+        .bg-orb--1 {
+          width: 300px;
+          height: 300px;
+        }
+        .bg-orb--2 {
+          width: 250px;
+          height: 250px;
+        }
+        .bg-orb--3 {
+          width: 200px;
+          height: 200px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Background atmosphere -->
+    <div class="bg-canvas">
+      <div class="bg-orb bg-orb--1" style="--orb-opacity: 0.07"></div>
+      <div class="bg-orb bg-orb--2" style="--orb-opacity: 0.05"></div>
+      <div class="bg-orb bg-orb--3" style="--orb-opacity: 0.03"></div>
+    </div>
+    <div class="grain"></div>
+
+    <div class="container">
+      <!-- Brand -->
+      <nav class="topbar">
+        <a
+          href="https://thomasmaury.fr"
+          target="_blank"
+          rel="noopener"
+          class="topbar__brand"
+        >
+          <img
+            class="topbar__logo"
+            src="TM-Logo_White-72.png"
+            alt="TM"
+            width="36"
+            height="32"
+          />
+          <span class="topbar__name">Thomas Maury</span>
+        </a>
+        <span class="topbar__links">
+          <a href="https://linktr.ee/thomasmaury" target="_blank" rel="noopener"
+            >Links</a
+          >
+          <span class="lang-pill" role="group" aria-label="Language">
+            <button class="lang-opt" data-lang="fr">FR</button>
+            <span class="lang-pill__sep">|</span>
+            <button class="lang-opt" data-lang="en">EN</button>
+          </span>
+        </span>
+      </nav>
+
+      <!-- Apps section -->
+      <h2 class="section-label" data-i18n="lblApps">Mobile Apps</h2>
+
+      <!-- Apps banners -->
+      <div class="apps-row">
+        <a
+          href="https://nocty.thomasmaury.fr"
+          target="_blank"
+          rel="noopener"
+          class="apps-banner"
+        >
+          <img
+            class="apps-banner__logo"
+            src="noctaliae-logo.webp"
+            alt="Noctaliæ"
+            width="44"
+            height="44"
+          />
+          <span class="apps-banner__text">
+            <span class="apps-banner__title">Noctaliæ</span>
+            <span class="apps-banner__desc" data-i18n="bNoct"
+              >Dream journal &amp; AI analysis · Google Play</span
+            >
+          </span>
+          <span class="apps-banner__arrow">↗</span>
+        </a>
+
+        <a
+          href="https://limbra.thomasmaury.fr/dossier.html"
+          target="_blank"
+          rel="noopener"
+          class="apps-banner apps-banner--limbra"
+        >
+          <svg
+            class="apps-banner__logo"
+            viewBox="0 0 100 100"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            role="img"
+            aria-label="Limbra"
+          >
+            <defs>
+              <linearGradient id="limbra-g" x1="0.2" y1="0" x2="0.8" y2="1">
+                <stop offset="0%" stop-color="#E8D282" />
+                <stop offset="50%" stop-color="#D2B14C" />
+                <stop offset="100%" stop-color="#A08030" />
+              </linearGradient>
+            </defs>
+            <path
+              d="M 58 18 C 32 20, 16 34, 16 52 C 16 72, 32 86, 52 86 C 68 86, 78 78, 80 68"
+              stroke="url(#limbra-g)"
+              stroke-width="6"
+              stroke-linecap="round"
+            />
+            <path
+              d="M 47 27 C 34 32, 27 41, 27.5 53 C 28 65, 37 74, 51 76"
+              stroke="#0891B2"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              opacity="0.6"
+            />
+            <path
+              d="M 80 68 C 84 58, 82 42, 72 32"
+              stroke="#D2B14C"
+              stroke-width="3.5"
+              stroke-linecap="round"
+              stroke-dasharray="2 10"
+              opacity="0.35"
+            />
+            <circle cx="50" cy="54" r="4" fill="#D2B14C" opacity="0.8" />
+          </svg>
+          <span class="apps-banner__text">
+            <span class="apps-banner__title">Limbra</span>
+            <span class="apps-banner__desc" data-i18n="bLimbra"
+              >Science, soutien &amp; autonomie · coming soon</span
+            >
+          </span>
+          <span class="apps-banner__arrow">↗</span>
+        </a>
+      </div>
+
+      <!-- Experiments section -->
+      <h2 class="section-label" data-i18n="lblExp">Experiments</h2>
+
+      <!-- Header -->
+      <header class="header">
+        <h1 class="title">NeuræHive</h1>
+        <p class="subtitle" data-i18n="subNH">
+          Real-time audiovisual instruments &amp; live AI installations
+        </p>
+      </header>
+
+      <!-- Projects -->
+      <div class="projects">
+        <!-- Cineræ -->
+        <a
+          href="/cinerae/"
+          target="_blank"
+          rel="noopener"
+          class="card card--ci"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status"><span class="pulse-dot"></span>Live</div>
+          <h2 class="card__title">Cineræ</h2>
+          <p class="card__desc" data-i18n="dCi">
+            Light dust sculpted by the body and the music. 400 000 WebGPU
+            grains, the camera is never shown: only its motion pushes the
+            particles. Demo &amp; Pro modes, keep a frame with a QR souvenir,
+            everything stays local.
+          </p>
+          <div class="card__tags">
+            <span class="tag">WebGPU</span>
+            <span class="tag">Camera</span>
+            <span class="tag">Audio</span>
+            <span class="tag">Particles</span>
+            <span class="tag">Tablet</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Synaptic Mirror -->
+        <a
+          href="/synaptic-mirror/help.html"
+          target="_blank"
+          rel="noopener"
+          class="card card--sm"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status"><span class="pulse-dot"></span>Live</div>
+          <h2 class="card__title">Synaptic Mirror</h2>
+          <p class="card__desc" data-i18n="dSm">
+            WebGL2 visual instrument — 10 GPU shaders reactive to sound, touch,
+            camera &amp; MIDI. Single file, 60fps.
+          </p>
+          <div class="card__tags">
+            <span class="tag">WebGL2</span>
+            <span class="tag">GLSL</span>
+            <span class="tag">Audio</span>
+            <span class="tag">MIDI</span>
+            <span class="tag">PWA</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Neural Tides -->
+        <a
+          href="/limbra-neural-tides/"
+          target="_blank"
+          rel="noopener"
+          class="card card--nt"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status"><span class="pulse-dot"></span>Live</div>
+          <h2 class="card__title">Neural Tides</h2>
+          <p class="card__desc" data-i18n="dNt">
+            Live audiovisual instrument grown out of Limbra's neuroscience
+            visuals — multi-touch particle field, camera turned into a dithered
+            force field, generative pentatonic music &amp; VJ outputs.
+          </p>
+          <div class="card__tags">
+            <span class="tag">p5.js</span>
+            <span class="tag">Camera</span>
+            <span class="tag">Mic</span>
+            <span class="tag">Multi-touch</span>
+            <span class="tag">VJ</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Animae -->
+        <a href="/animae/" target="_blank" rel="noopener" class="card card--an">
+          <div class="card__glow"></div>
+          <div class="card__status">
+            <span class="pulse-dot"></span>In progress
+          </div>
+          <h2 class="card__title">Animæ</h2>
+          <p class="card__desc" data-i18n="dAn">
+            Instrument visuel navigateur — insuffler du mouvement à une image
+            fixe. Modes Simple / Public / VJ, webcam &amp; audio-réactif.
+          </p>
+          <div class="card__tags">
+            <span class="tag">Canvas2D</span>
+            <span class="tag">Live</span>
+            <span class="tag">VJ</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Pulse -->
+        <a href="/pulse/" target="_blank" rel="noopener" class="card card--pu">
+          <div class="card__glow"></div>
+          <div class="card__status">
+            <span class="pulse-dot"></span>Experiment
+          </div>
+          <h2 class="card__title">Pulse</h2>
+          <p class="card__desc" data-i18n="dPu">
+            Organic metaball reactive to live audio — liquid deformation,
+            chromatic aberration &amp; particle dissolution on sound peaks.
+          </p>
+          <div class="card__tags">
+            <span class="tag">Three.js</span>
+            <span class="tag">WebGL</span>
+            <span class="tag">Audio</span>
+            <span class="tag">Shader</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Interference Field -->
+        <a
+          href="/interference-field/"
+          target="_blank"
+          rel="noopener"
+          class="card card--if"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status">In progress</div>
+          <h2 class="card__title">Interference Field</h2>
+          <p class="card__desc" data-i18n="dIf">
+            Wave field manipulable au toucher — drag, double-tap, tilt/gyro
+            perturbent la même substance physique.
+          </p>
+          <div class="card__tags">
+            <span class="tag">Three.js</span>
+            <span class="tag">Touch</span>
+            <span class="tag">Gyro</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Membrane Gravity -->
+        <a
+          href="/membrane-gravity/"
+          target="_blank"
+          rel="noopener"
+          class="card card--mg"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status">Archived</div>
+          <h2 class="card__title">Membrane Gravity</h2>
+          <p class="card__desc" data-i18n="dMg">
+            Shader GLSL + système de particules, fullscreen — premier sprint du
+            workflow multi-agents.
+          </p>
+          <div class="card__tags">
+            <span class="tag">GLSL</span>
+            <span class="tag">Particles</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Glitch Playground -->
+        <a
+          href="/glitch-playground/"
+          target="_blank"
+          rel="noopener"
+          class="card card--gp"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status">Archived</div>
+          <h2 class="card__title">Glitch Playground</h2>
+          <p class="card__desc" data-i18n="dGp">
+            Ancien essai du pipeline VJ navigateur — base de départ avant
+            évolution vers Animæ.
+          </p>
+          <div class="card__tags">
+            <span class="tag">Canvas2D</span>
+            <span class="tag">Glitch</span>
+            <span class="tag">Archive</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+
+        <!-- Synaptic Console -->
+        <a
+          href="/synaptic-console/"
+          target="_blank"
+          rel="noopener"
+          class="card card--sc"
+        >
+          <div class="card__glow"></div>
+          <div class="card__status"><span class="pulse-dot"></span>Live</div>
+          <h2 class="card__title">Synaptic Console</h2>
+          <p class="card__desc" data-i18n="dSc">
+            A spiking neural network you can play — nodes fire, pulses cascade
+            across synapses, Tone.js sonifies every burst. Neural / Heat / Wave
+            modes, mic-reactive.
+          </p>
+          <div class="card__tags">
+            <span class="tag">p5.js</span>
+            <span class="tag">Tone.js</span>
+            <span class="tag">Neural Net</span>
+            <span class="tag">Audio</span>
+          </div>
+          <div class="card__arrow">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7 17L17 7M17 7H7M17 7V17" />
+            </svg>
+          </div>
+        </a>
+      </div>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p class="footer__author">
+          <a
+            href="https://thomasmaury.fr"
+            class="footer__link"
+            target="_blank"
+            rel="noopener"
+            style="letter-spacing: 0.08em"
+            >THOMASMAURY.FR</a
+          >
+        </p>
+        <p class="footer__text">
+          <a
+            href="https://ko-fi.com/tm_ai0"
+            class="footer__link"
+            target="_blank"
+            rel="noopener"
+            >☕ Support</a
+          >
+          &nbsp;&middot;&nbsp; 2026
+        </p>
+      </footer>
+    </div>
+
+    <script>
+      // ── i18n EN/FR ──
+      const I18N = {
+        en: {
+          subApps: 'Neuroscience-informed companions for dreams & habits',
+          subNH: 'Real-time audiovisual instruments & live AI installations',
+          lblApps: 'Mobile Apps',
+          lblExp: 'Experiments',
+          bNoct: 'Dream journal & AI analysis · Google Play',
+          bLimbra: 'Science, support & autonomy · coming soon',
+          dCi: 'Light dust sculpted by the body and the music. 400 000 WebGPU grains, the camera is never shown: only its motion pushes the particles. Demo & Pro modes, keep a frame with a QR souvenir, everything stays local.',
+          dSm: 'WebGL2 visual instrument — 10 GPU shaders reactive to sound, touch, camera & MIDI. Single file, 60fps.',
+          dNt: "Live audiovisual instrument grown out of Limbra's neuroscience visuals — multi-touch particle field, camera turned into a dithered force field, generative pentatonic music & VJ outputs.",
+          dSc: 'A spiking neural network you can play — nodes fire, pulses cascade across synapses, Tone.js sonifies every burst. Neural / Heat / Wave modes, mic-reactive.',
+          dPu: 'Organic metaball reactive to live audio — liquid deformation, chromatic aberration & particle dissolution on sound peaks.',
+          dIf: 'Touch-manipulable wave field — drag, double-tap and tilt/gyro all disturb the same physical substance.',
+          dMg: 'GLSL shader + particle system, fullscreen — first sprint of the multi-agent workflow.',
+          dGp: 'Early browser VJ pipeline experiment — the starting point before evolving into Animæ.',
+          dAn: 'Browser visual instrument — breathing motion into a still image. Simple / Public / VJ modes, webcam & audio-reactive.',
+        },
+        fr: {
+          subApps: 'Compagnons neuro-informés pour les rêves & les habitudes',
+          subNH: 'Instruments audiovisuels temps réel & installations IA live',
+          lblApps: 'Apps mobiles',
+          lblExp: 'Expérimentations',
+          bNoct: 'Journal de rêves & analyse IA · Google Play',
+          bLimbra: 'Science, soutien & autonomie · bientôt disponible',
+          dCi: "Poussière de lumière sculptée par le corps et la musique. 400 000 grains WebGPU, la caméra n'est jamais affichée : seul son mouvement pousse les particules. Modes Démo & Pro, image gardée avec QR souvenir, tout reste en local.",
+          dSm: 'Instrument visuel WebGL2 — 10 shaders GPU réactifs au son, au toucher, à la caméra & au MIDI. Fichier unique, 60fps.',
+          dNt: 'Instrument audiovisuel live issu des visuels neurosciences de Limbra — champ de particules multi-touch, caméra transformée en champ de forces, musique pentatonique générative & sorties VJ.',
+          dSc: "Un réseau de neurones à impulsions jouable — les nœuds s'activent, les impulsions cascadent le long des synapses, Tone.js sonifie chaque burst. Modes Neural / Heat / Wave, réactif au micro.",
+          dPu: "Metaball organique réactive à l'audio live — déformation liquide, aberration chromatique & dissolution en particules sur les pics sonores.",
+          dIf: 'Wave field manipulable au toucher — drag, double-tap, tilt/gyro perturbent la même substance physique.',
+          dMg: 'Shader GLSL + système de particules, fullscreen — premier sprint du workflow multi-agents.',
+          dGp: 'Ancien essai du pipeline VJ navigateur — base de départ avant évolution vers Animæ.',
+          dAn: 'Instrument visuel navigateur — insuffler du mouvement à une image fixe. Modes Simple / Public / VJ, webcam & audio-réactif.',
+        },
+      }
+      let lang
+      try {
+        lang = localStorage.getItem('nh-lang')
+      } catch (e) {
+        lang = null
+      }
+      if (!lang) lang = 'en'
+      const langOpts = document.querySelectorAll('.lang-opt')
+      function setLang(l) {
+        lang = l
+        document.documentElement.lang = l
+        document.querySelectorAll('[data-i18n]').forEach((el) => {
+          const k = el.dataset.i18n
+          if (I18N[l] && I18N[l][k]) el.textContent = I18N[l][k]
+        })
+        langOpts.forEach((b) =>
+          b.classList.toggle('active', b.dataset.lang === l)
+        )
+        try {
+          localStorage.setItem('nh-lang', l)
+        } catch (e) {}
+      }
+      langOpts.forEach((b) =>
+        b.addEventListener('click', () => setLang(b.dataset.lang))
+      )
+      setLang(lang)
+
+      // Animate orbs in
+      document.querySelectorAll('.bg-orb').forEach((orb, i) => {
+        setTimeout(() => orb.classList.add('visible'), 300 + i * 300)
+      })
+
+      // Reflection follows mouse on tiles (desktop only)
+      if (window.matchMedia('(pointer: fine)').matches) {
+        document.querySelectorAll('.card, .apps-banner').forEach((el) => {
+          el.addEventListener('mousemove', (e) => {
+            const r = el.getBoundingClientRect()
+            el.style.setProperty(
+              '--mx',
+              (((e.clientX - r.left) / r.width) * 100).toFixed(1) + '%'
+            )
+            el.style.setProperty(
+              '--my',
+              (((e.clientY - r.top) / r.height) * 100).toFixed(1) + '%'
+            )
+          })
+        })
+      }
+
+      // Subtle mouse parallax on orbs (desktop only)
+      if (window.matchMedia('(pointer: fine)').matches) {
+        document.addEventListener('mousemove', (e) => {
+          const x = (e.clientX / innerWidth - 0.5) * 2
+          const y = (e.clientY / innerHeight - 0.5) * 2
+          document.querySelectorAll('.bg-orb').forEach((orb, i) => {
+            const f = (i + 1) * 8
+            orb.style.transform = `translate(${x * f}px, ${y * f}px)`
+          })
+        })
+      }
+    </script>
+  </body>
+</html>

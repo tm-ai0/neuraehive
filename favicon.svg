@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00FFB0" stop-opacity=".15"/>
+      <stop offset="100%" stop-color="#00FFB0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="#08080F"/>
+  <circle cx="16" cy="14" r="12" fill="url(#g)"/>
+  <g stroke="#00FFB0" stroke-opacity=".35" stroke-width=".8" filter="url(#glow)">
+    <line x1="16" y1="14" x2="7" y2="6"/>
+    <line x1="16" y1="14" x2="25" y2="6"/>
+    <line x1="16" y1="14" x2="7" y2="22"/>
+    <line x1="16" y1="14" x2="25" y2="22"/>
+    <line x1="7" y1="6" x2="25" y2="6"/>
+    <line x1="7" y1="22" x2="25" y2="22"/>
+  </g>
+  <g filter="url(#glow)">
+    <circle cx="7" cy="6" r="2" fill="#D2B14C"/>
+    <circle cx="25" cy="6" r="2" fill="#00FFB0"/>
+    <circle cx="7" cy="22" r="2" fill="#00FFB0"/>
+    <circle cx="25" cy="22" r="2" fill="#D2B14C"/>
+  </g>
+  <circle cx="16" cy="14" r="3" fill="#00FFB0" filter="url(#glow)"/>
+  <text x="16" y="30" text-anchor="middle" font-family="monospace" font-size="5" font-weight="bold" fill="#00FFB0" opacity=".6">NH</text>
+</svg>

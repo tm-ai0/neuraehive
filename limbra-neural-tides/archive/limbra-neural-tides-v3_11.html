@@ -1,0 +1,2932 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0A0A0F">
+    <title>Neural Tides · Live · Limbra Generative Instrument</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Cabin:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!--
+    ═══════════════════════════════════════════════════════════════════
+    NEURAL TIDES v3 ; LIVE INSTRUMENT
+    Mobile-first · Multi-touch · Caméra · Micro · Sorties VJ
+
+    L'océan de forces devient un instrument. La caméra est un champ :
+    ce qui brille attire, ce qui bouge pousse ; ta silhouette émerge
+    du courant en fantôme pixelisé. Le micro est un souffle extérieur :
+    chaque basse frappe une onde, les aigus font vibrer le champ.
+    Chaque doigt posé sur l'écran est une main dans l'eau ; plusieurs
+    doigts, plusieurs tempêtes ; l'expiration les apaise toutes.
+    Et tout peut se projeter en direct sur d'autres écrans.
+
+    ADN v2 conservé intégralement : météo intérieure 5 états,
+    respiration 4:6 du protocole SOS, tempête de craving apaisée à
+    l'expiration, synapses, drone pentatonique 5 voix, palette Limbra.
+    Zéro honte, même dans le code : rien n'est puni, rien n'est compté.
+
+    Caméra et micro nécessitent HTTPS (ou file:// local / localhost).
+    ═══════════════════════════════════════════════════════════════════
+    -->
+    <style>
+        :root {
+            --bg: #0A0A0F;
+            --surface1: #0D0F1A;
+            --surface2: #141728;
+            --surface3: #1A1E35;
+            --teal: #0891B2;
+            --teal-light: #22D3EE;
+            --teal-glow: rgba(8, 145, 178, 0.15);
+            --amber: #F59E0B;
+            --amber-light: #FBBF24;
+            --amber-glow: rgba(245, 158, 11, 0.15);
+            --emerald: #10B981;
+            --emerald-light: #34D399;
+            --purple: #8B5CF6;
+            --purple-light: #A78BFA;
+            --red: #EF4444;
+            --text1: #F1F5F9;
+            --text2: #94A3B8;
+            --text3: #64748B;
+            --border: rgba(148, 163, 184, 0.12);
+            --border-strong: rgba(148, 163, 184, 0.24);
+            --safe-b: env(safe-area-inset-bottom, 0px);
+            --safe-t: env(safe-area-inset-top, 0px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            height: 100%;
+            overscroll-behavior: none;
+        }
+
+        body {
+            font-family: 'Cabin', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text1);
+            overflow: hidden;
+            position: fixed;
+            inset: 0;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body.no-cursor, body.no-cursor canvas { cursor: none; }
+
+        /* ─ Canvas plein écran ─ */
+        .canvas-area {
+            position: fixed; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg);
+        }
+        #canvas-container canvas { display: block; touch-action: none; }
+        .loading {
+            font-family: 'Atkinson Hyperlegible', sans-serif;
+            font-size: 14px; color: var(--text3); position: absolute;
+        }
+
+        .vignette {
+            position: absolute; inset: 0; pointer-events: none;
+            background: radial-gradient(ellipse at center, transparent 55%, rgba(5,5,10,0.55) 100%);
+            z-index: 4;
+        }
+
+        .weather-badge {
+            position: absolute; top: calc(16px + var(--safe-t)); left: 50%;
+            transform: translateX(-50%); z-index: 5;
+            font-family: 'Atkinson Hyperlegible', sans-serif;
+            font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase;
+            color: var(--text3); pointer-events: none;
+            opacity: 0; transition: opacity 1.2s ease;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+            white-space: nowrap;
+        }
+        .weather-badge.visible { opacity: 0.85; }
+
+        .hints {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            bottom: calc(92px + var(--safe-b)); z-index: 5;
+            font-size: 11px; color: var(--text3); text-align: center;
+            display: flex; flex-direction: column; gap: 3px;
+            pointer-events: none;
+            opacity: 1; transition: opacity 2s ease;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.85);
+            max-width: 92vw;
+        }
+        .hints.faded { opacity: 0; }
+        .hints span b { color: var(--text2); font-weight: 600; }
+
+        /* Toast de notification */
+        .toast {
+            position: fixed; top: calc(52px + var(--safe-t)); left: 50%;
+            transform: translateX(-50%) translateY(-8px); z-index: 60;
+            background: rgba(13,15,26,0.92); border: 1px solid var(--border-strong);
+            color: var(--text1); font-size: 12.5px;
+            padding: 10px 16px; border-radius: 999px;
+            backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            max-width: 88vw; text-align: center;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ─ Dock flottant ─ */
+        .dock {
+            position: fixed; left: 50%; transform: translateX(-50%);
+            bottom: calc(14px + var(--safe-b)); z-index: 20;
+            display: flex; gap: 6px; align-items: center;
+            padding: 7px;
+            background: rgba(13,15,26,0.82);
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            max-width: calc(100vw - 16px);
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .dock::-webkit-scrollbar { display: none; }
+
+        @media (max-width: 480px) {
+            .dock { gap: 3px; padding: 6px; }
+            .dock-btn { width: 44px; height: 44px; font-size: 18px; }
+        }
+        body.immersive .dock,
+        body.ui-idle .dock {
+            opacity: 0; pointer-events: none;
+            transform: translateX(-50%) translateY(16px);
+        }
+
+        .dock-btn {
+            position: relative;
+            width: 46px; height: 46px; flex-shrink: 0;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text2);
+            font-size: 19px; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: all 0.22s ease;
+            touch-action: manipulation;
+        }
+        .dock-btn:hover { color: var(--text1); background: var(--surface3); }
+        .dock-btn.active {
+            background: var(--teal); border-color: var(--teal); color: #fff;
+            box-shadow: 0 0 18px var(--teal-glow);
+        }
+        .dock-btn.active.amberize {
+            background: var(--amber); border-color: var(--amber);
+            box-shadow: 0 0 18px var(--amber-glow);
+        }
+        .dock-btn .live-dot {
+            position: absolute; top: 5px; right: 5px;
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--emerald-light);
+            box-shadow: 0 0 6px rgba(52,211,153,0.8);
+            opacity: 0; transition: opacity 0.3s ease;
+        }
+        .dock-btn.live .live-dot { opacity: 1; }
+        .dock-sep { width: 1px; height: 26px; background: var(--border-strong); margin: 0 2px; flex-shrink: 0; }
+
+        /* ─ Tiroir : bottom sheet (mobile) / panneau latéral (desktop) ─ */
+        .scrim {
+            position: fixed; inset: 0; z-index: 28;
+            background: rgba(5,5,10,0.45);
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+        .scrim.open { opacity: 1; pointer-events: auto; }
+
+        .sheet {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+            background: var(--surface1);
+            border-top: 1px solid var(--border-strong);
+            border-radius: 20px 20px 0 0;
+            max-height: 74dvh;
+            transform: translateY(105%);
+            transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+            display: flex; flex-direction: column;
+            box-shadow: 0 -12px 48px rgba(0,0,0,0.55);
+        }
+        .sheet.open { transform: translateY(0); }
+
+        .sheet-handle {
+            padding: 10px 0 4px; display: flex; justify-content: center;
+            cursor: grab; flex-shrink: 0; touch-action: none;
+        }
+        .sheet-handle::before {
+            content: ''; width: 42px; height: 4px; border-radius: 2px;
+            background: var(--border-strong);
+        }
+
+        .sheet-body {
+            overflow-y: auto; overflow-x: hidden;
+            padding: 8px 20px calc(20px + var(--safe-b));
+            overscroll-behavior: contain;
+        }
+        .sheet-body::-webkit-scrollbar { width: 4px; }
+        .sheet-body::-webkit-scrollbar-track { background: transparent; }
+        .sheet-body::-webkit-scrollbar-thumb { background: var(--text3); border-radius: 2px; }
+
+        @media (min-width: 900px) {
+            .sheet {
+                left: auto; right: 0; top: 0; bottom: 0;
+                width: 340px; max-height: none;
+                border-radius: 0;
+                border-top: none; border-left: 1px solid var(--border-strong);
+                transform: translateX(105%);
+            }
+            .sheet.open { transform: translateX(0); }
+            .sheet-handle { display: none; }
+            .sheet-body { padding-top: 22px; }
+            .scrim { background: transparent; }
+        }
+
+        /* ─ Contenu du tiroir (hérité v2) ─ */
+        .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+        .brand-logo {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--teal), var(--amber));
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Atkinson Hyperlegible', sans-serif;
+            font-weight: 700; font-size: 18px; color: var(--bg);
+        }
+        .brand h1 {
+            font-family: 'Atkinson Hyperlegible', sans-serif;
+            font-size: 22px; font-weight: 700; color: var(--text1); letter-spacing: 1px;
+        }
+        .brand-sub {
+            font-size: 11px; color: var(--text3); margin-bottom: 6px;
+            letter-spacing: 0.5px; text-transform: uppercase;
+        }
+        .subtitle { color: var(--text2); font-size: 13px; line-height: 1.5; margin-bottom: 18px; }
+        .subtitle em { color: var(--teal-light); font-style: normal; }
+
+        .control-section { margin-bottom: 22px; }
+        .control-section h3 {
+            font-family: 'Atkinson Hyperlegible', sans-serif;
+            font-size: 12px; font-weight: 700; color: var(--text3);
+            text-transform: uppercase; letter-spacing: 1.5px;
+            margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+        }
+        .control-section h3 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+        .divider { height: 1px; background: var(--border); margin: 4px 0 20px; }
+
+        .weather-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+        .weather-pill {
+            padding: 9px 14px; min-height: 38px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            background: var(--surface2);
+            color: var(--text2);
+            font-family: 'Cabin', sans-serif;
+            font-size: 12px; font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            touch-action: manipulation;
+        }
+        .weather-pill:hover { color: var(--text1); border-color: var(--teal); }
+        .weather-pill.active {
+            background: var(--teal); border-color: var(--teal); color: #fff;
+            box-shadow: 0 0 16px var(--teal-glow);
+        }
+        .weather-pill.active[data-weather="orage"]  { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 16px var(--amber-glow); }
+        .weather-pill.active[data-weather="aurore"] { background: var(--purple); border-color: var(--purple); box-shadow: 0 0 16px rgba(139,92,246,0.3); }
+        .weather-pill.active[data-weather="brume"]  { background: var(--surface3); border-color: var(--text3); }
+        .weather-pill.active[data-weather="maree"]  { background: var(--teal-light); border-color: var(--teal-light); color: var(--bg); }
+
+        .mode-pill {
+            padding: 8px 12px; min-height: 36px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            background: var(--surface2);
+            color: var(--text2);
+            font-family: 'Cabin', sans-serif;
+            font-size: 11.5px; font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            touch-action: manipulation;
+        }
+        .mode-pill:hover { color: var(--text1); border-color: var(--emerald); }
+        .mode-pill.active {
+            background: var(--emerald); border-color: var(--emerald); color: #fff;
+            box-shadow: 0 0 14px rgba(16,185,129,0.3);
+        }
+
+        .weather-auto {
+            display: flex; align-items: center; gap: 8px;
+            margin-top: 10px; font-size: 12px; color: var(--text3);
+            cursor: pointer; user-select: none;
+        }
+        .weather-auto input { accent-color: var(--teal); cursor: pointer; width: 16px; height: 16px; }
+
+        .seed-input {
+            width: 100%; background: var(--surface2); padding: 11px;
+            border-radius: 8px; font-family: 'Courier New', monospace;
+            font-size: 14px; margin-bottom: 10px;
+            border: 1px solid var(--border); text-align: center; color: var(--text1);
+        }
+        .seed-input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 2px var(--teal-glow); }
+        .seed-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+        .button {
+            padding: 11px 14px; min-height: 40px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            background: var(--surface2);
+            color: var(--text2);
+            font-family: 'Cabin', sans-serif;
+            font-size: 12px; font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+            touch-action: manipulation;
+        }
+        .button:hover { background: var(--surface3); color: var(--text1); border-color: var(--teal); }
+        .button.primary { background: var(--teal); border-color: var(--teal); color: white; }
+        .button.primary:hover { background: var(--teal-light); box-shadow: 0 0 20px var(--teal-glow); }
+        .button.amber { background: transparent; border-color: var(--amber); color: var(--amber); }
+        .button.amber:hover { background: var(--amber-glow); box-shadow: 0 0 20px var(--amber-glow); }
+        .button.full { grid-column: 1 / -1; }
+        .button.active { background: var(--teal); border-color: var(--teal); color: #fff; }
+
+        .control-group { margin-bottom: 14px; }
+        .control-group label {
+            display: block; font-size: 13px; font-weight: 500;
+            color: var(--text2); margin-bottom: 6px;
+        }
+        .slider-container { display: flex; align-items: center; gap: 10px; }
+        .slider-container input[type="range"] {
+            flex: 1; height: 4px; background: var(--surface3);
+            border-radius: 2px; outline: none; -webkit-appearance: none;
+            touch-action: pan-x;
+        }
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 20px; height: 20px;
+            background: var(--teal); border-radius: 50%; cursor: pointer;
+            transition: all 0.2s ease; box-shadow: 0 0 8px var(--teal-glow);
+        }
+        .slider-container input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); background: var(--teal-light); }
+        .slider-container input[type="range"]::-moz-range-thumb {
+            width: 20px; height: 20px; background: var(--teal);
+            border-radius: 50%; border: none; cursor: pointer;
+        }
+        .value-display {
+            font-family: 'Courier New', monospace; font-size: 11px;
+            color: var(--text3); min-width: 46px; text-align: right;
+        }
+
+        select.device-select {
+            width: 100%; margin-top: 8px;
+            background: var(--surface2); color: var(--text1);
+            border: 1px solid var(--border-strong); border-radius: 8px;
+            padding: 10px; font-family: 'Cabin', sans-serif; font-size: 12.5px;
+        }
+        select.device-select:focus { outline: none; border-color: var(--teal); }
+
+        input[type="color"] {
+            width: 44px; height: 32px; padding: 0; flex-shrink: 0;
+            border: 1px solid var(--border-strong); border-radius: 8px;
+            background: var(--surface2); cursor: pointer;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+        input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
+
+        .pillar-legend { display: flex; flex-direction: column; gap: 8px; }
+        .pillar-item { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text2); }
+        .pillar-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .pillar-item span.pillar-label { flex: 1; }
+        .pillar-item span.pillar-emoji { font-size: 13px; }
+
+        .breath-indicator {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px; background: var(--surface2);
+            border-radius: 12px; border: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .breath-ring {
+            width: 28px; height: 28px; border-radius: 50%;
+            border: 2px solid var(--teal);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .breath-ring-inner {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--teal); transition: all 0.5s ease;
+        }
+        .breath-text { font-size: 12px; color: var(--text3); }
+        .breath-phase { color: var(--teal-light); font-weight: 600; }
+
+        .interaction-list { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--text2); }
+        .interaction-list .row { display: flex; gap: 8px; align-items: baseline; }
+        .interaction-list kbd {
+            font-family: 'Courier New', monospace; font-size: 10px;
+            background: var(--surface3); color: var(--text2);
+            border: 1px solid var(--border-strong);
+            border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+        }
+
+        .sheet-footer {
+            padding-top: 18px; margin-top: 4px;
+            border-top: 1px solid var(--border); text-align: center;
+        }
+        .sheet-footer p { font-size: 10px; color: var(--text3); letter-spacing: 0.5px; }
+        .sheet-footer .tagline {
+            font-family: 'Atkinson Hyperlegible', sans-serif;
+            font-size: 12px; color: var(--text2); margin-bottom: 4px;
+        }
+
+        /* Bouton flottant retour UI (immersion) */
+        .ui-return {
+            position: fixed; top: calc(14px + var(--safe-t)); left: 14px; z-index: 26;
+            width: 44px; height: 44px; border-radius: 999px;
+            border: 1px solid var(--border-strong);
+            background: rgba(13,15,26,0.75);
+            color: var(--text2); font-size: 16px;
+            display: none; align-items: center; justify-content: center;
+            cursor: pointer; backdrop-filter: blur(4px);
+            transition: all 0.25s ease;
+        }
+        .ui-return:hover { color: var(--text1); border-color: var(--teal); }
+        body.immersive .ui-return { display: flex; }
+        body.no-cursor .ui-return { opacity: 0; }
+    </style>
+</head>
+<body>
+    <!-- Canvas plein écran -->
+    <div class="canvas-area">
+        <div id="canvas-container">
+            <div class="loading">Initialisation des courants neuronaux...</div>
+        </div>
+        <div class="vignette"></div>
+        <div class="weather-badge" id="weather-badge">Accalmie</div>
+        <div class="hints" id="hints">
+            <span><b>Touche l'écran</b> pour créer des courants</span>
+            <span><b>Maintiens</b> pour une tempête ; plusieurs doigts, plusieurs tempêtes</span>
+            <span><b>Double-tap</b> pour une onde de choc</span>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <button class="ui-return" onclick="toggleImmersion()" title="Quitter l'immersion (H)">✕</button>
+
+    <!-- Dock flottant -->
+    <div class="dock" id="dock">
+        <button class="dock-btn" id="sheet-btn" onclick="toggleSheet()" title="Paramètres" aria-label="Paramètres">🎛️</button>
+        <button class="dock-btn" id="weather-btn" onclick="nextWeather()" title="Météo suivante (1 à 5)" aria-label="Météo suivante">🌤️</button>
+        <button class="dock-btn" id="dice-btn" onclick="surpriseMe()" title="Scène aléatoire (D)" aria-label="Scène aléatoire">🎲</button>
+        <div class="dock-sep"></div>
+        <button class="dock-btn" id="audio-btn" onclick="toggleAudio()" title="Son génératif (M)" aria-label="Son génératif">🔇<span class="live-dot"></span></button>
+        <button class="dock-btn" id="cam-btn" onclick="toggleCamera()" title="Caméra en champ de force (C)" aria-label="Caméra">📷<span class="live-dot"></span></button>
+        <button class="dock-btn" id="flip-btn" onclick="switchFacing()" title="Basculer avant/arrière" aria-label="Basculer caméra" style="display:none">🔄</button>
+        <button class="dock-btn" id="mic-btn" onclick="toggleMic()" title="Micro réactif (X)" aria-label="Micro">🎤<span class="live-dot"></span></button>
+        <div class="dock-sep"></div>
+        <button class="dock-btn" id="out-btn" onclick="addOutput()" title="Sortie moniteur + (O)" aria-label="Nouvelle sortie moniteur">🖥️</button>
+        <button class="dock-btn" id="fs-btn" onclick="toggleFullscreenMode()" title="Plein écran (F)" aria-label="Plein écran">⛶</button>
+    </div>
+
+    <!-- Scrim + Tiroir -->
+    <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+    <div class="sheet" id="sheet">
+        <div class="sheet-handle" id="sheet-handle"></div>
+        <div class="sheet-body">
+            <div class="brand">
+                <div class="brand-logo">L</div>
+                <h1>LIMBRA</h1>
+            </div>
+            <div class="brand-sub">Neural Tides · Live Instrument</div>
+            <p class="subtitle">Cinq courants neuronaux, un souffle, et le monde extérieur qui entre dans le champ ; <em>caméra, micro, doigts : tout est force.</em></p>
+
+            <!-- Respiration -->
+            <div class="breath-indicator">
+                <div class="breath-ring">
+                    <div class="breath-ring-inner" id="breath-dot"></div>
+                </div>
+                <div class="breath-text">
+                    <span class="breath-phase" id="breath-label">Inspire</span>
+                    <span id="breath-timer">4.0s</span>
+                </div>
+            </div>
+
+            <!-- Météo intérieure -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--teal-light)"></span>Météo intérieure</h3>
+                <div class="weather-grid" id="weather-grid">
+                    <button class="weather-pill active" data-weather="accalmie" onclick="setWeather('accalmie')">Accalmie</button>
+                    <button class="weather-pill" data-weather="brume" onclick="setWeather('brume')">Brume</button>
+                    <button class="weather-pill" data-weather="maree" onclick="setWeather('maree')">Marée haute</button>
+                    <button class="weather-pill" data-weather="orage" onclick="setWeather('orage')">Orage</button>
+                    <button class="weather-pill" data-weather="aurore" onclick="setWeather('aurore')">Aurore</button>
+                </div>
+                <label class="weather-auto">
+                    <input type="checkbox" id="auto-drift" onchange="toggleDrift(this.checked)">
+                    Dérive automatique (change toutes les 45s)
+                </label>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Entrées live -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--emerald-light)"></span>Entrées live</h3>
+
+                <div class="seed-controls" style="margin-bottom:12px">
+                    <button class="button" id="cam-btn-sheet" onclick="toggleCamera()">📷 Caméra off</button>
+                    <button class="button" id="mic-btn-sheet" onclick="toggleMic()">🎤 Micro off</button>
+                </div>
+                <select class="device-select" id="cam-select" onchange="selectCamDevice(this.value)" style="display:none; margin-bottom:12px"></select>
+
+                <div class="control-group">
+                    <label>Force du champ vidéo</label>
+                    <div class="slider-container">
+                        <input type="range" id="videoStrength" min="0" max="3.0" step="0.1" value="1.2" oninput="updateLive('videoStrength', this.value)">
+                        <span class="value-display" id="videoStrength-value">1.2</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Teinte vidéo des particules</label>
+                    <div class="slider-container">
+                        <input type="range" id="videoTint" min="0" max="1.0" step="0.05" value="0.35" oninput="updateLive('videoTint', this.value)">
+                        <span class="value-display" id="videoTint-value">0.35</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Rendu vidéo</label>
+                    <div class="weather-grid">
+                        <button class="mode-pill active" data-vmode="dither" onclick="setVideoMode('dither')">Dither</button>
+                        <button class="mode-pill" data-vmode="contours" onclick="setVideoMode('contours')">Contours</button>
+                        <button class="mode-pill" data-vmode="relief" onclick="setVideoMode('relief')">Relief</button>
+                        <button class="mode-pill" data-vmode="trame" onclick="setVideoMode('trame')">Trame</button>
+                        <button class="mode-pill" data-vmode="brume" onclick="setVideoMode('brume')">Brume</button>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Taille du point (dither)</label>
+                    <div class="slider-container">
+                        <input type="range" id="ditherScale" min="2" max="12" step="1" value="3" oninput="updateLive('ditherScale', this.value)">
+                        <span class="value-display" id="ditherScale-value">3</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Couleur : réel ↔ Limbra</label>
+                    <div class="slider-container">
+                        <input type="range" id="ditherMix" min="0" max="1" step="0.05" value="0" oninput="updateLive('ditherMix', this.value)">
+                        <span class="value-display" id="ditherMix-value">0</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Teinte personnalisée</label>
+                    <div class="slider-container">
+                        <input type="color" id="ditherTint" value="#22D3EE" oninput="setDitherTint(this.value)">
+                        <input type="range" id="ditherTintAmt" min="0" max="1" step="0.05" value="0" oninput="updateLive('ditherTintAmt', this.value)">
+                        <span class="value-display" id="ditherTintAmt-value">0</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Intensité du rendu vidéo</label>
+                    <div class="slider-container">
+                        <input type="range" id="videoGhost" min="0" max="1.0" step="0.05" value="0.5" oninput="updateLive('videoGhost', this.value)">
+                        <span class="value-display" id="videoGhost-value">0.5</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Sensibilité micro</label>
+                    <div class="slider-container">
+                        <input type="range" id="micSense" min="0.4" max="3.0" step="0.1" value="1.2" oninput="updateLive('micSense', this.value)">
+                        <span class="value-display" id="micSense-value">1.2</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Sorties VJ -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--amber)"></span>Sorties moniteur</h3>
+                <div class="seed-controls">
+                    <button class="button amber full" onclick="addOutput()">🖥️ Sortie + <span id="out-count"></span></button>
+                </div>
+                <p style="font-size:11px; color:var(--text3); margin-top:8px; line-height:1.5">Ouvre une fenêtre miroir à glisser sur un autre écran ; double-clic dedans pour le plein écran. Plusieurs sorties possibles.</p>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Graine -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--teal)"></span>Graine</h3>
+                <input type="text" class="seed-input" id="seed-input" value="12345" onchange="updateSeed()">
+                <div class="seed-controls">
+                    <button class="button" onclick="previousSeed()">← Préc.</button>
+                    <button class="button" onclick="nextSeed()">Suiv. →</button>
+                    <button class="button primary" onclick="randomSeedAndUpdate()">Aléatoire</button>
+                    <button class="button" onclick="copySeed()" id="copy-seed-btn">Copier</button>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Paramètres -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--purple)"></span>Paramètres</h3>
+
+                <div class="control-group">
+                    <label>Particules</label>
+                    <div class="slider-container">
+                        <input type="range" id="particleCount" min="500" max="8000" step="100" value="3000" oninput="updateParam('particleCount', this.value)">
+                        <span class="value-display" id="particleCount-value">3000</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Turbulence</label>
+                    <div class="slider-container">
+                        <input type="range" id="noiseScale" min="0.001" max="0.015" step="0.001" value="0.004" oninput="updateParam('noiseScale', this.value)">
+                        <span class="value-display" id="noiseScale-value">0.004</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Vitesse de flux</label>
+                    <div class="slider-container">
+                        <input type="range" id="flowSpeed" min="0.2" max="3.0" step="0.1" value="1.0" oninput="updateParam('flowSpeed', this.value)">
+                        <span class="value-display" id="flowSpeed-value">1.0</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Persistance des traces</label>
+                    <div class="slider-container">
+                        <input type="range" id="trailFade" min="2" max="30" step="1" value="10" oninput="updateParam('trailFade', this.value)">
+                        <span class="value-display" id="trailFade-value">10</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Force de respiration</label>
+                    <div class="slider-container">
+                        <input type="range" id="breathStrength" min="0" max="2.0" step="0.1" value="0.8" oninput="updateParam('breathStrength', this.value)">
+                        <span class="value-display" id="breathStrength-value">0.8</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Attracteurs piliers</label>
+                    <div class="slider-container">
+                        <input type="range" id="attractorStrength" min="0" max="3.0" step="0.1" value="1.2" oninput="updateParam('attractorStrength', this.value)">
+                        <span class="value-display" id="attractorStrength-value">1.2</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Synapses (connexions)</label>
+                    <div class="slider-container">
+                        <input type="range" id="synapses" min="0" max="1.0" step="0.05" value="0.5" oninput="updateParam('synapses', this.value)">
+                        <span class="value-display" id="synapses-value">0.5</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Rubans auroraux</label>
+                    <div class="slider-container">
+                        <input type="range" id="ribbons" min="0" max="24" step="1" value="10" oninput="updateLive('ribbons', this.value)">
+                        <span class="value-display" id="ribbons-value">10</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Interactions -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--amber)"></span>Interactions</h3>
+                <div class="interaction-list">
+                    <div class="row"><kbd>doigt / souris</kbd><span>crée des courants</span></div>
+                    <div class="row"><kbd>maintien</kbd><span>tempête de craving ; l'expiration l'apaise</span></div>
+                    <div class="row"><kbd>multi-touch</kbd><span>plusieurs tempêtes simultanées</span></div>
+                    <div class="row"><kbd>piliers</kbd><span>toucher près d'un pilier joue sa note (son actif)</span></div>
+                    <div class="row"><kbd>double-tap</kbd><span>onde de choc</span></div>
+                    <div class="row"><kbd>1–5</kbd><span>météos · <kbd>F</kbd> plein écran · <kbd>H</kbd> interface</span></div>
+                    <div class="row"><kbd>C</kbd><span>caméra · <kbd>X</kbd> micro · <kbd>O</kbd> sortie +</span></div>
+                    <div class="row"><kbd>G</kbd><span>rendu vidéo suivant · <kbd>D</kbd> scène aléatoire</span></div>
+                    <div class="row"><kbd>V</kbd><span>enregistrer WebM · <kbd>B</kbd> rideau noir</span></div>
+                    <div class="row"><kbd>S</kbd><span>export PNG · <kbd>M</kbd> son · <kbd>Espace</kbd> onde centrale</span></div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 5 Piliers -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--emerald)"></span>5 Piliers</h3>
+                <div class="pillar-legend">
+                    <div class="pillar-item">
+                        <div class="pillar-dot" style="background:#0891B2; box-shadow: 0 0 6px rgba(8,145,178,0.5)"></div>
+                        <span class="pillar-emoji">🌦️</span><span class="pillar-label">Prédire</span>
+                    </div>
+                    <div class="pillar-item">
+                        <div class="pillar-dot" style="background:#F59E0B; box-shadow: 0 0 6px rgba(245,158,11,0.5)"></div>
+                        <span class="pillar-emoji">⚡</span><span class="pillar-label">Interrompre</span>
+                    </div>
+                    <div class="pillar-item">
+                        <div class="pillar-dot" style="background:#8B5CF6; box-shadow: 0 0 6px rgba(139,92,246,0.5)"></div>
+                        <span class="pillar-emoji">👁️</span><span class="pillar-label">Observer</span>
+                    </div>
+                    <div class="pillar-item">
+                        <div class="pillar-dot" style="background:#10B981; box-shadow: 0 0 6px rgba(16,185,129,0.5)"></div>
+                        <span class="pillar-emoji">🧠</span><span class="pillar-label">Apprendre</span>
+                    </div>
+                    <div class="pillar-item">
+                        <div class="pillar-dot" style="background:#F1F5F9; box-shadow: 0 0 6px rgba(241,245,249,0.3)"></div>
+                        <span class="pillar-emoji">🫀</span><span class="pillar-label">Zéro Honte</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Actions -->
+            <div class="control-section">
+                <h3><span class="dot" style="background:var(--amber)"></span>Actions</h3>
+                <div class="seed-controls">
+                    <button class="button amber" onclick="initializeSystem()">Régénérer</button>
+                    <button class="button" onclick="resetParameters()">Réinitialiser</button>
+                    <button class="button" onclick="exportPNG()">Export PNG</button>
+                    <button class="button primary" onclick="toggleImmersion()">✦ Immersion</button>
+                    <button class="button amber full" id="rec-btn" onclick="toggleRecording()">⏺ Enregistrer</button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="sheet-footer">
+                <p class="tagline">Observer · Comprendre · Avancer</p>
+                <p>Science, Soutien & Autonomie ; Limbra 2026</p>
+            </div>
+        </div>
+    </div>
+    <script>
+        // ═══════════════════════════════════════════════════════════════
+        // NEURAL TIDES v3 ; LIVE INSTRUMENT
+        // Moteur : flow field 5 attracteurs + souffle 4:6
+        // + multi-touch, caméra en champ de force, micro réactif, sorties VJ
+        // ═══════════════════════════════════════════════════════════════
+
+        let params = {
+            seed: 12345,
+            particleCount: 3000,
+            noiseScale: 0.004,
+            flowSpeed: 1.0,
+            trailFade: 10,
+            breathStrength: 0.8,
+            attractorStrength: 1.2,
+            synapses: 0.5
+        };
+        let defaultParams = { ...params };
+
+        // Paramètres live (non morphés par la météo)
+        let live = {
+            videoStrength: 1.2,
+            videoTint: 0.35,
+            videoGhost: 0.5,
+            micSense: 1.2,
+            ribbons: 10,
+            ditherScale: 3,
+            ditherMix: 0,
+            ditherTintAmt: 0
+        };
+        let defaultLive = { ...live };
+
+        // Cibles vers lesquelles on morphe en douceur (météo)
+        let targetParams = { ...params };
+        const MORPHABLE = ['noiseScale', 'flowSpeed', 'trailFade', 'breathStrength', 'attractorStrength', 'synapses'];
+
+        // Palette Limbra
+        const COLORS = {
+            bg: [10, 10, 15],
+            teal:    { r: 8,   g: 145, b: 178 },
+            amber:   { r: 245, g: 158, b: 11  },
+            purple:  { r: 139, g: 92,  b: 246 },
+            emerald: { r: 16,  g: 185, b: 129 },
+            silver:  { r: 241, g: 245, b: 249 },
+            red:     { r: 239, g: 68,  b: 68  }
+        };
+        const PILLAR_COLORS = [COLORS.teal, COLORS.amber, COLORS.purple, COLORS.emerald, COLORS.silver];
+
+        // ─── Météo intérieure : presets narratifs (ADN v2) ───
+        const WEATHERS = {
+            accalmie: {
+                label: 'Accalmie', icon: '🌤️',
+                p: { noiseScale: 0.004, flowSpeed: 1.0, trailFade: 10, breathStrength: 0.8, attractorStrength: 1.2, synapses: 0.5 },
+                mood: { biasR: 0, biasG: 0, biasB: 0, biasAmt: 0, alphaMult: 1.0, cometRate: 0.004, lightning: 0 }
+            },
+            brume: {
+                label: 'Brume', icon: '🌫️',
+                p: { noiseScale: 0.002, flowSpeed: 0.5, trailFade: 22, breathStrength: 0.5, attractorStrength: 0.7, synapses: 0.2 },
+                mood: { biasR: 241, biasG: 245, biasB: 249, biasAmt: 0.35, alphaMult: 0.65, cometRate: 0.001, lightning: 0 }
+            },
+            maree: {
+                label: 'Marée haute', icon: '🌊',
+                p: { noiseScale: 0.005, flowSpeed: 1.7, trailFade: 8, breathStrength: 1.7, attractorStrength: 1.7, synapses: 0.6 },
+                mood: { biasR: 34, biasG: 211, biasB: 238, biasAmt: 0.25, alphaMult: 1.1, cometRate: 0.006, lightning: 0 }
+            },
+            orage: {
+                label: 'Orage intérieur', icon: '⛈️',
+                p: { noiseScale: 0.011, flowSpeed: 2.3, trailFade: 5, breathStrength: 1.0, attractorStrength: 2.0, synapses: 0.35 },
+                mood: { biasR: 239, biasG: 100, biasB: 50, biasAmt: 0.3, alphaMult: 1.15, cometRate: 0.010, lightning: 1 }
+            },
+            aurore: {
+                label: 'Aurore', icon: '🌌',
+                p: { noiseScale: 0.0025, flowSpeed: 0.9, trailFade: 3, breathStrength: 0.7, attractorStrength: 1.0, synapses: 0.7 },
+                mood: { biasR: 167, biasG: 139, biasB: 250, biasAmt: 0.3, alphaMult: 0.9, cometRate: 0.003, lightning: 0 }
+            }
+        };
+        const WEATHER_KEYS = Object.keys(WEATHERS);
+
+        let currentWeather = 'accalmie';
+        let mood       = { ...WEATHERS.accalmie.mood };
+        let moodTarget = { ...WEATHERS.accalmie.mood };
+
+        // ─── État du système ───
+        let particles = [];
+        let attractors = [];
+        let ripples = [];
+        let bursts = [];
+        let breathPhase = 0;
+        let breathVal = 0;
+        let isExhale = false;
+        let breathCycle = 10000;      // 4s inspire + 6s expire
+        let canvasW, canvasH;
+        let cnv;
+
+        // ─── Multi-touch : chaque doigt est une main dans l'eau ───
+        // pointers : id → { x, y, vx, vy, down, holdStart, storm, type }
+        const pointers = new Map();
+        let fadingStorms = [];        // tempêtes orphelines (doigt levé), s'apaisent sur place
+        let stormSources = [];        // sources actives cette frame (recalculé dans draw)
+        let stormLevel = 0;           // 0..1 agrégat (audio, éclairs, turbulence globale)
+        let lastTap = { t: 0, x: -999, y: -999 };
+
+        // Immersion & dérive
+        let autoDrift = false;
+        let lastDriftSwitch = 0;
+        let cursorTimer = null;
+        let uiIdleTimer = null;
+
+        // Pompe chromatique (beats micro) et rubans auroraux
+        let beatFlash = 0;
+        let ribbons = [];
+        const RIBBON_LEN = 42;
+
+        // ═══════════════════════════════════════════════════════════════
+        // ATTRACTEURS ; un par pilier, dérive orbitale lente (ADN v2)
+        // ═══════════════════════════════════════════════════════════════
+
+        class Attractor {
+            constructor(bx, by, colorObj, index) {
+                this.bx = bx; this.by = by;
+                this.x = bx; this.y = by;
+                this.color = colorObj;
+                this.index = index;
+                this.noiseOffset = index * 1000;
+                this.phase = index * TWO_PI / 5;
+            }
+
+            drift() {
+                const r = min(canvasW, canvasH) * 0.05;
+                const t = frameCount * 0.0015;
+                this.x = this.bx + (noise(this.noiseOffset + t) - 0.5) * 2 * r;
+                this.y = this.by + (noise(this.noiseOffset + 500 + t) - 0.5) * 2 * r;
+            }
+
+            getForce(px, py, bPhase) {
+                let dx = this.x - px;
+                let dy = this.y - py;
+                let dist = sqrt(dx * dx + dy * dy);
+                let radius = min(canvasW, canvasH) * 0.35;
+                if (dist > radius) return { fx: 0, fy: 0, influence: 0 };
+
+                let influence = pow(1 - dist / radius, 1.5);
+                let strength = params.attractorStrength * influence;
+
+                let angle;
+                switch (this.index) {
+                    case 0: // Teal ; arcs prédictifs lisses
+                        angle = noise(px * params.noiseScale * 0.8 + this.noiseOffset, py * params.noiseScale * 0.8, bPhase * 0.3) * TWO_PI * 2;
+                        break;
+                    case 1: // Amber ; spirales turbulentes
+                        angle = noise(px * params.noiseScale * 2 + this.noiseOffset, py * params.noiseScale * 2, bPhase * 0.8) * TWO_PI * 4;
+                        angle += atan2(dy, dx) + HALF_PI;
+                        break;
+                    case 2: // Purple ; orbites contemplatives
+                        angle = atan2(dy, dx) + HALF_PI + sin(dist * 0.02 + bPhase * 2) * 0.5;
+                        break;
+                    case 3: // Emerald ; ramifications dendritiques
+                        angle = noise(px * params.noiseScale * 1.2 + this.noiseOffset, py * params.noiseScale * 1.2) * TWO_PI * 3;
+                        angle += cos(dist * 0.01) * PI * 0.5;
+                        break;
+                    case 4: // Silver ; diffusion douce
+                        angle = noise(px * params.noiseScale * 0.5 + this.noiseOffset, py * params.noiseScale * 0.5, frameCount * 0.002) * TWO_PI;
+                        strength *= 0.6;
+                        break;
+                }
+
+                let breathMod = 1 + sin(bPhase + this.phase) * params.breathStrength * 0.5;
+                strength *= breathMod;
+
+                return { fx: cos(angle) * strength, fy: sin(angle) * strength, influence };
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PARTICULES ; flux, comètes, tempêtes multiples, ondes,
+        // champ vidéo, vibration micro
+        // ═══════════════════════════════════════════════════════════════
+
+        class Particle {
+            constructor() { this.reset(); }
+
+            reset() {
+                let r = random();
+                if (r < 0.25) this.pillar = 0;
+                else if (r < 0.42) this.pillar = 1;
+                else if (r < 0.59) this.pillar = 2;
+                else if (r < 0.76) this.pillar = 3;
+                else this.pillar = 4;
+
+                this.color = PILLAR_COLORS[this.pillar];
+
+                if (attractors.length > 0) {
+                    let a = attractors[this.pillar];
+                    let spread = min(canvasW, canvasH) * 0.2;
+                    this.x = a.x + randomGaussian() * spread;
+                    this.y = a.y + randomGaussian() * spread;
+                } else {
+                    this.x = random(canvasW);
+                    this.y = random(canvasH);
+                }
+
+                this.px = this.x; this.py = this.y;
+                this.vx = 0; this.vy = 0;
+                this.life = random(200, 600);
+                this.maxLife = this.life;
+                this.isComet = random() < mood.cometRate;
+                this.size = this.isComet ? random(2.5, 4) : random(1, 2.5);
+                this.stormTint = 0;
+                this.vidR = 0; this.vidG = 0; this.vidB = 0; this.vidAmt = 0;
+            }
+
+            update(bPhase) {
+                this.px = this.x; this.py = this.y;
+
+                const stormTurb = 1 + stormLevel * 2.2;
+                const stormSpeed = 1 + stormLevel * 0.8;
+
+                // Champ global ; les aigus du micro font scintiller le bruit
+                const zJit = mic.on ? mic.high * 0.9 : 0;
+                let globalAngle = noise(this.x * params.noiseScale * stormTurb, this.y * params.noiseScale * stormTurb, bPhase * 0.2 + zJit) * TWO_PI * 2;
+                let totalFx = cos(globalAngle) * 0.3;
+                let totalFy = sin(globalAngle) * 0.3;
+
+                // Attracteurs
+                let maxInfluence = 0;
+                let dominantPillar = this.pillar;
+                for (let a of attractors) {
+                    let f = a.getForce(this.x, this.y, bPhase);
+                    totalFx += f.fx;
+                    totalFy += f.fy;
+                    if (f.influence > maxInfluence) { maxInfluence = f.influence; dominantPillar = a.index; }
+                }
+
+                // ── Courants des mains : chaque pointeur pousse le fluide ──
+                for (const pt of pointers.values()) {
+                    if (abs(pt.vx) > 0.3 || abs(pt.vy) > 0.3) {
+                        let dx = this.x - pt.x;
+                        let dy = this.y - pt.y;
+                        let d2 = dx * dx + dy * dy;
+                        const R = 140;
+                        if (d2 < R * R) {
+                            let fall = 1 - sqrt(d2) / R;
+                            totalFx += pt.vx * 0.14 * fall;
+                            totalFy += pt.vy * 0.14 * fall;
+                        }
+                    }
+                }
+
+                // ── Mémoire fluide : la traîne soyeuse des gestes ──
+                if (fluid.vx) {
+                    const fgx = Math.min(fluid.w - 1, Math.max(0, (this.x / canvasW * fluid.w) | 0));
+                    const fgy = Math.min(fluid.h - 1, Math.max(0, (this.y / canvasH * fluid.h) | 0));
+                    const fi = fgy * fluid.w + fgx;
+                    totalFx += fluid.vx[fi] * 0.55;
+                    totalFy += fluid.vy[fi] * 0.55;
+                }
+
+                // ── Tempêtes de craving : un vortex par source active ──
+                this.stormTint *= 0.95;
+                for (const s of stormSources) {
+                    let dx = this.x - s.x;
+                    let dy = this.y - s.y;
+                    let d = sqrt(dx * dx + dy * dy);
+                    const R = 280;
+                    if (d < R && d > 1) {
+                        let fall = pow(1 - d / R, 1.3) * s.storm;
+                        // Tangentiel (tourbillon) + légère aspiration
+                        totalFx += (-dy / d) * 3.2 * fall - (dx / d) * 0.5 * fall;
+                        totalFy += ( dx / d) * 3.2 * fall - (dy / d) * 0.5 * fall;
+                        this.stormTint = max(this.stormTint, fall);
+                    }
+                }
+
+                // ── Champ vidéo : la lumière attire, le mouvement pousse ──
+                this.vidAmt *= 0.92;
+                if (video.ready && live.videoStrength > 0.01) {
+                    const f = sampleVideoField(this.x, this.y);
+                    if (f) {
+                        const boost = 1 + f.m * 5.0;   // le mouvement détecté amplifie
+                        totalFx += f.gx * live.videoStrength * 1.6 * boost;
+                        totalFy += f.gy * live.videoStrength * 1.6 * boost;
+                        if (live.videoTint > 0.01 && f.lum > 0.12) {
+                            this.vidR = f.r; this.vidG = f.g; this.vidB = f.b;
+                            this.vidAmt = max(this.vidAmt, live.videoTint * min(1, f.lum * 1.6));
+                        }
+                    }
+                }
+
+                // ── Ondes de choc ──
+                for (let rp of ripples) {
+                    let dx = this.x - rp.x;
+                    let dy = this.y - rp.y;
+                    let d = sqrt(dx * dx + dy * dy);
+                    if (abs(d - rp.r) < 42 && d > 1) {
+                        let push = (1 - abs(d - rp.r) / 42) * rp.power;
+                        totalFx += (dx / d) * push;
+                        totalFy += (dy / d) * push;
+                    }
+                }
+
+                // Blend couleur inter-piliers
+                if (dominantPillar !== this.pillar && maxInfluence > 0.3) {
+                    this.blendColor = PILLAR_COLORS[dominantPillar];
+                    this.blendAmount = (maxInfluence - 0.3) / 0.7;
+                } else {
+                    this.blendColor = null;
+                    this.blendAmount = 0;
+                }
+
+                this.vx = (this.vx + totalFx * params.flowSpeed * stormSpeed) * 0.92;
+                this.vy = (this.vy + totalFy * params.flowSpeed * stormSpeed) * 0.92;
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+
+                if (this.life <= 0 || this.x < -50 || this.x > canvasW + 50 || this.y < -50 || this.y > canvasH + 50) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                let lifeRatio = this.life / this.maxLife;
+                let alpha = sin(lifeRatio * PI) * 150 * mood.alphaMult;
+                let speed = sqrt(this.vx * this.vx + this.vy * this.vy);
+                alpha *= constrain(speed * 2, 0.3, 1);
+                // Les aigus du micro font scintiller les particules
+                if (mic.on && mic.high > 0.04) alpha *= 1 + mic.high * 0.5 * sin(frameCount * 0.9 + this.x);
+
+                let cr = this.color.r, cg = this.color.g, cb = this.color.b;
+
+                if (this.blendColor && this.blendAmount > 0) {
+                    let ba = this.blendAmount * 0.4;
+                    cr = lerp(cr, this.blendColor.r, ba);
+                    cg = lerp(cg, this.blendColor.g, ba);
+                    cb = lerp(cb, this.blendColor.b, ba);
+                }
+
+                // Teinte météo
+                if (mood.biasAmt > 0.01) {
+                    cr = lerp(cr, mood.biasR, mood.biasAmt);
+                    cg = lerp(cg, mood.biasG, mood.biasAmt);
+                    cb = lerp(cb, mood.biasB, mood.biasAmt);
+                }
+
+                // Teinte vidéo (couleurs du monde extérieur)
+                if (this.vidAmt > 0.02) {
+                    cr = lerp(cr, this.vidR, this.vidAmt);
+                    cg = lerp(cg, this.vidG, this.vidAmt);
+                    cb = lerp(cb, this.vidB, this.vidAmt);
+                }
+
+                // Teinte tempête (rouge craving)
+                if (this.stormTint > 0.02) {
+                    let st = this.stormTint * 0.7;
+                    cr = lerp(cr, COLORS.red.r, st);
+                    cg = lerp(cg, COLORS.red.g, st);
+                    cb = lerp(cb, COLORS.red.b, st);
+                }
+
+                if (this.isComet) {
+                    stroke(cr, cg, cb, alpha * 0.55);
+                    strokeWeight(this.size * 0.8);
+                    line(this.x - this.vx * 5, this.y - this.vy * 5, this.x, this.y);
+                    noStroke();
+                    fill(cr, cg, cb, alpha * 0.2);
+                    ellipse(this.x, this.y, this.size * 7, this.size * 7);
+                    fill(255, 255, 255, alpha * 0.7);
+                    ellipse(this.x, this.y, this.size * 0.9, this.size * 0.9);
+                } else {
+                    if (speed > 1.5 && this.pillar !== 4) {
+                        noStroke();
+                        fill(cr, cg, cb, alpha * 0.13);
+                        ellipse(this.x, this.y, this.size * 6, this.size * 6);
+                    }
+                    noStroke();
+                    fill(cr, cg, cb, alpha);
+                    ellipse(this.x, this.y, this.size, this.size);
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // RUBANS AURORAUX ; longues traînes lumineuses qui surfent sur
+        // TOUS les champs à la fois : bruit global, pilier attitré,
+        // fluide des gestes, champ vidéo. Le vent solaire du système.
+        // ═══════════════════════════════════════════════════════════════
+
+        class Ribbon {
+            constructor() { this.hardReset(); }
+
+            hardReset() {
+                this.pillar = Math.floor(Math.random() * 5);
+                this.color = PILLAR_COLORS[this.pillar];
+                this.seed = Math.random() * 4000;
+                this.x = Math.random() * canvasW;
+                this.y = Math.random() * canvasH;
+                this.vx = 0; this.vy = 0;
+                this.life = 300 + Math.random() * 500;
+                this.pts = [];
+                for (let i = 0; i < RIBBON_LEN; i++) this.pts.push({ x: this.x, y: this.y });
+            }
+
+            update(bPhase) {
+                let ang = noise(this.x * params.noiseScale * 0.8 + this.seed, this.y * params.noiseScale * 0.8, bPhase * 0.25) * TWO_PI * 2;
+                let fx = cos(ang) * 0.5, fy = sin(ang) * 0.5;
+                const a = attractors[this.pillar];
+                if (a) {
+                    const f = a.getForce(this.x, this.y, bPhase);
+                    fx += f.fx * 0.8; fy += f.fy * 0.8;
+                }
+                if (fluid.vx) {
+                    const gx = Math.min(fluid.w - 1, Math.max(0, (this.x / canvasW * fluid.w) | 0));
+                    const gy = Math.min(fluid.h - 1, Math.max(0, (this.y / canvasH * fluid.h) | 0));
+                    const fi = gy * fluid.w + gx;
+                    fx += fluid.vx[fi] * 0.7; fy += fluid.vy[fi] * 0.7;
+                }
+                if (video.ready && live.videoStrength > 0.01) {
+                    const f = sampleVideoField(this.x, this.y);
+                    if (f) { fx += f.gx * live.videoStrength * 1.2; fy += f.gy * live.videoStrength * 1.2; }
+                }
+                // En orage, les rubans s'effilochent (jitter nerveux)
+                if (mood.lightning > 0.5) { fx += (Math.random() - 0.5) * 0.6; fy += (Math.random() - 0.5) * 0.6; }
+
+                this.vx = (this.vx + fx * params.flowSpeed) * 0.9;
+                this.vy = (this.vy + fy * params.flowSpeed) * 0.9;
+                this.x += this.vx * 1.6;
+                this.y += this.vy * 1.6;
+                this.pts.pop();
+                this.pts.unshift({ x: this.x, y: this.y });
+                this.life--;
+                if (this.life <= 0 || this.x < -80 || this.x > canvasW + 80 || this.y < -80 || this.y > canvasH + 80) {
+                    this.hardReset();
+                }
+            }
+
+            draw() {
+                const c = this.color;
+                // Le micro fait vibrer l'éclat des rubans
+                const micGlow = mic.on ? 1 + mic.mid * 0.9 : 1;
+                for (let i = 0; i < this.pts.length - 1; i++) {
+                    const f = 1 - i / this.pts.length;      // 1 à la tête, 0 en queue
+                    const a = f * f * 46 * mood.alphaMult * micGlow;
+                    if (a < 1.5) break;
+                    stroke(lerp(c.r, 255, f * 0.3), lerp(c.g, 255, f * 0.3), lerp(c.b, 255, f * 0.3), a);
+                    strokeWeight(0.7 + f * 1.9);
+                    line(this.pts[i].x, this.pts[i].y, this.pts[i + 1].x, this.pts[i + 1].y);
+                }
+                noStroke();
+            }
+        }
+
+        function rebuildRibbons() {
+            ribbons = [];
+            for (let i = 0; i < live.ribbons; i++) ribbons.push(new Ribbon());
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // SYNAPSES ; connexions éphémères (spatial hashing, ADN v2)
+        // ═══════════════════════════════════════════════════════════════
+
+        function drawSynapses() {
+            if (params.synapses < 0.03) return;
+            const CELL = 56;
+            const MAXD = 52;
+            const grid = new Map();
+
+            for (let i = 0; i < particles.length; i += 3) {
+                const p = particles[i];
+                const key = ((p.x / CELL) | 0) + ',' + ((p.y / CELL) | 0);
+                if (!grid.has(key)) grid.set(key, []);
+                grid.get(key).push(p);
+            }
+
+            let drawn = 0;
+            const CAP = 550;
+            strokeWeight(0.6);
+
+            for (let i = 0; i < particles.length && drawn < CAP; i += 3) {
+                const p = particles[i];
+                const gx = (p.x / CELL) | 0;
+                const gy = (p.y / CELL) | 0;
+                let links = 0;
+
+                for (let ox = 0; ox <= 1 && links < 2; ox++) {
+                    for (let oy = (ox === 0 ? 0 : -1); oy <= 1 && links < 2; oy++) {
+                        const cell = grid.get((gx + ox) + ',' + (gy + oy));
+                        if (!cell) continue;
+                        for (const q of cell) {
+                            if (q === p || links >= 2 || drawn >= CAP) break;
+                            if (ox === 0 && oy === 0 && q.x <= p.x) continue;
+                            const dx = q.x - p.x, dy = q.y - p.y;
+                            const d2 = dx * dx + dy * dy;
+                            if (d2 < MAXD * MAXD) {
+                                const a = (1 - sqrt(d2) / MAXD) * 42 * params.synapses * mood.alphaMult;
+                                const c = p.color;
+                                stroke(c.r, c.g, c.b, a);
+                                line(p.x, p.y, q.x, q.y);
+                                links++; drawn++;
+                            }
+                        }
+                    }
+                }
+            }
+            noStroke();
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ÉCLAIRS SYNAPTIQUES (Orage) ; salves depuis un attracteur
+        // ═══════════════════════════════════════════════════════════════
+
+        function maybeLightning() {
+            const active = mood.lightning > 0.5 || stormLevel > 0.7;
+            if (!active) return;
+            if (random() < 0.012 + stormLevel * 0.02) {
+                const a = random(attractors);
+                for (let i = 0; i < 34; i++) {
+                    const ang = random(TWO_PI);
+                    const sp = random(4, 13);
+                    bursts.push({
+                        x: a.x, y: a.y,
+                        vx: cos(ang) * sp, vy: sin(ang) * sp,
+                        life: random(14, 30), maxLife: 30
+                    });
+                }
+                if (audio.started && !audio.muted) triggerThunder();
+            }
+        }
+
+        function updateBursts() {
+            for (let i = bursts.length - 1; i >= 0; i--) {
+                const b = bursts[i];
+                b.x += b.vx; b.y += b.vy;
+                b.vx *= 0.93; b.vy *= 0.93;
+                b.life--;
+                const a = (b.life / b.maxLife) * 220;
+                noStroke();
+                if (b.col) {
+                    fill(b.col[0], b.col[1], b.col[2], a * 0.4);
+                    ellipse(b.x, b.y, 5, 5);
+                    fill(255, 255, 255, a * 0.9);
+                    ellipse(b.x, b.y, 1.8, 1.8);
+                } else {
+                    fill(251, 191, 36, a * 0.4);
+                    ellipse(b.x, b.y, 5, 5);
+                    fill(255, 250, 240, a);
+                    ellipse(b.x, b.y, 1.8, 1.8);
+                }
+                if (b.life <= 0) bursts.splice(i, 1);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // AUDIO GÉNÉRATIF ; drone pentatonique 5 voix + souffle (ADN v2)
+        // ═══════════════════════════════════════════════════════════════
+
+        // ═══════════════════════════════════════════════════════════════
+        // AUDIO GÉNÉRATIF v3 ; drone 5 voix + MÉLODIE PENTATONIQUE
+        // Réverbération à convolution, compresseur (volume généreux sans
+        // saturer), souffle de tempête discret et sombre.
+        // Chaque météo a sa gamme, son registre, son tempo, son timbre.
+        // La mélodie respire avec le 4:6 : plus douce à l'expiration.
+        // ═══════════════════════════════════════════════════════════════
+
+        const audio = {
+            ctx: null, master: null, comp: null, dry: null,
+            reverb: null, revGain: null,
+            filter: null, droneGain: null, voices: [],
+            noiseGain: null, melody: null, nextNote: 0,
+            started: false, muted: false
+        };
+        const VOICE_FREQS = [110.0, 146.83, 164.81, 196.0, 220.0]; // A2 D3 E3 G3 A3
+
+        // Identité musicale des météos : gamme (demi-tons depuis La), registre,
+        // intervalle entre notes [min,max] en secondes, release, timbre, vélocité
+        const MUSIC = {
+            accalmie: { scale: [0, 3, 5, 7, 10, 12],         base: 220, rate: [1.6, 3.4], rel: 2.8, wave: 'sine',     vel: 0.50 },
+            brume:    { scale: [0, 3, 5, 10],                base: 110, rate: [3.2, 6.5], rel: 4.4, wave: 'sine',     vel: 0.34 },
+            maree:    { scale: [0, 3, 5, 7, 10, 12, 15],     base: 220, rate: [0.8, 1.9], rel: 1.9, wave: 'triangle', vel: 0.55 },
+            orage:    { scale: [0, 1, 3, 7, 10],             base: 110, rate: [0.5, 1.5], rel: 1.1, wave: 'triangle', vel: 0.62 },
+            aurore:   { scale: [0, 2, 4, 7, 9, 12, 14, 16],  base: 440, rate: [1.1, 2.8], rel: 3.8, wave: 'sine',     vel: 0.42 }
+        };
+
+        function makeImpulse(dur, decay) {
+            const sr = audio.ctx.sampleRate;
+            const len = Math.floor(sr * dur);
+            const buf = audio.ctx.createBuffer(2, len, sr);
+            for (let ch = 0; ch < 2; ch++) {
+                const d = buf.getChannelData(ch);
+                for (let i = 0; i < len; i++) {
+                    d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+                }
+            }
+            return buf;
+        }
+
+        function initAudio() {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            audio.ctx = new AC();
+
+            // Master → compresseur → sortie ; le compresseur autorise un niveau
+            // nettement plus fort que la v2 sans jamais écrêter
+            audio.master = audio.ctx.createGain();
+            audio.master.gain.value = 0;
+            audio.comp = audio.ctx.createDynamicsCompressor();
+            audio.comp.threshold.value = -20;
+            audio.comp.knee.value = 14;
+            audio.comp.ratio.value = 4;
+            audio.comp.attack.value = 0.004;
+            audio.comp.release.value = 0.28;
+            audio.master.connect(audio.comp);
+            audio.comp.connect(audio.ctx.destination);
+
+            // Bus sec + réverbération générée (impulsion de bruit décroissant 2.4s)
+            audio.dry = audio.ctx.createGain();
+            audio.dry.gain.value = 1.0;
+            audio.dry.connect(audio.master);
+            audio.reverb = audio.ctx.createConvolver();
+            audio.reverb.buffer = makeImpulse(2.4, 2.6);
+            audio.revGain = audio.ctx.createGain();
+            audio.revGain.gain.value = 0.42;
+            audio.reverb.connect(audio.revGain);
+            audio.revGain.connect(audio.master);
+
+            // ── Drone pentatonique 5 voix (ADN v2, plus présent) ──
+            audio.filter = audio.ctx.createBiquadFilter();
+            audio.filter.type = 'lowpass';
+            audio.filter.frequency.value = 800;
+            audio.filter.Q.value = 0.8;
+            audio.droneGain = audio.ctx.createGain();
+            audio.droneGain.gain.value = 1.0;
+            audio.filter.connect(audio.droneGain);
+            audio.droneGain.connect(audio.dry);
+            audio.droneGain.connect(audio.reverb);
+
+            VOICE_FREQS.forEach((f, i) => {
+                const g = audio.ctx.createGain();
+                g.gain.value = 0.045;
+                g.connect(audio.filter);
+                [-4, 4].forEach(cents => {
+                    const o = audio.ctx.createOscillator();
+                    o.type = i === 1 ? 'triangle' : 'sine'; // Amber légèrement plus texturé
+                    o.frequency.value = f;
+                    o.detune.value = cents;
+                    o.connect(g);
+                    o.start();
+                });
+                audio.voices.push({ gain: g, phase: i * TWO_PI / 5 });
+            });
+
+            // ── Bus mélodie ──
+            audio.melody = audio.ctx.createGain();
+            audio.melody.gain.value = 0.9;
+            audio.melody.connect(audio.dry);
+            audio.melody.connect(audio.reverb);
+            audio.nextNote = audio.ctx.currentTime + 0.8;
+
+            // ── Souffle de tempête : sombre, discret, seulement quand ça monte ──
+            const len = audio.ctx.sampleRate * 2;
+            const buf = audio.ctx.createBuffer(1, len, audio.ctx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+            const noiseSrc = audio.ctx.createBufferSource();
+            noiseSrc.buffer = buf;
+            noiseSrc.loop = true;
+            const bp = audio.ctx.createBiquadFilter();
+            bp.type = 'bandpass';
+            bp.frequency.value = 300;
+            bp.Q.value = 0.8;
+            const lp = audio.ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.value = 900;
+            audio.noiseGain = audio.ctx.createGain();
+            audio.noiseGain.gain.value = 0;
+            noiseSrc.connect(bp); bp.connect(lp); lp.connect(audio.noiseGain); audio.noiseGain.connect(audio.dry);
+            noiseSrc.start();
+
+            audio.started = true;
+        }
+
+        // Une note : pluck cristallin (fondamentale + souffle de quinte),
+        // enveloppe exponentielle, panoramique aléatoire doux
+        function playNote(freq, vel, rel, wave) {
+            if (!audio.started || audio.muted) return;
+            const t = audio.ctx.currentTime;
+            const g = audio.ctx.createGain();
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(vel, t + 0.012);
+            g.gain.exponentialRampToValueAtTime(0.0004, t + rel);
+            if (audio.ctx.createStereoPanner) {
+                const pan = audio.ctx.createStereoPanner();
+                pan.pan.value = Math.random() * 1.2 - 0.6;
+                g.connect(pan); pan.connect(audio.melody);
+            } else {
+                g.connect(audio.melody);
+            }
+            [[1, 1], [1.5, 0.16]].forEach(([ratio, amp]) => {
+                const o = audio.ctx.createOscillator();
+                o.type = wave;
+                o.frequency.value = freq * ratio;
+                o.detune.value = Math.random() * 6 - 3;
+                const og = audio.ctx.createGain();
+                og.gain.value = amp;
+                o.connect(og); og.connect(g);
+                o.start(t);
+                o.stop(t + rel + 0.15);
+            });
+        }
+
+        // La mélodie générative : une note à la fois, jamais pressée
+        function updateMelody(t) {
+            if (t < audio.nextNote) return;
+            const m = MUSIC[currentWeather] || MUSIC.accalmie;
+            const deg = m.scale[Math.floor(Math.random() * m.scale.length)];
+            // La tempête tire la mélodie une octave plus bas
+            const base = m.base * (stormLevel > 0.5 ? 0.5 : 1);
+            const freq = base * Math.pow(2, deg / 12);
+            // Plus douce à l'expiration ; la musique suit le protocole SOS
+            const breathAmt = 0.55 + 0.45 * (breathVal + 1) / 2;
+            const vel = Math.min(0.5, m.vel * 0.35 * breathAmt * (1 + stormLevel * 0.3));
+            playNote(freq, vel, m.rel, m.wave);
+            const gap = (m.rate[0] + Math.random() * (m.rate[1] - m.rate[0])) * (1 - stormLevel * 0.45);
+            audio.nextNote = t + Math.max(0.18, gap);
+        }
+
+        // Petit motif ascendant de 3 notes à chaque changement de météo
+        function weatherMotif() {
+            if (!audio.started || audio.muted) return;
+            const m = MUSIC[currentWeather];
+            [0, 1, 2].forEach(i => {
+                setTimeout(() => {
+                    if (audio.muted) return;
+                    const deg = m.scale[Math.min(i * 2, m.scale.length - 1)];
+                    playNote(m.base * Math.pow(2, deg / 12), 0.15, m.rel * 0.8, m.wave);
+                }, i * 150);
+            });
+        }
+
+        // Note synchronisée sur les beats du micro (grave, percussive)
+        function melodyBeatNote(bass) {
+            if (!audio.started || audio.muted) return;
+            const m = MUSIC[currentWeather] || MUSIC.accalmie;
+            const deg = m.scale[Math.floor(Math.random() * m.scale.length)];
+            playNote(m.base * 0.5 * Math.pow(2, deg / 12), Math.min(0.4, 0.12 + bass * 0.3), 0.7, 'triangle');
+        }
+
+        // Les piliers se jouent comme des cordes : toucher près d'un attracteur
+        // déclenche SA note (chaque pilier = un degré de la gamme courante) ;
+        // plus on est proche, plus la note est forte, haute et rapprochée
+        function pillarPluck(x, y) {
+            if (!audio.started || audio.muted || attractors.length === 0) return 0;
+            let best = null, bd = 1e9;
+            for (const a of attractors) {
+                const dx = a.x - x, dy = a.y - y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < bd) { bd = d2; best = a; }
+            }
+            const radius = min(canvasW, canvasH) * 0.38;
+            const prox = Math.max(0, 1 - Math.sqrt(bd) / radius);
+            if (prox < 0.02) return 0;
+            const m = MUSIC[currentWeather] || MUSIC.accalmie;
+            const deg = m.scale[best.index % m.scale.length];
+            const oct = prox > 0.72 ? 2 : 1;   // tout près : l'octave s'ouvre
+            playNote(m.base * Math.pow(2, deg / 12) * oct,
+                     Math.min(0.5, 0.08 + prox * 0.4),
+                     m.rel * (0.6 + prox * 0.6), m.wave);
+            // Feedback visuel : le pilier joué crache des étincelles de sa couleur
+            for (let i = 0; i < 6 + prox * 8; i++) {
+                const ang = Math.random() * TWO_PI;
+                const sp = 1.5 + Math.random() * (3 + prox * 4);
+                bursts.push({
+                    x: best.x, y: best.y,
+                    vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+                    life: 12 + Math.random() * 14, maxLife: 26,
+                    col: [best.color.r, best.color.g, best.color.b]
+                });
+            }
+            return prox;
+        }
+
+        function triggerThunder() {
+            const t = audio.ctx.currentTime;
+            audio.noiseGain.gain.cancelScheduledValues(t);
+            const base = stormLevel > 0.08 ? stormLevel * 0.04 : 0;
+            audio.noiseGain.gain.setValueAtTime(Math.max(base, audio.noiseGain.gain.value), t);
+            audio.noiseGain.gain.linearRampToValueAtTime(base + 0.05, t + 0.05);
+            audio.noiseGain.gain.exponentialRampToValueAtTime(Math.max(base, 0.001), t + 1.2);
+        }
+
+        function updateAudio() {
+            if (!audio.started || audio.muted) return;
+            const t = audio.ctx.currentTime;
+            // La respiration ouvre et ferme le filtre du drone (500 → 1600 Hz)
+            const cutoff = 500 + (breathVal + 1) * 550 + stormLevel * 700;
+            audio.filter.frequency.setTargetAtTime(cutoff, t, 0.25);
+            audio.voices.forEach(v => {
+                const g = 0.03 + (sin(breathPhase + v.phase) + 1) * 0.02;
+                v.gain.gain.setTargetAtTime(g, t, 0.4);
+            });
+            // Souffle de tempête : muet en dessous du seuil (fini le bruit fantôme)
+            const target = stormLevel > 0.08 ? stormLevel * 0.04 : 0;
+            audio.noiseGain.gain.setTargetAtTime(target, t, 0.6);
+            // Mélodie générative
+            updateMelody(t);
+        }
+
+        function toggleAudio() {
+            const btn = document.getElementById('audio-btn');
+            if (!audio.started) {
+                initAudio();
+                audio.master.gain.setTargetAtTime(0.85, audio.ctx.currentTime, 1.2);
+                audio.muted = false;
+                btn.textContent = '🔊';
+                btn.appendChild(makeLiveDot());
+                btn.classList.add('active', 'live');
+                return;
+            }
+            if (audio.muted) {
+                audio.ctx.resume();
+                audio.master.gain.setTargetAtTime(0.85, audio.ctx.currentTime, 0.8);
+                audio.muted = false;
+                btn.textContent = '🔊';
+                btn.appendChild(makeLiveDot());
+                btn.classList.add('active', 'live');
+            } else {
+                audio.master.gain.setTargetAtTime(0, audio.ctx.currentTime, 0.5);
+                audio.muted = true;
+                btn.textContent = '🔇';
+                btn.appendChild(makeLiveDot());
+                btn.classList.remove('active', 'live');
+            }
+        }
+
+        function makeLiveDot() {
+            const s = document.createElement('span');
+            s.className = 'live-dot';
+            return s;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ENTRÉE VIDÉO ; la caméra devient un champ de force
+        // Buffer basse résolution 64px : luminance, gradient, mouvement
+        // ═══════════════════════════════════════════════════════════════
+
+        const video = {
+            on: false, ready: false,
+            el: null, stream: null,
+            facing: 'user', deviceId: null,
+            w: 96, h: 72,
+            cnv: null, ctx: null,
+            lum: null, prevLum: null, motionG: null,
+            gradX: null, gradY: null, edge: null,
+            colR: null, colG: null, colB: null,
+            avgMotion: 0,
+            mirror: true,
+            mode: 'dither',
+            dw: 192, dh: 108, dcnv: null, dctx: null, dready: false,
+            tintCol: [34, 211, 238]
+        };
+        const VIDEO_MODES = ['dither', 'contours', 'relief', 'trame', 'brume'];
+        const VIDEO_MODE_LABELS = { dither: 'Dither', contours: 'Contours', relief: 'Relief', trame: 'Trame', brume: 'Brume' };
+
+        // Matrice de Bayer 8×8 : seuil de dithering ordonné, fractal par
+        // construction (subdivision récursive du motif 2×2)
+        const BAYER8 = [
+             0, 32,  8, 40,  2, 34, 10, 42,
+            48, 16, 56, 24, 50, 18, 58, 26,
+            12, 44,  4, 36, 14, 46,  6, 38,
+            60, 28, 52, 20, 62, 30, 54, 22,
+             3, 35, 11, 43,  1, 33,  9, 41,
+            51, 19, 59, 27, 49, 17, 57, 25,
+            15, 47,  7, 39, 13, 45,  5, 37,
+            63, 31, 55, 23, 61, 29, 53, 21
+        ];
+        const IS_COARSE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+        async function toggleCamera() {
+            if (video.on) { stopCamera(); return; }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                toast('Caméra indisponible (HTTPS requis)');
+                return;
+            }
+            try {
+                await startCamera();
+            } catch (e) {
+                toast('Accès caméra refusé ou indisponible');
+            }
+        }
+
+        async function startCamera() {
+            stopCamera(true);
+            const constraints = { audio: false, video: { width: { ideal: 640 }, height: { ideal: 480 } } };
+            if (video.deviceId) constraints.video.deviceId = { exact: video.deviceId };
+            else constraints.video.facingMode = video.facing;
+
+            video.stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+            if (!video.el) {
+                video.el = document.createElement('video');
+                video.el.setAttribute('playsinline', '');
+                video.el.muted = true;
+            }
+            video.el.srcObject = video.stream;
+            await video.el.play();
+
+            // Buffer basse résolution : 96px de large, hauteur selon l'aspect
+            const vw = video.el.videoWidth || 640;
+            const vh = video.el.videoHeight || 480;
+            video.w = 96;
+            video.h = Math.max(8, Math.round(96 * vh / vw));
+            if (!video.cnv) video.cnv = document.createElement('canvas');
+            video.cnv.width = video.w;
+            video.cnv.height = video.h;
+            video.ctx = video.cnv.getContext('2d', { willReadFrequently: true });
+
+            const N = video.w * video.h;
+            video.lum = new Float32Array(N);
+            video.prevLum = new Float32Array(N);
+            video.motionG = new Float32Array(N);
+            video.gradX = new Float32Array(N);
+            video.gradY = new Float32Array(N);
+            video.edge = new Float32Array(N);
+
+            // Buffer de dithering : dimensionné sur l'ÉCRAN (1 cellule = ditherScale px),
+            // aspect du canvas donc points parfaitement carrés au blit
+            sizeDitherBuffer();
+            video.colR = new Uint8ClampedArray(N);
+            video.colG = new Uint8ClampedArray(N);
+            video.colB = new Uint8ClampedArray(N);
+
+            // Miroir si caméra frontale (mode selfie ; la silhouette suit la main)
+            const track = video.stream.getVideoTracks()[0];
+            const settings = track.getSettings ? track.getSettings() : {};
+            video.mirror = (settings.facingMode ? settings.facingMode === 'user' : video.facing === 'user');
+
+            video.on = true;
+            video.ready = false; // prêt après la première frame traitée
+            setCamUI(true);
+            populateCamDevices();
+            toast('Caméra active ; la lumière attire, le mouvement pousse');
+        }
+
+        function stopCamera(silent) {
+            if (video.stream) {
+                video.stream.getTracks().forEach(t => t.stop());
+                video.stream = null;
+            }
+            video.on = false;
+            video.ready = false;
+            if (!silent) { setCamUI(false); toast('Caméra coupée'); }
+        }
+
+        function setCamUI(on) {
+            const btn = document.getElementById('cam-btn');
+            btn.classList.toggle('active', on);
+            btn.classList.toggle('live', on);
+            const sheetBtn = document.getElementById('cam-btn-sheet');
+            sheetBtn.textContent = on ? '📷 Caméra on' : '📷 Caméra off';
+            sheetBtn.classList.toggle('active', on);
+            // Bouton flip visible seulement sur mobile avec caméra active
+            document.getElementById('flip-btn').style.display = (on && IS_COARSE) ? 'flex' : 'none';
+        }
+
+        async function switchFacing() {
+            if (!video.on) return;
+            video.facing = (video.facing === 'user') ? 'environment' : 'user';
+            video.deviceId = null; // le facingMode reprend la main
+            try { await startCamera(); } catch (e) { toast('Bascule caméra impossible'); }
+        }
+
+        async function populateCamDevices() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cams = devices.filter(d => d.kind === 'videoinput');
+                const sel = document.getElementById('cam-select');
+                // Sélecteur libre sur desktop (OBS Virtual Cam, capture, etc.)
+                if (!IS_COARSE && cams.length > 1) {
+                    sel.innerHTML = '';
+                    cams.forEach((c, i) => {
+                        const o = document.createElement('option');
+                        o.value = c.deviceId;
+                        o.textContent = c.label || ('Source vidéo ' + (i + 1));
+                        sel.appendChild(o);
+                    });
+                    const cur = video.stream && video.stream.getVideoTracks()[0].getSettings().deviceId;
+                    if (cur) sel.value = cur;
+                    sel.style.display = 'block';
+                } else {
+                    sel.style.display = 'none';
+                }
+            } catch (e) { /* silencieux */ }
+        }
+
+        async function selectCamDevice(id) {
+            video.deviceId = id;
+            try { await startCamera(); } catch (e) { toast('Source vidéo indisponible'); }
+        }
+
+        // Traitement d'une frame (1 sur 2) : luminance, gradient, diff de mouvement
+        function processVideo() {
+            if (!video.on || !video.el || video.el.readyState < 2) return;
+            if (frameCount % 2 !== 0) return;
+
+            const w = video.w, h = video.h;
+            video.ctx.drawImage(video.el, 0, 0, w, h);
+            let img;
+            try { img = video.ctx.getImageData(0, 0, w, h); } catch (e) { return; }
+            const d = img.data;
+
+            // Swap des buffers de luminance
+            const tmp = video.prevLum; video.prevLum = video.lum; video.lum = tmp;
+
+            let motionSum = 0;
+            for (let i = 0, px = 0; i < d.length; i += 4, px++) {
+                const r = d[i], g = d[i + 1], b = d[i + 2];
+                const l = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+                video.lum[px] = l;
+                video.colR[px] = r; video.colG[px] = g; video.colB[px] = b;
+                const m = Math.abs(l - video.prevLum[px]);
+                // Lissage temporel du mouvement (persiste un peu, façon traînée)
+                video.motionG[px] = Math.max(m, video.motionG[px] * 0.88);
+                motionSum += m;
+            }
+            video.avgMotion = motionSum / (w * h);
+
+            // Gradient de luminance (différences centrales) : pointe vers la lumière
+            // + magnitude d'arête pour les rendus Contours et Relief
+            for (let y = 1; y < h - 1; y++) {
+                for (let x = 1; x < w - 1; x++) {
+                    const i = y * w + x;
+                    const gx = (video.lum[i + 1] - video.lum[i - 1]) * 0.5;
+                    const gy = (video.lum[i + w] - video.lum[i - w]) * 0.5;
+                    video.gradX[i] = gx;
+                    video.gradY[i] = gy;
+                    video.edge[i] = Math.min(1, Math.sqrt(gx * gx + gy * gy) * 5.5);
+                }
+            }
+            video.ready = true;
+            if (video.mode === 'dither') processDither();
+        }
+
+        // Le buffer de dithering suit la taille de l'écran : 1 cellule = N pixels
+        // (slider « Taille du point ») ; bornes de sécurité pour la perf mobile
+        function sizeDitherBuffer() {
+            if (!video.dcnv) video.dcnv = document.createElement('canvas');
+            const scale = Math.max(2, live.ditherScale || 3);
+            video.dw = Math.max(96, Math.min(960, Math.round(canvasW / scale)));
+            video.dh = Math.max(54, Math.min(600, Math.round(canvasH / scale)));
+            video.dcnv.width = video.dw;
+            video.dcnv.height = video.dh;
+            video.dctx = video.dcnv.getContext('2d', { willReadFrequently: true });
+            video.dready = false;
+        }
+
+        // Dithering ordonné Bayer 8×8, en résolution fine : chaque pixel source
+        // s'allume si sa luminance dépasse le seuil fractal de sa cellule.
+        // L'image reste lisible parce que le motif de points EST l'image.
+        // Couleur : strate de profondeur Limbra mélangée à la vraie couleur vidéo ;
+        // le mouvement densifie les points ; le seuil frémit organiquement.
+        function processDither() {
+            if (!video.dctx || !video.el || video.el.readyState < 2) return;
+            const w = video.dw, h = video.dh;
+            // Cadrage cover : la vidéo remplit le buffer sans déformation
+            const vw = video.el.videoWidth || 640, vh = video.el.videoHeight || 480;
+            const ba = w / h, va = vw / vh;
+            let sw, sh, sx0, sy0;
+            if (va > ba) { sh = vh; sw = vh * ba; sx0 = (vw - sw) / 2; sy0 = 0; }
+            else { sw = vw; sh = vw / ba; sx0 = 0; sy0 = (vh - sh) / 2; }
+            video.dctx.drawImage(video.el, sx0, sy0, sw, sh, 0, 0, w, h);
+            let img;
+            try { img = video.dctx.getImageData(0, 0, w, h); } catch (e) { return; }
+            const d = img.data;
+            const t = frameCount * 0.05;
+            const gw = video.w, gh = video.h;
+            const mixAmt = live.ditherMix;
+            const tintAmt = live.ditherTintAmt;
+            const tc = video.tintCol;
+            for (let y = 0; y < h; y++) {
+                const my = Math.min(gh - 1, (y * gh / h) | 0) * gw;
+                const by = (y & 7) * 8;
+                for (let x = 0; x < w; x++) {
+                    const i = (y * w + x) * 4;
+                    const r = d[i], g = d[i + 1], b = d[i + 2];
+                    const l = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+                    const m = video.motionG[my + Math.min(gw - 1, (x * gw / w) | 0)] || 0;
+                    const L = Math.min(1, l * (1 + m * 0.9));
+                    const th = (BAYER8[by + (x & 7)] + 0.5) / 64;
+                    if (L > th * (0.92 + 0.10 * Math.sin(t + l * 6.0))) {
+                        // Couleurs RÉELLES boostées en saturation (les webcams sont fades)
+                        const avg = (r + g + b) / 3;
+                        let cr = avg + (r - avg) * 1.45;
+                        let cg = avg + (g - avg) * 1.45;
+                        let cb = avg + (b - avg) * 1.45;
+                        // Mélange optionnel vers la palette Limbra par strate de profondeur
+                        if (mixAmt > 0.01) {
+                            let pr, pg, pb;
+                            if (L < 0.28)      { pr = 88;  pg = 28;  pb = 135; }  // abysse : purple sombre
+                            else if (L < 0.5)  { pr = 139; pg = 92;  pb = 246; }  // profond : purple
+                            else if (L < 0.7)  { pr = 8;   pg = 145; pb = 178; }  // milieu : teal
+                            else if (L < 0.88) { pr = 34;  pg = 211; pb = 238; }  // proche : teal clair
+                            else               { pr = 241; pg = 245; pb = 249; }  // crêtes : argent
+                            cr += (pr - cr) * mixAmt;
+                            cg += (pg - cg) * mixAmt;
+                            cb += (pb - cb) * mixAmt;
+                        }
+                        // Teinte personnalisée (color picker), modelée par la luminance
+                        if (tintAmt > 0.01) {
+                            const lm = 0.35 + L * 0.85;
+                            cr += (tc[0] * lm - cr) * tintAmt;
+                            cg += (tc[1] * lm - cg) * tintAmt;
+                            cb += (tc[2] * lm - cb) * tintAmt;
+                        }
+                        d[i] = cr; d[i + 1] = cg; d[i + 2] = cb;   // Uint8Clamped : auto 0-255
+                        d[i + 3] = 235;
+                    } else {
+                        d[i + 3] = 0;
+                    }
+                }
+            }
+            video.dctx.putImageData(img, 0, 0);
+            video.dready = true;
+        }
+
+        // Échantillonne le champ vidéo à une position canvas
+        function sampleVideoField(x, y) {
+            let nx = x / canvasW;
+            const ny = y / canvasH;
+            if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
+            if (video.mirror) nx = 1 - nx;
+            const gx0 = Math.min(video.w - 2, Math.max(1, (nx * video.w) | 0));
+            const gy0 = Math.min(video.h - 2, Math.max(1, (ny * video.h) | 0));
+            const i = gy0 * video.w + gx0;
+            let fx = video.gradX[i];
+            if (video.mirror) fx = -fx;
+            return {
+                gx: fx,
+                gy: video.gradY[i],
+                m: video.motionG[i],
+                lum: video.lum[i],
+                r: video.colR[i], g: video.colG[i], b: video.colB[i]
+            };
+        }
+
+        // ─── Rendus vidéo : 5 façons de faire entrer le monde dans le champ ───
+        // Contours : arêtes saillantes en fils de lumière (teal quand ça bouge)
+        // Relief : pseudo-profondeur, la luminance devient altitude (lignes de crête)
+        // Trame : demi-teinte de points colorés qui respirent
+        // Brume : fantôme doux lissé avec halo
+        // Mosaïque : pixels bruts (l'original v3)
+
+        function setVideoMode(m) {
+            if (!VIDEO_MODES.includes(m)) return;
+            video.mode = m;
+            document.querySelectorAll('.mode-pill').forEach(b => {
+                b.classList.toggle('active', b.dataset.vmode === m);
+            });
+            if (video.on) toast('Rendu vidéo : ' + VIDEO_MODE_LABELS[m]);
+        }
+
+        function cycleVideoMode() {
+            const i = VIDEO_MODES.indexOf(video.mode);
+            setVideoMode(VIDEO_MODES[(i + 1) % VIDEO_MODES.length]);
+        }
+
+        // Hash déterministe par cellule : jitter stable, zéro allocation
+        function cellJitter(i) {
+            const s = Math.sin(i * 127.1) * 43758.5453;
+            return s - Math.floor(s);
+        }
+
+        // Color picker de teinte ; choisir une couleur l'active automatiquement
+        function setDitherTint(hex) {
+            const n = parseInt(hex.slice(1), 16);
+            video.tintCol = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+            if (live.ditherTintAmt < 0.05) {
+                live.ditherTintAmt = 0.6;
+                document.getElementById('ditherTintAmt').value = 0.6;
+                document.getElementById('ditherTintAmt-value').textContent = 0.6;
+            }
+        }
+
+        function drawVideoOverlay() {
+            if (!video.ready || live.videoGhost < 0.02) return;
+            const k = live.videoGhost;
+            const W = video.w, H = video.h;
+            const sx = canvasW / W, sy = canvasH / H;
+            const mir = video.mirror;
+            // Échantillonnage miroir : l'image suit la main en mode selfie
+            const idx = (x, y) => y * W + (mir ? (W - 1 - x) : x);
+
+            noStroke();
+
+            if (video.mode === 'brume') {
+                const ctx = drawingContext;
+                ctx.save();
+                ctx.imageSmoothingEnabled = true;
+                ctx.globalAlpha = k * 0.16 + Math.min(0.2, video.avgMotion * 2.2) * k;
+                if (mir) { ctx.translate(canvasW, 0); ctx.scale(-1, 1); }
+                ctx.drawImage(video.cnv, 0, 0, canvasW, canvasH);
+                // Seconde passe légèrement dilatée : halo vaporeux
+                ctx.globalAlpha *= 0.5;
+                ctx.drawImage(video.cnv, -canvasW * 0.012, -canvasH * 0.012, canvasW * 1.024, canvasH * 1.024);
+                ctx.restore();
+
+            } else if (video.mode === 'dither') {
+                // Blit du buffer dithéré : pixels nets, et surtout en mode NORMAL
+                // (source-over) et non additif ; c'est la condition pour que les
+                // couleurs réelles restent fidèles au lieu de dériver vers le blanc
+                if (!video.dready) return;
+                const ctx = drawingContext;
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 0.35 + k * 0.6 + Math.min(0.1, video.avgMotion * 1.2);
+                if (mir) { ctx.translate(canvasW, 0); ctx.scale(-1, 1); }
+                ctx.drawImage(video.dcnv, 0, 0, canvasW, canvasH);
+                ctx.restore();
+
+            } else if (video.mode === 'contours') {
+                // Arêtes en poussière de lumière : points jetés avec jitter,
+                // échantillonnage stochastique ; jamais de grille apparente.
+                // Profondeur → couleur : ombre violette, milieu teal, lumière argent.
+                const th = 0.06;
+                for (let y = 1; y < H - 1; y++) {
+                    for (let x = 1; x < W - 1; x++) {
+                        const i = idx(x, y);
+                        const e = video.edge[i];
+                        if (e < th) continue;
+                        const j = cellJitter(i);
+                        if (j < 0.35) continue;
+                        const s = Math.min(1, (e - th) * 8);
+                        const l = video.lum[i];
+                        const mv = Math.min(1, video.motionG[i] * 4);
+                        let r, g, b;
+                        if (l < 0.35)      { r = 139; g = 92;  b = 246; }
+                        else if (l < 0.65) { r = 34;  g = 211; b = 238; }
+                        else               { r = 226; g = 232; b = 240; }
+                        r = lerp(r, 34, mv * 0.5); g = lerp(g, 211, mv * 0.5); b = lerp(b, 238, mv * 0.5);
+                        const px = x * sx + (j - 0.5) * sx * 1.4;
+                        const py = y * sy + (cellJitter(i + 7919) - 0.5) * sy * 1.4;
+                        fill(r, g, b, s * 52 * k);
+                        const d = sx * 0.34 + s * sx * 0.2;
+                        ellipse(px, py, d, d);
+                    }
+                }
+
+            } else if (video.mode === 'relief') {
+                // Pseudo-profondeur : chaque ligne de balayage se soulève avec la lumière
+                const amp = min(canvasW, canvasH) * 0.07 * (0.4 + k);
+                strokeWeight(1.2);
+                noFill();
+                for (let y = 2; y < H - 1; y += 3) {
+                    for (let x = 1; x < W - 2; x++) {
+                        const i1 = idx(x, y), i2 = idx(x + 1, y);
+                        const l1 = video.lum[i1], l2 = video.lum[i2];
+                        const a = Math.max(l1, l2);
+                        if (a < 0.06) continue;
+                        const mv = Math.min(1, Math.max(video.motionG[i1], video.motionG[i2]) * 4);
+                        stroke(lerp(120, 34, mv), lerp(170, 211, mv), lerp(205, 238, mv), (24 + a * 88) * k);
+                        line(x * sx, y * sy - l1 * amp, (x + 1) * sx, y * sy - l2 * amp);
+                    }
+                }
+                noStroke();
+
+            } else if (video.mode === 'trame') {
+                // Demi-teinte : des points colorés dont la taille suit la lumière
+                for (let y = 0; y < H; y += 2) {
+                    for (let x = 0; x < W; x += 2) {
+                        const i = idx(x, y);
+                        const l = video.lum[i];
+                        if (l < 0.05) continue;
+                        const mv = video.motionG[i];
+                        const d = (l * 0.85 + mv * 0.6) * sx * 2.1 * (0.5 + k * 0.8);
+                        fill(video.colR[i], video.colG[i], video.colB[i], (28 + l * 68) * k);
+                        ellipse(x * sx + sx, y * sy + sy, d, d);
+                        if (l > 0.55) {
+                            fill(241, 245, 249, l * 42 * k);
+                            ellipse(x * sx + sx, y * sy + sy, d * 0.4, d * 0.4);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ENTRÉE MICRO ; bass/mid/high, détection de beat, jamais de larsen
+        // (aucune connexion vers la destination audio)
+        // ═══════════════════════════════════════════════════════════════
+
+        const mic = {
+            on: false, ctx: null, analyser: null, source: null, stream: null,
+            data: null,
+            bass: 0, mid: 0, high: 0,
+            bassAvg: 0.05, lastBeat: 0,
+            midAvg: 0.05, lastMid: 0
+        };
+
+        async function toggleMic() {
+            if (mic.on) { stopMic(); return; }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                toast('Micro indisponible (HTTPS requis)');
+                return;
+            }
+            try {
+                mic.stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+                    video: false
+                });
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!mic.ctx) mic.ctx = new AC();
+                if (mic.ctx.state === 'suspended') mic.ctx.resume();
+                mic.source = mic.ctx.createMediaStreamSource(mic.stream);
+                mic.analyser = mic.ctx.createAnalyser();
+                mic.analyser.fftSize = 512;
+                mic.analyser.smoothingTimeConstant = 0.55;
+                mic.source.connect(mic.analyser);
+                // IMPORTANT : jamais analyser → destination ; zéro larsen possible
+                mic.data = new Uint8Array(mic.analyser.frequencyBinCount);
+                mic.on = true;
+                setMicUI(true);
+                toast('Micro actif ; les basses frappent, les aigus font vibrer');
+            } catch (e) {
+                toast('Accès micro refusé ou indisponible');
+            }
+        }
+
+        function stopMic() {
+            if (mic.stream) { mic.stream.getTracks().forEach(t => t.stop()); mic.stream = null; }
+            if (mic.source) { try { mic.source.disconnect(); } catch (e) {} mic.source = null; }
+            mic.on = false;
+            mic.bass = mic.mid = mic.high = 0;
+            setMicUI(false);
+            toast('Micro coupé');
+        }
+
+        function setMicUI(on) {
+            const btn = document.getElementById('mic-btn');
+            btn.classList.toggle('active', on);
+            btn.classList.toggle('live', on);
+            const sheetBtn = document.getElementById('mic-btn-sheet');
+            sheetBtn.textContent = on ? '🎤 Micro on' : '🎤 Micro off';
+            sheetBtn.classList.toggle('active', on);
+        }
+
+        function updateMic() {
+            if (!mic.on || !mic.analyser) return;
+            mic.analyser.getByteFrequencyData(mic.data);
+            const n = mic.data.length; // 256 bins ; ~93 Hz par bin à 48 kHz
+            let bass = 0, midV = 0, high = 0;
+            for (let i = 1; i <= 4; i++) bass += mic.data[i];
+            bass = (bass / 4 / 255) * live.micSense;
+            for (let i = 5; i <= 40; i++) midV += mic.data[i];
+            midV = (midV / 36 / 255) * live.micSense;
+            const hiEnd = Math.min(n - 1, 160);
+            for (let i = 41; i <= hiEnd; i++) high += mic.data[i];
+            high = (high / (hiEnd - 40) / 255) * live.micSense;
+
+            mic.bass = lerp(mic.bass, bass, 0.5);
+            mic.mid = lerp(mic.mid, midV, 0.4);
+            mic.high = lerp(mic.high, high, 0.35);
+
+            // Détection de beat : seuils abaissés (v3.2), réagit bien plus souvent
+            const now = millis();
+            if (mic.bass > mic.bassAvg * 1.22 + 0.04 && now - mic.lastBeat > 200) {
+                mic.lastBeat = now;
+                const strong = mic.bass > mic.bassAvg * 1.8 + 0.07;
+                const a = random(attractors);
+                spawnRipple(a.x, a.y, {
+                    power: 2.6 + mic.bass * 3.0,
+                    speed: 8,
+                    col: strong ? [245, 158, 11] : [34, 211, 238]
+                });
+                // La mélodie tombe sur le beat (grave, percussive)
+                melodyBeatNote(mic.bass);
+                // Pompe chromatique : tout l'écran respire sur le beat
+                beatFlash = Math.min(1, 0.35 + mic.bass * 0.8);
+            }
+            mic.bassAvg = lerp(mic.bassAvg, mic.bass, 0.06);
+
+            // Les médiums (caisse claire, voix) : étincelle aiguë + petite onde argent
+            if (mic.mid > mic.midAvg * 1.5 + 0.06 && now - mic.lastMid > 300) {
+                mic.lastMid = now;
+                if (audio.started && !audio.muted) {
+                    const m = MUSIC[currentWeather] || MUSIC.accalmie;
+                    const deg = m.scale[Math.floor(Math.random() * m.scale.length)];
+                    playNote(m.base * 2 * Math.pow(2, deg / 12), Math.min(0.3, 0.08 + mic.mid * 0.25), 1.4, 'sine');
+                }
+                const a = random(attractors);
+                spawnRipple(a.x, a.y, { power: 1.6, speed: 9, col: [241, 245, 249] });
+            }
+            mic.midAvg = lerp(mic.midAvg, mic.mid, 0.06);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // SORTIES MONITEUR (VJing) ; miroirs live via captureStream
+        // ═══════════════════════════════════════════════════════════════
+
+        const vjOutputs = [];
+
+        function addOutput() {
+            const w = window.open('', '_blank', 'width=960,height=540');
+            if (!w) { toast('Fenêtre bloquée ; autorise les popups pour ce fichier'); return; }
+            w.document.write(
+                '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">' +
+                '<title>Neural Tides · Sortie ' + (vjOutputs.length + 1) + '</title>' +
+                '<style>html,body{margin:0;height:100%;background:#0A0A0F;overflow:hidden;cursor:none}' +
+                'video{width:100%;height:100%;object-fit:contain;display:block}' +
+                '.tip{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);color:#64748B;' +
+                'font:12px Cabin,system-ui,sans-serif;transition:opacity 1s ease}</style></head>' +
+                '<body><video id="v" autoplay muted playsinline></video>' +
+                '<div class="tip" id="tip">Glisse cette fenêtre sur ton moniteur ; double-clic pour le plein écran</div>' +
+                '</body></html>'
+            );
+            w.document.close();
+            const v = w.document.getElementById('v');
+            try {
+                v.srcObject = cnv.elt.captureStream(30);
+            } catch (e) {
+                toast('captureStream non supporté par ce navigateur');
+                w.close();
+                return;
+            }
+            w.document.addEventListener('dblclick', () => {
+                if (!w.document.fullscreenElement) w.document.documentElement.requestFullscreen().catch(() => {});
+                else w.document.exitFullscreen().catch(() => {});
+            });
+            setTimeout(() => { const t = w.document.getElementById('tip'); if (t) t.style.opacity = 0; }, 7000);
+            vjOutputs.push(w);
+            updateOutCount();
+            const cleaner = setInterval(() => {
+                for (let i = vjOutputs.length - 1; i >= 0; i--) {
+                    if (vjOutputs[i].closed) vjOutputs.splice(i, 1);
+                }
+                updateOutCount();
+                if (vjOutputs.length === 0) clearInterval(cleaner);
+            }, 2000);
+            toast('Sortie ' + vjOutputs.length + ' ouverte');
+        }
+
+        function updateOutCount() {
+            const el = document.getElementById('out-count');
+            el.textContent = vjOutputs.length > 0 ? '(' + vjOutputs.length + ')' : '';
+            const btn = document.getElementById('out-btn');
+            btn.classList.toggle('active', vjOutputs.length > 0);
+            btn.classList.toggle('amberize', vjOutputs.length > 0);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // SCÈNE ALÉATOIRE ; un tap = une nouvelle combinaison de bon goût
+        // ═══════════════════════════════════════════════════════════════
+
+        function surpriseMe() {
+            const wKey = WEATHER_KEYS[Math.floor(Math.random() * WEATHER_KEYS.length)];
+            setWeather(wKey);
+            setVideoMode(VIDEO_MODES[Math.floor(Math.random() * VIDEO_MODES.length)]);
+            live.ribbons = 4 + Math.floor(Math.random() * 15);
+            document.getElementById('ribbons').value = live.ribbons;
+            document.getElementById('ribbons-value').textContent = live.ribbons;
+            rebuildRibbons();
+            params.seed = Math.floor(Math.random() * 999999) + 1;
+            updateSeedDisplay();
+            initializeSystem();
+            toast('🎲 ' + WEATHERS[currentWeather].label + ' · ' + VIDEO_MODE_LABELS[video.mode] + ' · graine ' + params.seed);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ENREGISTREMENT WEBM ; visuel + son génératif, prêt à partager
+        // ═══════════════════════════════════════════════════════════════
+
+        const rec = { recorder: null, chunks: [], on: false, audioDest: null };
+
+        function toggleRecording() {
+            if (rec.on) { rec.recorder.stop(); return; }
+            if (typeof MediaRecorder === 'undefined') {
+                toast('Enregistrement non supporté par ce navigateur');
+                return;
+            }
+            const stream = cnv.elt.captureStream(30);
+            // Si le son tourne, on l'embarque dans le clip (sortie compresseur)
+            if (audio.started) {
+                rec.audioDest = audio.ctx.createMediaStreamDestination();
+                audio.comp.connect(rec.audioDest);
+                const at = rec.audioDest.stream.getAudioTracks()[0];
+                if (at) stream.addTrack(at);
+            }
+            let mime = 'video/webm;codecs=vp9,opus';
+            if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+            rec.chunks = [];
+            try {
+                rec.recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
+            } catch (e) {
+                toast('Enregistrement impossible ici');
+                return;
+            }
+            rec.recorder.ondataavailable = e => { if (e.data.size) rec.chunks.push(e.data); };
+            rec.recorder.onstop = () => {
+                if (rec.audioDest) {
+                    try { audio.comp.disconnect(rec.audioDest); } catch (e) {}
+                    rec.audioDest = null;
+                }
+                const blob = new Blob(rec.chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const aEl = document.createElement('a');
+                aEl.href = url;
+                aEl.download = 'limbra-neural-tides-' + params.seed + '-' + currentWeather + '.webm';
+                aEl.click();
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+                rec.on = false;
+                setRecUI(false);
+                toast('Clip WebM enregistré ✅');
+            };
+            rec.recorder.start(250);
+            rec.on = true;
+            setRecUI(true);
+            toast('⏺ Enregistrement… V ou le bouton pour stopper');
+        }
+
+        function setRecUI(on) {
+            const b = document.getElementById('rec-btn');
+            b.textContent = on ? '⏹ Stop REC' : '⏺ Enregistrer';
+            b.classList.toggle('active', on);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // RIDEAU NOIR (VJ) ; fondu au noir instantanément rappelable
+        // ═══════════════════════════════════════════════════════════════
+
+        let blackout = false, blackFade = 0;
+        function toggleBlackout() {
+            blackout = !blackout;
+            if (blackout) toast('Rideau noir ; B pour rallumer');
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // CHAMP FLUIDE LÉGER ; inspiration Navier-Stokes (stable fluids lite)
+        // Chaque geste injecte de la vitesse dans une grille grossière qui
+        // diffuse et se dissipe : le drag laisse une traîne de courant qui
+        // persiste quelques secondes après le passage de la main.
+        // ═══════════════════════════════════════════════════════════════
+
+        const fluid = { w: 64, h: 36, vx: null, vy: null, tx: null, ty: null };
+
+        function initFluid() {
+            fluid.h = Math.max(12, Math.round(fluid.w * canvasH / canvasW));
+            const N = fluid.w * fluid.h;
+            fluid.vx = new Float32Array(N);
+            fluid.vy = new Float32Array(N);
+            fluid.tx = new Float32Array(N);
+            fluid.ty = new Float32Array(N);
+        }
+
+        // Injection de vitesse autour d'un point (falloff radial doux)
+        function fluidSplat(x, y, vx, vy) {
+            if (!fluid.vx) return;
+            const gx = (x / canvasW) * fluid.w;
+            const gy = (y / canvasH) * fluid.h;
+            const R = 3.4;
+            const x0 = Math.max(0, Math.floor(gx - R)), x1 = Math.min(fluid.w - 1, Math.ceil(gx + R));
+            const y0 = Math.max(0, Math.floor(gy - R)), y1 = Math.min(fluid.h - 1, Math.ceil(gy + R));
+            for (let cy = y0; cy <= y1; cy++) {
+                for (let cx = x0; cx <= x1; cx++) {
+                    const dx = cx - gx, dy = cy - gy;
+                    const d = Math.sqrt(dx * dx + dy * dy);
+                    if (d > R) continue;
+                    const fall = 1 - d / R;
+                    const i = cy * fluid.w + cx;
+                    fluid.vx[i] = Math.max(-5, Math.min(5, fluid.vx[i] + vx * 0.055 * fall));
+                    fluid.vy[i] = Math.max(-5, Math.min(5, fluid.vy[i] + vy * 0.055 * fall));
+                }
+            }
+        }
+
+        // Diffusion douce + dissipation : la mémoire du geste s'étale puis s'éteint
+        function fluidStep() {
+            if (!fluid.vx) return;
+            const w = fluid.w, h = fluid.h;
+            const vx = fluid.vx, vy = fluid.vy, tx = fluid.tx, ty = fluid.ty;
+            for (let y = 1; y < h - 1; y++) {
+                for (let x = 1; x < w - 1; x++) {
+                    const i = y * w + x;
+                    tx[i] = (vx[i] * 4 + vx[i - 1] + vx[i + 1] + vx[i - w] + vx[i + w]) / 8;
+                    ty[i] = (vy[i] * 4 + vy[i - 1] + vy[i + 1] + vy[i - w] + vy[i + w]) / 8;
+                }
+            }
+            for (let i = 0; i < vx.length; i++) {
+                vx[i] = tx[i] * 0.965;
+                vy[i] = ty[i] * 0.965;
+                tx[i] = 0; ty[i] = 0;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // P5.JS SETUP & DRAW
+        // ═══════════════════════════════════════════════════════════════
+
+        function setup() {
+            pixelDensity(1);
+            const container = document.querySelector('.canvas-area');
+            canvasW = container.clientWidth;
+            canvasH = container.clientHeight;
+
+            cnv = createCanvas(canvasW, canvasH);
+            cnv.parent('canvas-container');
+            cnv.elt.style.touchAction = 'none';
+
+            initPointerEvents();
+            initSheetGestures();
+            initFluid();
+
+            initializeSystem();
+            document.querySelector('.loading').style.display = 'none';
+
+            // Les indications s'effacent après 12s
+            setTimeout(() => document.getElementById('hints').classList.add('faded'), 12000);
+        }
+
+        function windowResized() {
+            const container = document.querySelector('.canvas-area');
+            canvasW = container.clientWidth;
+            canvasH = container.clientHeight;
+            resizeCanvas(canvasW, canvasH);
+            placeAttractors();
+            initFluid();
+            if (video.on) sizeDitherBuffer();
+        }
+        window.addEventListener('orientationchange', () => setTimeout(() => windowResized(), 300));
+
+        function placeAttractors() {
+            const cx = canvasW / 2, cy = canvasH / 2;
+            const radius = min(canvasW, canvasH) * 0.28;
+            attractors = [];
+            for (let i = 0; i < 5; i++) {
+                const angle = -HALF_PI + (i * TWO_PI / 5);
+                attractors.push(new Attractor(cx + cos(angle) * radius, cy + sin(angle) * radius, PILLAR_COLORS[i], i));
+            }
+        }
+
+        function initializeSystem() {
+            randomSeed(params.seed);
+            noiseSeed(params.seed);
+            placeAttractors();
+            particles = [];
+            ripples = [];
+            bursts = [];
+            for (let i = 0; i < params.particleCount; i++) particles.push(new Particle());
+            rebuildRibbons();
+            blendMode(BLEND);
+            background(COLORS.bg[0], COLORS.bg[1], COLORS.bg[2]);
+        }
+
+        function draw() {
+            // ── Morphing doux vers la météo cible ──
+            for (const k of MORPHABLE) params[k] = lerp(params[k], targetParams[k], 0.03);
+            for (const k in moodTarget) {
+                if (k === 'lightning') { mood[k] = moodTarget[k]; continue; }
+                mood[k] = lerp(mood[k], moodTarget[k], 0.03);
+            }
+
+            // ── Fond : fade des traces ──
+            blendMode(BLEND);
+            noStroke();
+            fill(COLORS.bg[0], COLORS.bg[1], COLORS.bg[2], params.trailFade);
+            rect(0, 0, canvasW, canvasH);
+
+            // ── Respiration 4:6 ──
+            const t = (millis() % breathCycle) / breathCycle;
+            const inhaleRatio = 0.4;
+            if (t < inhaleRatio) breathPhase = map(t, 0, inhaleRatio, 0, PI);
+            else breathPhase = map(t, inhaleRatio, 1, PI, TWO_PI);
+            breathVal = sin(breathPhase);
+            isExhale = t >= inhaleRatio;
+            updateBreathUI(t, breathVal);
+
+            // ── Entrées live ──
+            processVideo();
+            updateMic();
+
+            // ── Tempêtes : montée pendant le maintien, apaisement à l'expiration ──
+            // Chaque doigt porte sa propre tempête ; l'expiration apaise 2x plus vite (narration SOS)
+            stormSources = [];
+            stormLevel = 0;
+            const calm = isExhale ? 0.008 : 0.004;
+            for (const pt of pointers.values()) {
+                if (pt.down && millis() - pt.holdStart > 220) {
+                    pt.storm = min(1, pt.storm + 0.012);
+                } else {
+                    pt.storm = max(0, pt.storm - calm);
+                }
+                if (pt.storm > 0.02) stormSources.push(pt);
+                stormLevel = max(stormLevel, pt.storm);
+                // Le geste nourrit le champ fluide : la traîne persiste après la main
+                if (abs(pt.vx) + abs(pt.vy) > 0.6) fluidSplat(pt.x, pt.y, pt.vx, pt.vy);
+                // Maintien près d'un pilier = sa note en boucle, d'autant plus
+                // active (rapide, forte, aiguë) qu'on est proche
+                if (pt.down && audio.started && !audio.muted && millis() > (pt.nextPluck || 0)) {
+                    const prox = pillarPluck(pt.x, pt.y);
+                    pt.nextPluck = millis() + (prox > 0.02 ? 950 - prox * 700 : 650);
+                }
+                // Décroissance de la vitesse (courant qui s'estompe sans mouvement)
+                pt.vx *= 0.9; pt.vy *= 0.9;
+            }
+            for (let i = fadingStorms.length - 1; i >= 0; i--) {
+                const s = fadingStorms[i];
+                s.storm = max(0, s.storm - calm);
+                if (s.storm < 0.02) { fadingStorms.splice(i, 1); continue; }
+                stormSources.push(s);
+                stormLevel = max(stormLevel, s.storm);
+            }
+
+            // ── Le fluide diffuse et se dissipe (mémoire des gestes) ──
+            fluidStep();
+
+            // ── Dérive orbitale des attracteurs ──
+            for (const a of attractors) a.drift();
+
+            // ── Dérive automatique de météo ──
+            if (autoDrift && millis() - lastDriftSwitch > 45000) {
+                const idx = WEATHER_KEYS.indexOf(currentWeather);
+                setWeather(WEATHER_KEYS[(idx + 1) % WEATHER_KEYS.length]);
+            }
+
+            // ── Rendu additif : le vrai glow ──
+            blendMode(ADD);
+
+            // Rendu vidéo (sous les particules ; le monde émerge du courant)
+            drawVideoOverlay();
+
+            // Halos des attracteurs
+            for (const a of attractors) {
+                const pulseSize = min(canvasW, canvasH) * 0.08 * (1 + breathVal * 0.3 * params.breathStrength);
+                noStroke();
+                fill(a.color.r, a.color.g, a.color.b, 5 + breathVal * 3);
+                ellipse(a.x, a.y, pulseSize, pulseSize);
+                fill(a.color.r, a.color.g, a.color.b, 2);
+                ellipse(a.x, a.y, pulseSize * 2.5, pulseSize * 2.5);
+            }
+
+            // Synapses puis particules
+            drawSynapses();
+            for (const p of particles) { p.update(breathPhase); p.draw(); }
+
+            // Rubans auroraux : le vent solaire du système
+            for (const rb of ribbons) { rb.update(breathPhase); rb.draw(); }
+
+            // Halo de respiration : tout le champ pulse doucement en 4:6
+            fill(34, 211, 238, 2.5 + (breathVal + 1) * 1.5);
+            ellipse(canvasW / 2, canvasH / 2, min(canvasW, canvasH) * (1.1 + breathVal * 0.08), min(canvasW, canvasH) * (1.1 + breathVal * 0.08));
+
+            // Pompe chromatique sur les beats : l'écran entier respire la musique
+            if (beatFlash > 0.02) {
+                noStroke();
+                fill(34, 211, 238, 12 * beatFlash);
+                rect(0, 0, canvasW, canvasH);
+                fill(245, 158, 11, 6 * beatFlash);
+                rect(0, 0, canvasW, canvasH);
+                beatFlash *= 0.86;
+            }
+
+            // Éclairs
+            maybeLightning();
+            updateBursts();
+
+            // Ondes de choc (interaction, double-tap, beats micro)
+            for (let i = ripples.length - 1; i >= 0; i--) {
+                const rp = ripples[i];
+                rp.r += rp.speed;
+                rp.power *= 0.985;
+                const a = map(rp.r, 0, rp.maxR, 70, 0);
+                const c = rp.col;
+                noFill();
+                stroke(c[0], c[1], c[2], a);
+                strokeWeight(1.5);
+                ellipse(rp.x, rp.y, rp.r * 2, rp.r * 2);
+                stroke(c[0], c[1], c[2], a * 0.35);
+                strokeWeight(5);
+                ellipse(rp.x, rp.y, rp.r * 2, rp.r * 2);
+                if (rp.r > rp.maxR) ripples.splice(i, 1);
+            }
+            noStroke();
+
+            // Halo de tempête autour de chaque source (rouge craving)
+            for (const s of stormSources) {
+                const lv = s.storm;
+                fill(COLORS.red.r, COLORS.red.g, COLORS.red.b, 14 * lv);
+                ellipse(s.x, s.y, 340 * lv, 340 * lv);
+                fill(COLORS.amber.r, COLORS.amber.g, COLORS.amber.b, 10 * lv);
+                ellipse(s.x, s.y, 180 * lv, 180 * lv);
+            }
+
+            blendMode(BLEND);
+
+            // ── Rideau noir (VJ) : fondu doux ──
+            blackFade = lerp(blackFade, blackout ? 1 : 0, 0.15);
+            if (blackFade > 0.01) {
+                noStroke();
+                fill(10, 10, 15, 255 * blackFade);
+                rect(0, 0, canvasW, canvasH);
+            }
+
+            // ── Audio ──
+            updateAudio();
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // INTERACTIONS ; Pointer Events unifiés (souris, doigts, stylet)
+        // Chaque pointeur = une main dans l'eau ; multi-touch natif
+        // ═══════════════════════════════════════════════════════════════
+
+        function initPointerEvents() {
+            const el = cnv.elt;
+
+            function localXY(e) {
+                const r = el.getBoundingClientRect();
+                return { x: e.clientX - r.left, y: e.clientY - r.top };
+            }
+
+            function getPointer(e) {
+                let p = pointers.get(e.pointerId);
+                if (!p) {
+                    const { x, y } = localXY(e);
+                    p = { x, y, vx: 0, vy: 0, down: false, holdStart: 0, storm: 0, type: e.pointerType };
+                    pointers.set(e.pointerId, p);
+                }
+                return p;
+            }
+
+            el.addEventListener('pointerdown', e => {
+                e.preventDefault();
+                try { el.setPointerCapture(e.pointerId); } catch (err) {}
+                const p = getPointer(e);
+                const { x, y } = localXY(e);
+                p.x = x; p.y = y;
+                p.down = true;
+                p.holdStart = millis();
+                wakeUI();
+
+                // Le premier toucher réveille le son (geste utilisateur = autorisé)
+                if (!audio.started) {
+                    toggleAudio();
+                    toast('Son activé ; 🔊 dans le dock pour couper');
+                }
+
+                // Toucher = toujours un son : note du pilier si on est proche,
+                // simple goutte d'eau sinon
+                if (audio.started && !audio.muted) {
+                    const prox = pillarPluck(x, y);
+                    if (prox < 0.02) {
+                        const mM = MUSIC[currentWeather] || MUSIC.accalmie;
+                        const deg = mM.scale[Math.floor(Math.random() * mM.scale.length)];
+                        playNote(mM.base * 2 * Math.pow(2, deg / 12), 0.07, 1.2, 'sine');
+                    }
+                    p.nextPluck = millis() + (prox > 0.02 ? 950 - prox * 700 : 650);
+                }
+
+                // Double-tap : deux appuis rapprochés dans le temps et l'espace
+                const now = millis();
+                const dx = x - lastTap.x, dy = y - lastTap.y;
+                if (now - lastTap.t < 320 && dx * dx + dy * dy < 40 * 40) {
+                    spawnRipple(x, y);
+                    lastTap.t = 0;
+                } else {
+                    lastTap = { t: now, x, y };
+                }
+            }, { passive: false });
+
+            el.addEventListener('pointermove', e => {
+                const p = getPointer(e);
+                const { x, y } = localXY(e);
+                p.vx = lerp(p.vx, x - p.x, 0.5);
+                p.vy = lerp(p.vy, y - p.y, 0.5);
+                p.x = x; p.y = y;
+                if (document.body.classList.contains('immersive')) wakeCursor();
+            });
+
+            function release(e) {
+                const p = pointers.get(e.pointerId);
+                if (!p) return;
+                p.down = false;
+                // La tempête survit au doigt levé et s'apaise sur place
+                if (p.storm > 0.02) {
+                    fadingStorms.push({ x: p.x, y: p.y, storm: p.storm });
+                    p.storm = 0;
+                }
+                // La souris reste (survol = courant) ; les doigts disparaissent
+                if (e.pointerType !== 'mouse') pointers.delete(e.pointerId);
+            }
+            el.addEventListener('pointerup', release);
+            el.addEventListener('pointercancel', release);
+            el.addEventListener('pointerleave', e => {
+                if (e.pointerType === 'mouse') { release(e); pointers.delete(e.pointerId); }
+            });
+        }
+
+        function spawnRipple(x, y, opts) {
+            opts = opts || {};
+            ripples.push({
+                x, y, r: 0,
+                speed: opts.speed || 7,
+                power: opts.power || 4.5,
+                maxR: max(canvasW, canvasH) * 0.9,
+                col: opts.col || [34, 211, 238]
+            });
+        }
+
+        function keyPressed() {
+            const el = document.activeElement;
+            if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
+
+            const k = key.toLowerCase();
+            if (k === '1') setWeather('accalmie');
+            else if (k === '2') setWeather('brume');
+            else if (k === '3') setWeather('maree');
+            else if (k === '4') setWeather('orage');
+            else if (k === '5') setWeather('aurore');
+            else if (k === 'f') toggleFullscreenMode();
+            else if (k === 'h') toggleImmersion();
+            else if (k === 's') { exportPNG(); return false; }
+            else if (k === 'm') toggleAudio();
+            else if (k === 'c') toggleCamera();
+            else if (k === 'g') cycleVideoMode();
+            else if (k === 'x') toggleMic();
+            else if (k === 'o') addOutput();
+            else if (k === 'r') randomSeedAndUpdate();
+            else if (k === 'd') surpriseMe();
+            else if (k === 'v') toggleRecording();
+            else if (k === 'b') toggleBlackout();
+            else if (k === ' ') { spawnRipple(canvasW / 2, canvasH / 2); return false; }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // MÉTÉO INTÉRIEURE
+        // ═══════════════════════════════════════════════════════════════
+
+        function setWeather(name) {
+            if (!WEATHERS[name]) return;
+            currentWeather = name;
+            lastDriftSwitch = millis();
+            const w = WEATHERS[name];
+            Object.assign(targetParams, w.p);
+            moodTarget = { ...w.mood };
+
+            document.querySelectorAll('.weather-pill').forEach(b => {
+                b.classList.toggle('active', b.dataset.weather === name);
+            });
+            for (const k of MORPHABLE) {
+                const slider = document.getElementById(k);
+                const disp = document.getElementById(k + '-value');
+                if (slider) { slider.value = targetParams[k]; disp.textContent = targetParams[k]; }
+            }
+
+            document.getElementById('weather-btn').textContent = w.icon;
+
+            const badge = document.getElementById('weather-badge');
+            badge.textContent = w.label;
+            badge.classList.add('visible');
+            clearTimeout(badge._t);
+            badge._t = setTimeout(() => badge.classList.remove('visible'), 4000);
+
+            // Signature sonore de la nouvelle météo
+            weatherMotif();
+        }
+
+        function nextWeather() {
+            const idx = WEATHER_KEYS.indexOf(currentWeather);
+            setWeather(WEATHER_KEYS[(idx + 1) % WEATHER_KEYS.length]);
+        }
+
+        function toggleDrift(on) {
+            autoDrift = on;
+            lastDriftSwitch = millis();
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // TIROIR (bottom sheet mobile / panneau latéral desktop)
+        // ═══════════════════════════════════════════════════════════════
+
+        function toggleSheet() {
+            const open = document.getElementById('sheet').classList.contains('open');
+            if (open) closeSheet(); else openSheet();
+        }
+        function openSheet() {
+            document.getElementById('sheet').classList.add('open');
+            document.getElementById('scrim').classList.add('open');
+            document.getElementById('sheet-btn').classList.add('active');
+        }
+        function closeSheet() {
+            document.getElementById('sheet').classList.remove('open');
+            document.getElementById('scrim').classList.remove('open');
+            document.getElementById('sheet-btn').classList.remove('active');
+        }
+
+        // Glisser la poignée vers le bas pour fermer (mobile)
+        function initSheetGestures() {
+            const handle = document.getElementById('sheet-handle');
+            const sheet = document.getElementById('sheet');
+            let startY = 0, dragging = false;
+            handle.addEventListener('pointerdown', e => {
+                dragging = true; startY = e.clientY;
+                sheet.style.transition = 'none';
+                handle.setPointerCapture(e.pointerId);
+            });
+            handle.addEventListener('pointermove', e => {
+                if (!dragging) return;
+                const dy = Math.max(0, e.clientY - startY);
+                sheet.style.transform = 'translateY(' + dy + 'px)';
+            });
+            function end(e) {
+                if (!dragging) return;
+                dragging = false;
+                sheet.style.transition = '';
+                sheet.style.transform = '';
+                if (e.clientY - startY > 90) closeSheet();
+            }
+            handle.addEventListener('pointerup', end);
+            handle.addEventListener('pointercancel', end);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // IMMERSION & PLEIN ÉCRAN
+        // ═══════════════════════════════════════════════════════════════
+
+        function toggleImmersion() {
+            document.body.classList.toggle('immersive');
+            closeSheet();
+            if (document.body.classList.contains('immersive')) {
+                document.addEventListener('mousemove', wakeCursor);
+                wakeCursor();
+            } else {
+                document.removeEventListener('mousemove', wakeCursor);
+                document.body.classList.remove('no-cursor');
+                clearTimeout(cursorTimer);
+            }
+        }
+
+        function wakeCursor() {
+            document.body.classList.remove('no-cursor');
+            clearTimeout(cursorTimer);
+            cursorTimer = setTimeout(() => {
+                if (document.body.classList.contains('immersive')) {
+                    document.body.classList.add('no-cursor');
+                }
+            }, 3000);
+        }
+
+        // Le dock s'efface tout seul après 5s d'inactivité ; un toucher le réveille
+        function wakeUI() {
+            document.body.classList.remove('ui-idle');
+            clearTimeout(uiIdleTimer);
+            uiIdleTimer = setTimeout(() => {
+                if (!document.getElementById('sheet').classList.contains('open')) {
+                    document.body.classList.add('ui-idle');
+                }
+            }, 5000);
+        }
+        document.addEventListener('pointerdown', wakeUI);
+        document.addEventListener('pointermove', wakeUI);
+
+        function toggleFullscreenMode() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => setTimeout(() => windowResized(), 100));
+
+        // ═══════════════════════════════════════════════════════════════
+        // UI HANDLERS
+        // ═══════════════════════════════════════════════════════════════
+
+        function updateBreathUI(t, bv) {
+            const isInhale = t < 0.4;
+            const label = document.getElementById('breath-label');
+            const timer = document.getElementById('breath-timer');
+            const dot = document.getElementById('breath-dot');
+
+            label.textContent = isInhale ? 'Inspire' : 'Expire';
+            if (isInhale) timer.textContent = (t / 0.4 * 4).toFixed(1) + ' / 4s';
+            else timer.textContent = ((t - 0.4) / 0.6 * 6).toFixed(1) + ' / 6s';
+
+            const scale = 8 + (bv + 1) * 6;
+            dot.style.width = scale + 'px';
+            dot.style.height = scale + 'px';
+            dot.style.opacity = 0.5 + (bv + 1) * 0.25;
+        }
+
+        function updateParam(name, value) {
+            const numVal = parseFloat(value);
+            params[name] = numVal;
+            targetParams[name] = numVal;
+            document.getElementById(name + '-value').textContent = numVal;
+
+            if (name === 'particleCount') {
+                const diff = numVal - particles.length;
+                if (diff > 0) for (let i = 0; i < diff; i++) particles.push(new Particle());
+                else if (diff < 0) particles.splice(0, Math.abs(diff));
+            }
+        }
+
+        function updateLive(name, value) {
+            const numVal = parseFloat(value);
+            live[name] = numVal;
+            document.getElementById(name + '-value').textContent = numVal;
+            if (name === 'ribbons') rebuildRibbons();
+            if (name === 'ditherScale' && video.on) sizeDitherBuffer();
+        }
+
+        function updateSeedDisplay() { document.getElementById('seed-input').value = params.seed; }
+
+        function updateSeed() {
+            const newSeed = parseInt(document.getElementById('seed-input').value);
+            if (newSeed && newSeed > 0) { params.seed = newSeed; initializeSystem(); }
+            else updateSeedDisplay();
+        }
+
+        function previousSeed() { params.seed = Math.max(1, params.seed - 1); updateSeedDisplay(); initializeSystem(); }
+        function nextSeed() { params.seed++; updateSeedDisplay(); initializeSystem(); }
+        function randomSeedAndUpdate() { params.seed = Math.floor(Math.random() * 999999) + 1; updateSeedDisplay(); initializeSystem(); }
+
+        function copySeed() {
+            navigator.clipboard.writeText(String(params.seed)).then(() => {
+                const btn = document.getElementById('copy-seed-btn');
+                const old = btn.textContent;
+                btn.textContent = '✓ Copié';
+                setTimeout(() => btn.textContent = old, 1500);
+            }).catch(() => {});
+        }
+
+        function exportPNG() {
+            saveCanvas('limbra-neural-tides-' + params.seed + '-' + currentWeather, 'png');
+        }
+
+        function resetParameters() {
+            params = { ...defaultParams };
+            targetParams = { ...defaultParams };
+            live = { ...defaultLive };
+            setWeather('accalmie');
+            for (const name of ['particleCount', 'noiseScale', 'flowSpeed', 'trailFade', 'breathStrength', 'attractorStrength', 'synapses']) {
+                document.getElementById(name).value = params[name];
+                document.getElementById(name + '-value').textContent = params[name];
+            }
+            for (const name of ['videoStrength', 'videoTint', 'videoGhost', 'micSense', 'ribbons', 'ditherScale', 'ditherMix', 'ditherTintAmt']) {
+                document.getElementById(name).value = live[name];
+                document.getElementById(name + '-value').textContent = live[name];
+            }
+            document.getElementById('ditherTint').value = '#22D3EE';
+            video.tintCol = [34, 211, 238];
+            rebuildRibbons();
+            if (video.on) sizeDitherBuffer();
+            updateSeedDisplay();
+            initializeSystem();
+        }
+
+        let toastTimer = null;
+        function toast(msg) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+        }
+
+        window.addEventListener('load', () => { updateSeedDisplay(); wakeUI(); });
+    </script>
+</body>
+</html>

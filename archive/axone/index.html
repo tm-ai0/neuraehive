@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>AXONE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;300&family=Space+Mono:wght@400&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  :root {
+    --cyan: #00ccaa;
+    --magenta: #cc44ff;
+    --mint: #00ffd5;
+    --bg: #050508;
+    --text: rgba(255, 255, 255, 0.85);
+    --text-dim: rgba(255, 255, 255, 0.45);
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 100;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* ── BACKGROUND ── */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 50%; left: 50%;
+    width: 140vmax; height: 140vmax;
+    transform: translate(-50%, -50%);
+    background: 
+      radial-gradient(ellipse at 30% 20%, rgba(0, 204, 170, 0.06) 0%, transparent 60%),
+      radial-gradient(ellipse at 70% 80%, rgba(204, 68, 255, 0.04) 0%, transparent 60%);
+    animation: bgPulse 8s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+
+  @keyframes bgPulse {
+    0% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  }
+
+  /* ── GRAIN ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  /* ── SCREENS ── */
+  .screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .screen.active { display: flex; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: clamp(3rem, 12vw, 5rem);
+    letter-spacing: 0.15em;
+    color: var(--cyan);
+    text-shadow: 0 0 40px rgba(0, 204, 170, 0.3), 0 0 80px rgba(0, 204, 170, 0.1);
+    animation: titleGlow 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes titleGlow {
+    0% { text-shadow: 0 0 40px rgba(0, 204, 170, 0.2), 0 0 80px rgba(0, 204, 170, 0.05); }
+    100% { text-shadow: 0 0 60px rgba(0, 204, 170, 0.4), 0 0 120px rgba(0, 204, 170, 0.15); }
+  }
+
+  .subtitle {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 100;
+    font-size: clamp(0.9rem, 3.5vw, 1.15rem);
+    color: var(--text-dim);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-top: -0.5rem;
+  }
+
+  .instructions {
+    font-size: clamp(1.1rem, 4vw, 1.4rem);
+    line-height: 1.8;
+    color: var(--text);
+    max-width: 320px;
+  }
+  .instructions em {
+    font-style: normal;
+    color: var(--mint);
+    font-weight: 300;
+  }
+
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 3rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--bg);
+    background: var(--cyan);
+    border: none;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--mint);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .btn:active::before { transform: scaleX(1); }
+  .btn span { position: relative; z-index: 1; }
+
+  .connected-msg {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    opacity: 0.7;
+  }
+
+  .wall-msg {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 100;
+    font-size: clamp(1.3rem, 5vw, 1.8rem);
+    color: var(--text);
+    line-height: 1.6;
+    max-width: 300px;
+  }
+  .wall-msg strong {
+    font-weight: 300;
+    color: var(--mint);
+  }
+
+  .pulse-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.8); opacity: 1; }
+  }
+
+  .energy-bar-wrap {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.03);
+    z-index: 100;
+  }
+  .energy-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--cyan), var(--mint), var(--magenta));
+    transition: width 0.2s ease-out;
+    box-shadow: 0 0 12px var(--cyan);
+  }
+
+  .line {
+    width: 40px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0.4;
+  }
+
+  .error-msg {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    color: rgba(255, 100, 100, 0.7);
+    max-width: 300px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+  <!-- ═══ SCREEN 1 : Accueil ═══ -->
+  <div class="screen active" id="screen-welcome">
+    <div class="title">AXONE</div>
+    <div class="subtitle">æthereact</div>
+    <div class="line"></div>
+    <div class="instructions">
+      Bougez.<br>
+      <em>Le mur vous transforme.</em>
+    </div>
+    <button class="btn" id="btn-activate" onclick="activate()">
+      <span>Activer</span>
+    </button>
+  </div>
+
+  <!-- ═══ SCREEN 2 : Connexion ═══ -->
+  <div class="screen" id="screen-connecting">
+    <div class="pulse-dot"></div>
+    <div class="connected-msg">Connexion...</div>
+  </div>
+
+  <!-- ═══ SCREEN 3 : Connecté ═══ -->
+  <div class="screen" id="screen-connected">
+    <div class="pulse-dot"></div>
+    <div class="connected-msg">Connecté</div>
+    <div class="line"></div>
+    <div class="wall-msg">
+      Rangez votre téléphone.<br>
+      <strong>Regardez le mur.</strong>
+    </div>
+  </div>
+
+  <!-- ═══ SCREEN 4 : Erreur ═══ -->
+  <div class="screen" id="screen-error">
+    <div class="title" style="font-size: 2rem;">:(</div>
+    <div class="error-msg" id="error-text"></div>
+  </div>
+
+</div>
+
+<div class="energy-bar-wrap">
+  <div class="energy-bar" id="energy-bar"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  AXONE CLIENT — version HTTP POST (pas de WebSocket)
+// ═══════════════════════════════════════════════════
+
+const SEND_HZ = 4;                    // 4 POST/sec (économe en batterie)
+const PULSE_URL = 'pulse.php';        // même domaine, pas de CORS
+const CLIENT_ID = 'ax-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+let magnitude = 0;
+let sendInterval = null;
+
+// ── SCREENS ──
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) {
+    el.style.animation = 'none';
+    el.offsetHeight;
+    el.style.animation = '';
+    el.classList.add('active');
+  }
+}
+
+// ── ACTIVATE ──
+async function activate() {
+  showScreen('screen-connecting');
+
+  // 1) Permission capteurs (iOS 13+)
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      const perm = await DeviceMotionEvent.requestPermission();
+      if (perm !== 'granted') {
+        showError('Permission capteurs refusée. Rechargez et acceptez.');
+        return;
+      }
+    }
+  } catch (e) {
+    showError('Impossible d\'accéder aux capteurs. Utilisez Chrome en HTTPS.');
+    return;
+  }
+
+  // 2) Vérifier que DeviceMotion fonctionne
+  const hasMotion = await new Promise((resolve) => {
+    function onMotion(e) {
+      if (e.accelerationIncludingGravity &&
+          (e.accelerationIncludingGravity.x !== null ||
+           e.accelerationIncludingGravity.y !== null ||
+           e.accelerationIncludingGravity.z !== null)) {
+        window.removeEventListener('devicemotion', onMotion);
+        resolve(true);
+      }
+    }
+    window.addEventListener('devicemotion', onMotion);
+    setTimeout(() => resolve(false), 2500);
+  });
+
+  if (!hasMotion) {
+    showError('Capteurs non détectés.<br>• Utilisez <strong>Chrome</strong> (pas Brave)<br>• Vérifiez que l\'URL est en <strong>https://</strong>');
+    return;
+  }
+
+  // 3) Écouter les mouvements
+  window.addEventListener('devicemotion', (e) => {
+    const a = e.accelerationIncludingGravity;
+    if (!a) return;
+    const x = a.x || 0, y = a.y || 0, z = a.z || 0;
+    magnitude = Math.max(0, Math.sqrt(x*x + y*y + z*z) - 9.81);
+  });
+
+  // 4) Envoyer la magnitude par HTTP POST
+  sendInterval = setInterval(sendPulse, 1000 / SEND_HZ);
+
+  showScreen('screen-connected');
+  requestWakeLock();
+}
+
+// ── SEND PULSE ──
+async function sendPulse() {
+  try {
+    await fetch(PULSE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: CLIENT_ID, m: Math.round(magnitude * 100) / 100 }),
+      keepalive: true    // continue d'envoyer même si l'écran se ferme
+    });
+  } catch (e) {
+    // Silencieux — retry au prochain interval
+  }
+}
+
+// ── UI ──
+setInterval(() => {
+  const pct = Math.min(100, (magnitude / 15) * 100);
+  document.getElementById('energy-bar').style.width = pct + '%';
+}, 100);
+
+function showError(msg) {
+  document.getElementById('error-text').innerHTML = msg;
+  showScreen('screen-error');
+}
+
+// ── WAKE LOCK ──
+async function requestWakeLock() {
+  try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch(e){}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+});
+
+// ── PREVENT SCROLL ──
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+// ── CLEANUP à la fermeture ──
+window.addEventListener('beforeunload', () => {
+  // Dernier POST avec magnitude 0 pour signaler le départ
+  navigator.sendBeacon(PULSE_URL, JSON.stringify({ id: CLIENT_ID, m: 0 }));
+});
+</script>
+</body>
+</html>

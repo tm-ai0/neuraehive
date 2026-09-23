@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NH — Synaptic Mirror v4 · Guide</title>
+<meta name="description" content="Interactive guide for Synaptic Mirror — a real-time WebGL2 audiovisual instrument by NeuroaeHive.">
+<meta name="theme-color" content="#06060a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Syne:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════ RESET & BASE ═══════════════ */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --accent:#00FFB0;--accent-dim:rgba(0,255,176,.15);--accent-glow:rgba(0,255,176,.4);
+  --gold:#D2B14C;--red:#ff3366;--purple:#aa66ff;--cyan:#00B4D8;--orange:#FF6D00;
+  --bg-deep:#06060a;--bg:#0a0b12;--bg-surface:rgba(255,255,255,.025);--bg-elevated:rgba(255,255,255,.04);
+  --border:rgba(255,255,255,.06);--border-accent:rgba(0,255,176,.12);
+  --text:#d8d8e0;--text-dim:rgba(255,255,255,.38);--text-bright:#f0f0f5;
+  --display:'Syne',sans-serif;--body:'Outfit',sans-serif;--mono:'Space Mono',monospace;
+  --ease-out:cubic-bezier(.16,1,.3,1);--ease-spring:cubic-bezier(.34,1.56,.64,1);
+  --section-gap:clamp(80px,12vh,140px);
+}
+html{background:var(--bg-deep);color:var(--text);font-family:var(--body);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;scroll-behavior:smooth;overflow-x:hidden}
+body{position:relative}
+::selection{background:var(--accent);color:#000}
+
+/* Grain overlay */
+body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ═══════════════ TYPOGRAPHY ═══════════════ */
+h1,h2,h3{font-family:var(--display);font-weight:700;color:var(--text-bright);letter-spacing:-.02em}
+h1{font-size:clamp(2.8rem,7vw,5.2rem);line-height:1.05}
+h2{font-size:clamp(1.8rem,4vw,2.8rem);line-height:1.15;margin-bottom:1rem}
+h3{font-size:clamp(1rem,2vw,1.2rem);line-height:1.3;margin-bottom:.6rem}
+p{font-weight:300;font-size:clamp(.9rem,1.8vw,1.05rem);max-width:64ch}
+.accent{color:var(--accent)}.gold{color:var(--gold)}.red{color:var(--red)}
+.mono{font-family:var(--mono);font-size:.85em;letter-spacing:-.02em}
+.dim{color:var(--text-dim)}
+.label{font-family:var(--mono);font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim)}
+
+/* ═══════════════ LAYOUT ═══════════════ */
+.container{max-width:1080px;margin:0 auto;padding:0 clamp(20px,4vw,48px)}
+section{padding:var(--section-gap) 0;position:relative}
+.section-label{display:flex;align-items:center;gap:12px;margin-bottom:clamp(32px,5vh,56px)}
+.section-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border-accent),transparent)}
+.section-intro{max-width:52ch;margin-bottom:clamp(32px,4vh,48px)}
+.section-intro p{color:var(--text-dim);font-size:clamp(.95rem,1.8vw,1.1rem)}
+
+/* ═══════════════ SCROLL REVEAL ═══════════════ */
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .8s var(--ease-out),transform .8s var(--ease-out)}
+.reveal.vis{opacity:1;transform:translateY(0)}
+.reveal-d1{transition-delay:.1s}.reveal-d2{transition-delay:.2s}.reveal-d3{transition-delay:.3s}.reveal-d4{transition-delay:.4s}
+
+/* ═══════════════ LANG TOGGLE ═══════════════ */
+.lang-toggle{position:fixed;top:20px;right:20px;z-index:1000;display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;backdrop-filter:blur(12px);background:rgba(6,6,10,.7)}
+.lang-btn{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;padding:6px 14px;color:var(--text-dim);cursor:pointer;transition:all .2s;border:none;background:none}
+.lang-btn.active{color:var(--accent);background:var(--accent-dim)}
+.lang-btn:hover:not(.active){color:var(--text)}
+
+/* ═══════════════ HERO ═══════════════ */
+#hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden}
+#heroCanvas{position:absolute;inset:0;z-index:0;opacity:.5}
+.hero-content{position:relative;z-index:2;padding:0 clamp(20px,4vw,48px)}
+.hero-eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.25em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;display:flex;align-items:center;gap:10px}
+.hero-eyebrow::before{content:'';width:32px;height:1px;background:var(--accent)}
+.hero-title{margin-bottom:20px}
+.hero-title .mirror{background:linear-gradient(135deg,var(--accent),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:clamp(1rem,2vw,1.3rem);font-weight:300;color:var(--text-dim);max-width:48ch;margin-bottom:40px;line-height:1.6}
+.hero-actions{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.btn-launch{font-family:var(--display);font-weight:700;font-size:.9rem;letter-spacing:.02em;color:#000;background:var(--accent);padding:14px 36px;border-radius:12px;text-decoration:none;transition:all .25s var(--ease-spring);display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer}
+.btn-launch:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 8px 32px var(--accent-glow)}
+.btn-ghost{font-family:var(--mono);font-size:.75rem;letter-spacing:.1em;color:var(--text-dim);border:1px solid var(--border);padding:14px 28px;border-radius:12px;text-decoration:none;transition:all .2s;display:inline-flex;align-items:center;gap:8px}
+.btn-ghost:hover{color:var(--text);border-color:var(--text-dim)}
+.hero-stats{display:flex;gap:clamp(24px,4vw,48px);margin-top:clamp(48px,8vh,80px);padding-top:32px;border-top:1px solid var(--border)}
+.stat{text-align:center}.stat-val{font-family:var(--display);font-size:clamp(1.6rem,3vw,2.2rem);color:var(--text-bright)}.stat-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim);margin-top:4px}
+
+/* ═══════════════ CARDS ═══════════════ */
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media(max-width:900px){.grid-4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
+
+.card{background:var(--bg-surface);border:1px solid var(--border);border-radius:16px;padding:clamp(20px,3vw,28px);transition:all .3s var(--ease-out);position:relative;overflow:hidden}
+.card:hover{border-color:var(--border-accent);transform:translateY(-2px)}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent-dim),transparent);opacity:0;transition:opacity .3s}
+.card:hover::before{opacity:1}
+.card-num{font-family:var(--mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px}
+.card-title{font-family:var(--display);font-size:1.1rem;color:var(--text-bright);margin-bottom:8px}
+.card-desc{font-size:.85rem;color:var(--text-dim);line-height:1.6;font-weight:300}
+.card-accent{border-left:3px solid var(--accent);padding-left:calc(clamp(20px,3vw,28px) - 3px)}
+
+/* ═══════════════ EFFECT CARDS ═══════════════ */
+.effect-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media(max-width:900px){.effect-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.effect-grid{grid-template-columns:1fr}}
+.effect-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;transition:all .3s var(--ease-out);cursor:default}
+.effect-card:hover{border-color:var(--border-accent);transform:translateY(-3px)}
+.effect-preview{width:100%;aspect-ratio:16/10;background:#000;display:block}
+.effect-body{padding:16px 20px 20px}
+.effect-num{font-family:var(--mono);font-size:.55rem;letter-spacing:.15em;color:var(--text-dim);margin-bottom:6px}
+.effect-name{font-family:var(--display);font-size:1rem;color:var(--text-bright);margin-bottom:6px}
+.effect-desc{font-size:.78rem;color:var(--text-dim);line-height:1.55;font-weight:300}
+.effect-key{display:inline-block;font-family:var(--mono);font-size:.6rem;background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:2px 7px;color:var(--text-dim);margin-top:8px}
+
+/* ═══════════════ TIER EXPLORER ═══════════════ */
+.tier-explorer{display:flex;gap:24px;align-items:flex-start}
+@media(max-width:768px){.tier-explorer{flex-direction:column}}
+.tier-tabs{display:flex;flex-direction:column;gap:8px;min-width:200px}
+.tier-tab{font-family:var(--mono);font-size:.75rem;letter-spacing:.05em;padding:14px 18px;border:1px solid var(--border);border-radius:12px;background:var(--bg-surface);color:var(--text-dim);cursor:pointer;transition:all .25s;text-align:left}
+.tier-tab:hover{border-color:var(--border-accent);color:var(--text)}
+.tier-tab.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.tier-tab .tier-name{display:block;font-family:var(--display);font-size:.9rem;color:inherit;margin-bottom:2px}
+.tier-tab .tier-hint{font-size:.65rem;opacity:.6}
+.tier-display{flex:1;aspect-ratio:16/10;background:var(--bg-surface);border:1px solid var(--border);border-radius:20px;position:relative;overflow:hidden;min-height:300px}
+.tier-mockup{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:opacity .5s}
+.tier-mockup.hidden{opacity:0;pointer-events:none}
+.tier-screen{width:90%;height:85%;background:#08080c;border-radius:12px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.05)}
+.tier-canvas-bg{position:absolute;inset:0;background:linear-gradient(135deg,#0c0e18,#08080c);opacity:.8}
+/* Tier mockup elements */
+.tier-hud{position:absolute;font-family:var(--mono);font-size:.5rem;color:rgba(255,255,255,.45);letter-spacing:.1em;text-transform:uppercase;opacity:0;transition:opacity .4s}
+.tier-hud.show{opacity:1}
+.tier-hud-tl{top:8px;left:12px}.tier-hud-tr{top:8px;right:12px;text-align:right}
+.tier-hud-bl{bottom:8px;left:12px}.tier-hud-br{bottom:8px;right:12px;text-align:right}
+.tier-pill{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:.5rem;letter-spacing:.1em;color:var(--accent);border:1px solid rgba(0,255,176,.2);background:rgba(0,255,176,.06);padding:4px 14px;border-radius:12px;opacity:0;transition:opacity .4s}
+.tier-pill.show{opacity:1}
+.tier-hint-text{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:.45rem;color:rgba(255,255,255,.18);letter-spacing:.1em;white-space:nowrap;opacity:0;transition:opacity .4s}
+.tier-hint-text.show{opacity:1}
+.tier-drawer{position:absolute;bottom:0;left:5%;right:5%;background:rgba(12,12,20,.92);backdrop-filter:blur(8px);border-top:1px solid rgba(0,255,176,.1);border-radius:10px 10px 0 0;transform:translateY(100%);transition:transform .4s var(--ease-out);padding:8px 12px 12px}
+.tier-drawer.show{transform:translateY(0)}
+.tier-drawer-handle{width:20px;height:2px;background:rgba(255,255,255,.15);border-radius:1px;margin:0 auto 6px}
+.tier-drawer-modes{display:flex;gap:3px;justify-content:center;margin-bottom:6px}
+.tier-drawer-mode{font-family:var(--mono);font-size:.4rem;padding:2px 6px;border:1px solid rgba(255,255,255,.08);border-radius:3px;color:rgba(255,255,255,.3)}
+.tier-drawer-mode.on{border-color:rgba(0,255,176,.3);color:var(--accent);background:rgba(0,255,176,.08)}
+.tier-drawer-slider{height:2px;background:rgba(255,255,255,.05);border-radius:1px;margin:3px 0;position:relative}
+.tier-drawer-slider::after{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:50%;height:100%;background:var(--accent);border-radius:1px}
+.tier-utils{display:flex;gap:3px;justify-content:center;margin-top:6px;opacity:0;transition:opacity .3s}
+.tier-utils.show{opacity:1}
+.tier-utils span{font-size:.4rem;padding:2px 5px;border:1px solid rgba(255,255,255,.06);border-radius:3px;color:rgba(255,255,255,.25);font-family:var(--mono)}
+
+/* ═══════════════ SLIDER PLAYGROUND ═══════════════ */
+.playground{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+@media(max-width:768px){.playground{grid-template-columns:1fr}}
+.playground-canvas{aspect-ratio:4/3;background:#000;border-radius:16px;border:1px solid var(--border);overflow:hidden}
+.playground-canvas canvas{width:100%;height:100%;display:block}
+.playground-controls{display:flex;flex-direction:column;gap:12px}
+.pg-slider{display:flex;align-items:center;gap:12px}
+.pg-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;width:48px;flex-shrink:0}
+.pg-track{flex:1;height:44px;position:relative;cursor:pointer;display:flex;align-items:center;touch-action:none}
+.pg-bg{width:100%;height:4px;background:rgba(255,255,255,.06);border-radius:2px;position:relative}
+.pg-fill{height:100%;border-radius:2px;background:var(--accent);position:relative;transition:width .04s}
+.pg-fill::after{content:'';position:absolute;right:-9px;top:50%;transform:translateY(-50%);width:18px;height:18px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px var(--accent-glow);transition:transform .15s}
+.pg-track:active .pg-fill::after{transform:translateY(-50%) scale(1.2)}
+.pg-val{font-family:var(--mono);font-size:.7rem;color:var(--text-dim);width:30px;text-align:right;flex-shrink:0}
+
+/* ═══════════════ KEY TABLE ═══════════════ */
+.key-table{width:100%;border-collapse:collapse}
+.key-table th{font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);font-weight:400}
+.key-table td{padding:10px 16px;border-bottom:1px solid var(--border);font-size:.85rem;font-weight:300}
+.key-table td:first-child{font-family:var(--mono);font-size:.8rem;color:var(--accent);font-weight:400;white-space:nowrap;width:100px}
+.key-table tr:hover td{background:var(--bg-surface)}
+
+/* ═══════════════ PALETTE SECTION ═══════════════ */
+.palette-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:640px){.palette-grid{grid-template-columns:repeat(2,1fr)}}
+.pal-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:16px;padding:20px;cursor:pointer;transition:all .3s;position:relative}
+.pal-card:hover,.pal-card.active{border-color:var(--accent);transform:translateY(-2px)}
+.pal-card.active::after{content:'✓';position:absolute;top:12px;right:14px;font-size:.75rem;color:var(--accent)}
+.pal-swatch{width:100%;height:48px;border-radius:10px;margin-bottom:14px}
+.pal-name{font-family:var(--display);font-size:.95rem;color:var(--text-bright);margin-bottom:4px}
+.pal-hex{font-family:var(--mono);font-size:.6rem;color:var(--text-dim);letter-spacing:.05em}
+
+/* ═══════════════ POST-PROCESSING FLOW ═══════════════ */
+.flow-chain{display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center;padding:32px 0}
+.flow-node{padding:10px 18px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;font-family:var(--mono);font-size:.7rem;letter-spacing:.05em;color:var(--text-dim);transition:all .3s;white-space:nowrap}
+.flow-node:hover{border-color:var(--border-accent);color:var(--text)}
+.flow-node.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.flow-arrow{color:var(--text-dim);font-size:1rem;padding:0 4px;opacity:.4}
+
+/* ═══════════════ SPECS ═══════════════ */
+.spec-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0}
+@media(max-width:640px){.spec-grid{grid-template-columns:1fr}}
+.spec-item{display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)}
+.spec-label{color:var(--text-dim);font-size:.85rem;font-weight:300}
+.spec-val{font-family:var(--mono);font-size:.8rem;color:var(--text-bright)}
+
+/* ═══════════════ TIP BOXES ═══════════════ */
+.tip{background:var(--bg-surface);border-left:3px solid var(--gold);padding:20px 24px;margin:24px 0;border-radius:0 12px 12px 0}
+.tip-accent{border-left-color:var(--accent)}
+.tip .tip-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:8px}
+.tip-accent .tip-label{color:var(--accent)}
+.tip p{font-size:.88rem;color:var(--text-dim);margin:0;font-weight:300}
+.tip strong{color:var(--text-bright);font-weight:500}
+
+/* ═══════════════ FOOTER ═══════════════ */
+footer{padding:60px 0;text-align:center;border-top:1px solid var(--border)}
+footer p{font-size:.8rem;color:var(--text-dim);font-weight:300}
+footer a{color:var(--accent);text-decoration:none;transition:opacity .2s}
+footer a:hover{opacity:.7}
+
+/* ═══════════════ QUICK START STEPS ═══════════════ */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:768px){.steps{grid-template-columns:1fr}}
+.step{background:var(--bg-surface);border:1px solid var(--border);border-radius:16px;padding:24px;position:relative;transition:all .3s var(--ease-out)}
+.step:hover{border-color:var(--border-accent)}
+.step-num{font-family:var(--display);font-size:2rem;color:var(--accent);opacity:.25;position:absolute;top:16px;right:20px;line-height:1}
+.step-icon{font-size:1.6rem;margin-bottom:12px}
+.step-title{font-family:var(--display);font-size:.95rem;color:var(--text-bright);margin-bottom:6px}
+.step-desc{font-size:.8rem;color:var(--text-dim);font-weight:300;line-height:1.55}
+
+/* ═══════════════ SOURCE CARDS ═══════════════ */
+.source-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:768px){.source-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.source-grid{grid-template-columns:1fr}}
+
+/* ═══════════════ MIDI TABLE ═══════════════ */
+.midi-table{width:100%;border-collapse:collapse;margin:16px 0}
+.midi-table th{font-family:var(--mono);font-size:.55rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-surface);font-weight:400}
+.midi-table td{font-size:.8rem;padding:8px 12px;border-bottom:1px solid var(--border);font-weight:300}
+.midi-table td:first-child{font-family:var(--mono);color:var(--gold);font-weight:400;font-size:.75rem}
+
+/* ═══════════════ NAV DOT ═══════════════ */
+.nav-dots{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:500;display:flex;flex-direction:column;gap:8px}
+@media(max-width:768px){.nav-dots{display:none}}
+.nav-dot{width:8px;height:8px;border-radius:50%;border:1px solid var(--border);background:transparent;cursor:pointer;transition:all .25s}
+.nav-dot:hover{border-color:var(--text-dim)}
+.nav-dot.active{background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px var(--accent-glow)}
+
+/* ═══════════════ TABS ═══════════════ */
+.ctrl-tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:0}
+.ctrl-tab{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;padding:10px 18px;color:var(--text-dim);cursor:pointer;transition:all .2s;border-bottom:2px solid transparent;margin-bottom:-1px}
+.ctrl-tab:hover{color:var(--text)}
+.ctrl-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.ctrl-panel{display:none}
+.ctrl-panel.active{display:block}
+</style>
+</head>
+<body>
+
+<!-- Language Toggle -->
+<div class="lang-toggle">
+  <button class="lang-btn active" onclick="setLang('en')">EN</button>
+  <button class="lang-btn" onclick="setLang('fr')">FR</button>
+</div>
+
+<!-- Navigation Dots -->
+<nav class="nav-dots" id="navDots"></nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section id="hero">
+  <canvas id="heroCanvas"></canvas>
+  <div class="hero-content container">
+    <div class="hero-eyebrow reveal">
+      <span data-i18n="hero.eyebrow">WebGL2 Visual Instrument</span>
+    </div>
+    <h1 class="hero-title reveal reveal-d1">
+      Synaptic<br><span class="mirror">Mirror</span>
+    </h1>
+    <p class="hero-sub reveal reveal-d2" data-i18n="hero.sub">
+      A real-time audiovisual engine that turns sound, touch, camera and MIDI into living visuals. 10 GPU shaders. 72KB. 60fps. One HTML file.
+    </p>
+    <div class="hero-actions reveal reveal-d3">
+      <a href="https://nh.thomasmaury.fr" target="_blank" class="btn-launch" data-i18n="hero.launch">Launch App →</a>
+      <a href="#quickstart" class="btn-ghost" data-i18n="hero.explore">↓ Explore the guide</a>
+    </div>
+    <div class="hero-stats reveal reveal-d4">
+      <div class="stat"><div class="stat-val">10</div><div class="stat-label" data-i18n="hero.stat1">GPU Shaders</div></div>
+      <div class="stat"><div class="stat-val">72<span class="dim" style="font-size:.6em">KB</span></div><div class="stat-label" data-i18n="hero.stat2">Single File</div></div>
+      <div class="stat"><div class="stat-val">60<span class="dim" style="font-size:.6em">fps</span></div><div class="stat-label" data-i18n="hero.stat3">Real-Time</div></div>
+      <div class="stat"><div class="stat-val">6</div><div class="stat-label" data-i18n="hero.stat4">Input Sources</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ QUICK START ═══════════════ -->
+<section id="quickstart">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="qs.label">Quick Start</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="qs.title">Up and running in 30 seconds</h2>
+      <p data-i18n="qs.intro">Synaptic Mirror is a live audiovisual instrument. It generates real-time visuals via GPU shaders, reactive to sound, touch, camera, MIDI controllers, and gyroscope. Everything fits in a single 72KB HTML file, runs at 60fps on a tablet, and works as an installable PWA.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="step-num">1</div><div class="step-icon">🌐</div><div class="step-title" data-i18n="qs.s1t">Open the app</div><div class="step-desc" data-i18n="qs.s1d">Navigate to nh.thomasmaury.fr on your tablet or desktop browser.</div></div>
+      <div class="step reveal reveal-d1"><div class="step-num">2</div><div class="step-icon">🎤</div><div class="step-title" data-i18n="qs.s2t">Enable audio</div><div class="step-desc" data-i18n="qs.s2d">Tap MIC — visuals now react to your music in real-time.</div></div>
+      <div class="step reveal reveal-d2"><div class="step-num">3</div><div class="step-icon">✋</div><div class="step-title" data-i18n="qs.s3t">Touch & drag</div><div class="step-desc" data-i18n="qs.s3d">Touch the canvas — each point injects force and color into the fluid simulation.</div></div>
+      <div class="step reveal reveal-d3"><div class="step-num">4</div><div class="step-icon">🎨</div><div class="step-title" data-i18n="qs.s4t">Switch modes</div><div class="step-desc" data-i18n="qs.s4d">Swipe horizontally or use the drawer to switch between 8 GPU effects with smooth crossfade.</div></div>
+      <div class="step reveal reveal-d4"><div class="step-num">5</div><div class="step-icon">📷</div><div class="step-title" data-i18n="qs.s5t">Activate camera</div><div class="step-desc" data-i18n="qs.s5d">Toggle CAM — your face becomes the source material for the visuals.</div></div>
+      <div class="step reveal"><div class="step-num">6</div><div class="step-icon">🖥</div><div class="step-title" data-i18n="qs.s6t">Go fullscreen</div><div class="step-desc" data-i18n="qs.s6d">Press F or use the drawer — fullscreen mode with wake lock for live performance.</div></div>
+    </div>
+    <div class="tip tip-accent reveal" style="margin-top:32px">
+      <div class="tip-label" data-i18n="qs.tipl">Performance tip</div>
+      <p data-i18n="qs.tipp">Best live workflow: <strong>MIC ON</strong> + music playing + switch modes by feel. Bass frequencies inject turbulence into the fluid, mids modulate parameters. Play with Force and Flow sliders to control the energy.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ PROGRESSIVE UI ═══════════════ -->
+<section id="ui">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="ui.label">Interface</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="ui.title">Progressive Disclosure</h2>
+      <p data-i18n="ui.intro">The interface reveals itself gradually. Start zen, end in full control. Four tiers from zero UI to complete performance dashboard.</p>
+    </div>
+    <div class="tier-explorer reveal reveal-d2">
+      <div class="tier-tabs" id="tierTabs">
+        <div class="tier-tab active" data-tier="0"><span class="tier-name" data-i18n="ui.t0n">Tier 0 · Zen</span><span class="tier-hint" data-i18n="ui.t0h">Zero UI. Pure canvas.</span></div>
+        <div class="tier-tab" data-tier="1"><span class="tier-name" data-i18n="ui.t1n">Tier 1 · Discover</span><span class="tier-hint" data-i18n="ui.t1h">HUD + floating pill.</span></div>
+        <div class="tier-tab" data-tier="2"><span class="tier-name" data-i18n="ui.t2n">Tier 2 · Explore</span><span class="tier-hint" data-i18n="ui.t2h">Bottom drawer + sliders.</span></div>
+        <div class="tier-tab" data-tier="3"><span class="tier-name" data-i18n="ui.t3n">Tier 3 · Perform</span><span class="tier-hint" data-i18n="ui.t3h">Full controls + palettes.</span></div>
+      </div>
+      <div class="tier-display" id="tierDisplay">
+        <!-- Tier mockups rendered by JS -->
+      </div>
+    </div>
+    <div class="tip reveal" style="margin-top:24px">
+      <div class="tip-label" data-i18n="ui.navipl">Navigation</div>
+      <p data-i18n="ui.navipp"><strong>Touch:</strong> tap → tier 1, double-tap → toggle drawer, swipe H → change mode, 3 fingers → beat tap. <strong>Keyboard:</strong> Tab cycles tiers, H toggles HUD, 1-8 modes, Space beat, C/M/R/F/G/P/L shortcuts.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ EFFECTS ═══════════════ -->
+<section id="effects">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="fx.label">8 GPU Effects</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="fx.title">Every pixel, every frame, on the GPU</h2>
+      <p data-i18n="fx.intro">Eight distinct visual modes — each a real-time GLSL shader running at 60fps. Hover the previews to see them in action.</p>
+    </div>
+    <div class="effect-grid" id="effectGrid">
+      <!-- Effect cards rendered by JS -->
+    </div>
+    <div class="tip tip-accent reveal" style="margin-top:32px">
+      <div class="tip-label" data-i18n="fx.tipl">Recommended combos</div>
+      <p data-i18n="fx.tipp"><strong>Fluid + Cam + Mic</strong> = reactive visuals. <strong>Feedback + Cam</strong> = psychedelic trip. <strong>Kaleid + Cam + Mic</strong> = living mandala. <strong>Edge + Cam</strong> = neon cyberpunk. <strong>R-Diff + Touch</strong> = organic growth.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ SOURCES ═══════════════ -->
+<section id="sources">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="src.label">Input Sources</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="src.title">Six ways to feed the mirror</h2>
+    </div>
+    <div class="source-grid" id="sourceGrid">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ PARAMETERS ═══════════════ -->
+<section id="params">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="par.label">Parameters</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="par.title">Five sliders, infinite expression</h2>
+      <p data-i18n="par.intro">Each parameter modulates the active effect differently. Try them here — the preview responds in real-time.</p>
+    </div>
+    <div class="playground reveal reveal-d2">
+      <div class="playground-canvas"><canvas id="pgCanvas"></canvas></div>
+      <div class="playground-controls" id="pgControls">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ CONTROLS ═══════════════ -->
+<section id="controls">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="ctrl.label">Controls</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="ctrl.title">Every input method covered</h2>
+    </div>
+    <div class="ctrl-tabs reveal" id="ctrlTabs">
+      <div class="ctrl-tab active" data-panel="keyboard" data-i18n="ctrl.kbd">Keyboard</div>
+      <div class="ctrl-tab" data-panel="touch" data-i18n="ctrl.touch">Touch</div>
+      <div class="ctrl-tab" data-panel="midi" data-i18n="ctrl.midi">MIDI</div>
+    </div>
+    <div id="ctrlPanels">
+      <div class="ctrl-panel active" id="panel-keyboard">
+        <table class="key-table reveal">
+          <thead><tr><th data-i18n="ctrl.key">Key</th><th data-i18n="ctrl.action">Action</th></tr></thead>
+          <tbody id="kbdRows"></tbody>
+        </table>
+      </div>
+      <div class="ctrl-panel" id="panel-touch">
+        <table class="key-table reveal">
+          <thead><tr><th data-i18n="ctrl.gesture">Gesture</th><th data-i18n="ctrl.action2">Action</th></tr></thead>
+          <tbody id="touchRows"></tbody>
+        </table>
+      </div>
+      <div class="ctrl-panel" id="panel-midi">
+        <table class="midi-table reveal">
+          <thead><tr><th data-i18n="ctrl.input">Input</th><th data-i18n="ctrl.default">Default</th><th data-i18n="ctrl.action3">Action</th></tr></thead>
+          <tbody id="midiRows"></tbody>
+        </table>
+        <div class="tip reveal" style="margin-top:16px">
+          <div class="tip-label">MIDI Learn</div>
+          <p data-i18n="ctrl.midip"><strong>1.</strong> Button ♪ (or L) → Learn mode active (gold border). <strong>2.</strong> Long-press a slider → target (gold pulse). <strong>3.</strong> Move a knob → CC mapped. Mappings don't persist between sessions.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ PALETTES ═══════════════ -->
+<section id="palettes">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="pal.label">Palettes</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="pal.title">Six color worlds</h2>
+      <p data-i18n="pal.intro">Click a palette to re-theme this entire guide. In the app, palettes affect shaders, HUD, and UI elements in real-time.</p>
+    </div>
+    <div class="palette-grid reveal reveal-d2" id="palGrid">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ POST-PROCESSING ═══════════════ -->
+<section id="postproc">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="pp.label">Post-Processing</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="pp.title">The finishing chain</h2>
+      <p data-i18n="pp.intro">Every frame passes through a cinematic pipeline before reaching your screen.</p>
+    </div>
+    <div class="flow-chain reveal reveal-d2" id="flowChain">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ ARCHITECTURE ═══════════════ -->
+<section id="arch">
+  <div class="container">
+    <div class="section-label reveal"><span class="label" data-i18n="arch.label">Architecture</span></div>
+    <div class="section-intro reveal reveal-d1">
+      <h2 data-i18n="arch.title">Under the hood</h2>
+    </div>
+    <div class="spec-grid reveal reveal-d2" id="specGrid">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  <div class="container">
+    <p>NeuroaeHive · Synaptic Mirror v4 · 2026<br><a href="https://nh.thomasmaury.fr">nh.thomasmaury.fr</a> · Thomas Maury</p>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════
+// i18n — TRANSLATIONS
+// ═══════════════════════════════════════════
+const T = {
+en: {
+  'hero.eyebrow':'WebGL2 Visual Instrument','hero.sub':'A real-time audiovisual engine that turns sound, touch, camera and MIDI into living visuals. 10 GPU shaders. 72KB. 60fps. One HTML file.','hero.launch':'Launch App →','hero.explore':'↓ Explore the guide','hero.stat1':'GPU Shaders','hero.stat2':'Single File','hero.stat3':'Real-Time','hero.stat4':'Input Sources',
+  'qs.label':'Quick Start','qs.title':'Up and running in 30 seconds','qs.intro':'Synaptic Mirror is a live audiovisual instrument. It generates real-time visuals via GPU shaders, reactive to sound, touch, camera, MIDI controllers, and gyroscope. Everything fits in a single 72KB HTML file, runs at 60fps on a tablet, and works as an installable PWA.',
+  'qs.s1t':'Open the app','qs.s1d':'Navigate to nh.thomasmaury.fr on your tablet or desktop browser.','qs.s2t':'Enable audio','qs.s2d':'Tap MIC — visuals now react to your music in real-time.','qs.s3t':'Touch & drag','qs.s3d':'Touch the canvas — each point injects force and color into the fluid simulation.','qs.s4t':'Switch modes','qs.s4d':'Swipe horizontally or use the drawer to switch between 8 GPU effects with smooth crossfade.','qs.s5t':'Activate camera','qs.s5d':'Toggle CAM — your face becomes the source material for the visuals.','qs.s6t':'Go fullscreen','qs.s6d':'Press F or use the drawer — fullscreen mode with wake lock for live performance.',
+  'qs.tipl':'Performance tip','qs.tipp':'Best live workflow: <strong>MIC ON</strong> + music playing + switch modes by feel. Bass frequencies inject turbulence into the fluid, mids modulate parameters. Play with Force and Flow sliders to control the energy.',
+  'ui.label':'Interface','ui.title':'Progressive Disclosure','ui.intro':'The interface reveals itself gradually. Start zen, end in full control. Four tiers from zero UI to complete performance dashboard.',
+  'ui.t0n':'Tier 0 · Zen','ui.t0h':'Zero UI. Pure canvas.','ui.t1n':'Tier 1 · Discover','ui.t1h':'HUD + floating pill.','ui.t2n':'Tier 2 · Explore','ui.t2h':'Bottom drawer + sliders.','ui.t3n':'Tier 3 · Perform','ui.t3h':'Full controls + palettes.',
+  'ui.navipl':'Navigation','ui.navipp':'<strong>Touch:</strong> tap → tier 1, double-tap → toggle drawer, swipe H → change mode, 3 fingers → beat tap. <strong>Keyboard:</strong> Tab cycles tiers, H toggles HUD, 1-8 modes, Space beat, C/M/R/F/G/P/L shortcuts.',
+  'fx.label':'8 GPU Effects','fx.title':'Every pixel, every frame, on the GPU','fx.intro':'Eight distinct visual modes — each a real-time GLSL shader running at 60fps. Hover the previews to see them in action.',
+  'fx.tipl':'Recommended combos','fx.tipp':'<strong>Fluid + Cam + Mic</strong> = reactive visuals. <strong>Feedback + Cam</strong> = psychedelic trip. <strong>Kaleid + Cam + Mic</strong> = living mandala. <strong>Edge + Cam</strong> = neon cyberpunk. <strong>R-Diff + Touch</strong> = organic growth.',
+  'src.label':'Input Sources','src.title':'Six ways to feed the mirror',
+  'par.label':'Parameters','par.title':'Five sliders, infinite expression','par.intro':'Each parameter modulates the active effect differently. Try them here — the preview responds in real-time.',
+  'ctrl.label':'Controls','ctrl.title':'Every input method covered','ctrl.kbd':'Keyboard','ctrl.touch':'Touch','ctrl.midi':'MIDI','ctrl.key':'Key','ctrl.action':'Action','ctrl.gesture':'Gesture','ctrl.action2':'Action','ctrl.input':'Input','ctrl.default':'Default','ctrl.action3':'Action',
+  'ctrl.midip':'<strong>1.</strong> Button ♪ (or L) → Learn mode active (gold border). <strong>2.</strong> Long-press a slider → target (gold pulse). <strong>3.</strong> Move a knob → CC mapped. Mappings don\'t persist between sessions.',
+  'pal.label':'Palettes','pal.title':'Six color worlds','pal.intro':'Click a palette to re-theme this entire guide. In the app, palettes affect shaders, HUD, and UI elements in real-time.',
+  'pp.label':'Post-Processing','pp.title':'The finishing chain','pp.intro':'Every frame passes through a cinematic pipeline before reaching your screen.',
+  'arch.label':'Architecture','arch.title':'Under the hood',
+},
+fr: {
+  'hero.eyebrow':'Instrument Visuel WebGL2','hero.sub':'Un moteur audiovisuel temps réel qui transforme le son, le toucher, la caméra et le MIDI en visuels vivants. 10 shaders GPU. 72Ko. 60fps. Un seul fichier HTML.','hero.launch':'Lancer l\'app →','hero.explore':'↓ Explorer le guide','hero.stat1':'Shaders GPU','hero.stat2':'Fichier Unique','hero.stat3':'Temps Réel','hero.stat4':'Sources d\'entrée',
+  'qs.label':'Démarrage Rapide','qs.title':'Prêt en 30 secondes','qs.intro':'Synaptic Mirror est un instrument audiovisuel live. Il génère des visuels en temps réel via des shaders GPU, réactifs au son, au toucher, à la caméra, aux contrôleurs MIDI et au gyroscope. Le tout dans un seul fichier HTML de 72Ko, à 60fps sur tablette, installable en PWA.',
+  'qs.s1t':'Ouvrir l\'app','qs.s1d':'Va sur nh.thomasmaury.fr depuis ta tablette ou ton navigateur desktop.','qs.s2t':'Activer l\'audio','qs.s2d':'Appuie sur MIC — les visuels réagissent maintenant à ta musique en temps réel.','qs.s3t':'Toucher & glisser','qs.s3d':'Touche le canvas — chaque point injecte force et couleur dans la simulation fluide.','qs.s4t':'Changer de mode','qs.s4d':'Swipe horizontal ou utilise le drawer pour switcher entre 8 effets GPU avec crossfade.','qs.s5t':'Activer la caméra','qs.s5d':'Active CAM — ton visage devient la source des visuels.','qs.s6t':'Plein écran','qs.s6d':'Touche F ou via le drawer — mode plein écran avec wake lock pour la performance live.',
+  'qs.tipl':'Astuce performance','qs.tipp':'Meilleur workflow live : <strong>MIC ON</strong> + musique qui tourne + switch de modes au feeling. Les basses injectent des turbulences dans le fluide, les mids modulent les paramètres. Joue avec les sliders Force et Flow pour contrôler l\'énergie.',
+  'ui.label':'Interface','ui.title':'Dévoilement Progressif','ui.intro':'L\'interface se révèle graduellement. Commence en mode zen, finis en contrôle total. Quatre niveaux, du zéro UI au dashboard complet.',
+  'ui.t0n':'Tier 0 · Zen','ui.t0h':'Zéro UI. Canvas pur.','ui.t1n':'Tier 1 · Découvrir','ui.t1h':'HUD + pill flottante.','ui.t2n':'Tier 2 · Explorer','ui.t2h':'Drawer + sliders.','ui.t3n':'Tier 3 · Performer','ui.t3h':'Contrôles complets + palettes.',
+  'ui.navipl':'Navigation','ui.navipp':'<strong>Touch :</strong> tap → tier 1, double-tap → toggle drawer, swipe H → changer de mode, 3 doigts → tap tempo. <strong>Clavier :</strong> Tab cycle les tiers, H toggle HUD, 1-8 modes, Espace beat, C/M/R/F/G/P/L raccourcis.',
+  'fx.label':'8 Effets GPU','fx.title':'Chaque pixel, chaque frame, sur le GPU','fx.intro':'Huit modes visuels distincts — chacun un shader GLSL temps réel à 60fps. Survole les previews pour les voir en action.',
+  'fx.tipl':'Combos recommandés','fx.tipp':'<strong>Fluid + Cam + Mic</strong> = visuels réactifs. <strong>Feedback + Cam</strong> = trip psychédélique. <strong>Kaleid + Cam + Mic</strong> = mandala vivant. <strong>Edge + Cam</strong> = néon cyberpunk. <strong>R-Diff + Touch</strong> = croissance organique.',
+  'src.label':'Sources d\'entrée','src.title':'Six façons de nourrir le miroir',
+  'par.label':'Paramètres','par.title':'Cinq sliders, expression infinie','par.intro':'Chaque paramètre module l\'effet actif différemment. Essaie-les ici — la preview réagit en temps réel.',
+  'ctrl.label':'Contrôles','ctrl.title':'Toutes les méthodes d\'entrée','ctrl.kbd':'Clavier','ctrl.touch':'Touch','ctrl.midi':'MIDI','ctrl.key':'Touche','ctrl.action':'Action','ctrl.gesture':'Geste','ctrl.action2':'Action','ctrl.input':'Entrée','ctrl.default':'Défaut','ctrl.action3':'Action',
+  'ctrl.midip':'<strong>1.</strong> Bouton ♪ (ou L) → mode Learn actif (bordure dorée). <strong>2.</strong> Long-press slider → cible (pulse doré). <strong>3.</strong> Bouge un potard → CC mappé. Les mappings ne persistent pas entre sessions.',
+  'pal.label':'Palettes','pal.title':'Six univers de couleurs','pal.intro':'Clique sur une palette pour re-themer tout ce guide. Dans l\'app, les palettes affectent les shaders, le HUD et l\'interface en temps réel.',
+  'pp.label':'Post-Processing','pp.title':'La chaîne finale','pp.intro':'Chaque frame passe par un pipeline cinématique avant d\'atteindre ton écran.',
+  'arch.label':'Architecture','arch.title':'Sous le capot',
+}};
+
+let currentLang = 'en';
+function setLang(lang) {
+  currentLang = lang;
+  document.documentElement.lang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.textContent.trim().toLowerCase() === lang));
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (T[lang][key]) {
+      if (el.querySelector('strong') || T[lang][key].includes('<strong>')) el.innerHTML = T[lang][key];
+      else el.textContent = T[lang][key];
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+// SCROLL REVEAL
+// ═══════════════════════════════════════════
+const revealObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('vis'); revealObs.unobserve(e.target); } });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
+
+// ═══════════════════════════════════════════
+// NAVIGATION DOTS
+// ═══════════════════════════════════════════
+const sections = ['hero','quickstart','ui','effects','sources','params','controls','palettes','postproc','arch'];
+const navDots = document.getElementById('navDots');
+sections.forEach(id => {
+  const dot = document.createElement('div');
+  dot.className = 'nav-dot' + (id === 'hero' ? ' active' : '');
+  dot.dataset.section = id;
+  dot.addEventListener('click', () => document.getElementById(id).scrollIntoView({ behavior: 'smooth' }));
+  navDots.appendChild(dot);
+});
+const navObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      document.querySelectorAll('.nav-dot').forEach(d => d.classList.toggle('active', d.dataset.section === e.target.id));
+    }
+  });
+}, { threshold: 0.3 });
+sections.forEach(id => navObs.observe(document.getElementById(id)));
+
+// ═══════════════════════════════════════════
+// HERO CANVAS — Synaptic Network
+// ═══════════════════════════════════════════
+(function initHero() {
+  const c = document.getElementById('heroCanvas');
+  const ctx = c.getContext('2d');
+  let W, H, particles = [], mouse = { x: -1000, y: -1000 };
+  const N = 80, CONN_DIST = 120;
+
+  function resize() { W = c.width = c.offsetWidth; H = c.height = c.offsetHeight; }
+  resize(); window.addEventListener('resize', resize);
+
+  for (let i = 0; i < N; i++) particles.push({
+    x: Math.random() * 2000, y: Math.random() * 1200,
+    vx: (Math.random() - .5) * .4, vy: (Math.random() - .5) * .4,
+    r: Math.random() * 2 + 1, pulse: Math.random() * Math.PI * 2
+  });
+
+  c.addEventListener('mousemove', e => { const r = c.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; });
+  c.addEventListener('mouseleave', () => { mouse.x = -1000; mouse.y = -1000; });
+
+  function draw(t) {
+    ctx.clearRect(0, 0, W, H);
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00FFB0';
+    // Parse accent to RGB
+    const hex = accent.replace('#','');
+    const ar = parseInt(hex.substring(0,2),16), ag = parseInt(hex.substring(2,4),16), ab = parseInt(hex.substring(4,6),16);
+
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy; p.pulse += .02;
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+      // Mouse attraction
+      const dx = mouse.x - p.x, dy = mouse.y - p.y, dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 200) { p.vx += dx * .00005; p.vy += dy * .00005; }
+    }
+
+    // Connections
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+      const dx = particles[i].x - particles[j].x, dy = particles[i].y - particles[j].y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < CONN_DIST) {
+        const a = (1 - d / CONN_DIST) * .15;
+        ctx.strokeStyle = `rgba(${ar},${ag},${ab},${a})`;
+        ctx.lineWidth = .5;
+        ctx.beginPath(); ctx.moveTo(particles[i].x, particles[i].y); ctx.lineTo(particles[j].x, particles[j].y); ctx.stroke();
+      }
+    }
+
+    // Particles
+    for (const p of particles) {
+      const glow = .3 + Math.sin(p.pulse) * .15;
+      ctx.fillStyle = `rgba(${ar},${ag},${ab},${glow})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+})();
+
+// ═══════════════════════════════════════════
+// EFFECT CARDS + MINI CANVAS PREVIEWS
+// ═══════════════════════════════════════════
+const EFFECTS = [
+  { id:'fluid', name:'Fluid', key:'1', color:'#00FFB0', desc_en:'Navier-Stokes GPU simulation. Splat→Advect→Divergence→Pressure (25 Jacobi)→GradSub→Vorticity. Camera injects dye, touch/audio inject forces.', desc_fr:'Simulation Navier-Stokes GPU. Splat→Advect→Divergence→Pressure (25 Jacobi)→GradSub→Vorticity. La caméra injecte du dye, le touch/audio injectent des forces.' },
+  { id:'rdiff', name:'R-Diff', key:'2', color:'#aa66ff', desc_en:'Gray-Scott reaction-diffusion. 8-20 steps/frame. Touch seeds chemical B. Audio modulates feed/kill → organic patterns.', desc_fr:'Réaction-diffusion Gray-Scott. 8-20 steps/frame. Le touch seed chimique B. L\'audio module feed/kill → patterns organiques.' },
+  { id:'fractal', name:'Fractal', key:'3', color:'#D2B14C', desc_en:'Julia set with smooth coloring. C constants driven by audio. Cyclic palette + time.', desc_fr:'Ensemble de Julia, smooth coloring. Constantes C pilotées par l\'audio. Palette cyclique + temps.' },
+  { id:'displace', name:'Displace', key:'4', color:'#A0B4D4', desc_en:'Flow field distortion. Source image warped by sinusoidal fields + touch + beats.', desc_fr:'Distorsion par flow field. Image source déformée par champs sinusoïdaux + touch + beats.' },
+  { id:'chromatic', name:'Chroma', key:'5', color:'#ff3366', desc_en:'Rotational RGB chromatic separation. Spread modulated by audio energy + beats + touch proximity.', desc_fr:'Séparation chromatique RGB rotative. Spread modulé par l\'énergie audio + beats + touch.' },
+  { id:'feedback', name:'Feedback', key:'6', color:'#FF6D00', desc_en:'Video feedback loop with zoom + rotation + hue shift. Persistence via Decay. Psychedelic.', desc_fr:'Boucle vidéo feedback avec zoom + rotation + hue shift. Persistance par Decay. Psychédélique.' },
+  { id:'kaleid', name:'Kaleid', key:'7', color:'#00B4D8', desc_en:'Kaleidoscope 3-18 segments. Rotation by sub audio + beats. Center follows touch.', desc_fr:'Kaléidoscope 3-18 segments. Rotation par audio sub + beats. Centre suit le touch.' },
+  { id:'edge', name:'Edge', key:'8', color:'#ffffff', desc_en:'Sobel edge detection + neon coloring. Edge angle determines rainbow color.', desc_fr:'Détection Sobel + neon coloring. L\'angle des contours détermine la couleur arc-en-ciel.' }
+];
+
+// Mini canvas animations — lightweight Canvas 2D approximations
+const effectRenderers = {
+  fluid(ctx, w, h, t, accent) {
+    ctx.fillStyle = 'rgba(0,0,0,.08)';
+    ctx.fillRect(0,0,w,h);
+    for (let i = 0; i < 6; i++) {
+      const x = w/2 + Math.sin(t*.7 + i*1.1) * w*.3;
+      const y = h/2 + Math.cos(t*.5 + i*.8) * h*.3;
+      const r = 15 + Math.sin(t + i) * 8;
+      const g = ctx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0, accent + '60');
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.fillRect(x-r,y-r,r*2,r*2);
+    }
+  },
+  rdiff(ctx, w, h, t, accent) {
+    if (!ctx._dots) { ctx._dots = []; for (let i=0;i<40;i++) ctx._dots.push({x:Math.random()*w,y:Math.random()*h,r:1,gr:Math.random()*.3+.1}); }
+    ctx.fillStyle = 'rgba(0,0,0,.03)';
+    ctx.fillRect(0,0,w,h);
+    ctx._dots.forEach(d => {
+      d.r += d.gr * .15;
+      if (d.r > 12) { d.r = 1; d.x = Math.random()*w; d.y = Math.random()*h; }
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI*2);
+      ctx.fillStyle = accent + Math.round(30 + d.r*8).toString(16).padStart(2,'0');
+      ctx.fill();
+    });
+  },
+  fractal(ctx, w, h, t, accent) {
+    const imgd = ctx.getImageData(0,0,w,h);
+    const d = imgd.data;
+    const cr = -.7 + Math.sin(t*.3)*.1, ci = .27015 + Math.cos(t*.2)*.05;
+    const hex = accent.replace('#','');
+    const ar=parseInt(hex.substring(0,2),16),ag=parseInt(hex.substring(2,4),16),ab=parseInt(hex.substring(4,6),16);
+    for (let py=0;py<h;py+=2) for (let px=0;px<w;px+=2) {
+      let zr=(px-w/2)/(w/3),zi=(py-h/2)/(h/3);
+      let it=0;
+      for (;it<24;it++) { const t2=zr*zr-zi*zi+cr; zi=2*zr*zi+ci; zr=t2; if(zr*zr+zi*zi>4) break; }
+      const c=it===24?0:it/24;
+      const idx=(py*w+px)*4;
+      d[idx]=ar*c|0; d[idx+1]=ag*c|0; d[idx+2]=ab*c|0; d[idx+3]=255;
+      d[idx+4]=d[idx]; d[idx+5]=d[idx+1]; d[idx+6]=d[idx+2]; d[idx+7]=255;
+      if (py+1<h) { const i2=((py+1)*w+px)*4; d[i2]=d[idx];d[i2+1]=d[idx+1];d[i2+2]=d[idx+2];d[i2+3]=255;d[i2+4]=d[idx];d[i2+5]=d[idx+1];d[i2+6]=d[idx+2];d[i2+7]=255; }
+    }
+    ctx.putImageData(imgd,0,0);
+  },
+  displace(ctx, w, h, t, accent) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = accent + '30';
+    ctx.lineWidth = .5;
+    for (let y = 0; y < h; y += 8) {
+      ctx.beginPath();
+      for (let x = 0; x < w; x += 2) {
+        const dx = Math.sin(y*.03+t)*10 + Math.sin(x*.02+t*.7)*8;
+        const dy = Math.cos(x*.03+t*.5)*6;
+        ctx.lineTo(x+dx, y+dy);
+      }
+      ctx.stroke();
+    }
+  },
+  chromatic(ctx, w, h, t, accent) {
+    ctx.fillStyle = 'rgba(0,0,0,.15)';
+    ctx.fillRect(0,0,w,h);
+    ctx.globalCompositeOperation = 'lighter';
+    const sep = 8 + Math.sin(t)*5;
+    const colors = ['rgba(255,0,80,.3)','rgba(0,255,160,.3)','rgba(80,120,255,.3)'];
+    colors.forEach((c,i) => {
+      const a = t + i * Math.PI*2/3;
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(w/2+Math.cos(a)*sep, h/2+Math.sin(a)*sep, w*.25+Math.sin(t*1.5+i)*10, 0, Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  },
+  feedback(ctx, w, h, t, accent) {
+    const tmp = ctx.getImageData(0,0,w,h);
+    ctx.save();
+    ctx.translate(w/2,h/2);
+    ctx.rotate(.02);
+    ctx.scale(.97,.97);
+    ctx.translate(-w/2,-h/2);
+    ctx.globalAlpha = .95;
+    ctx.putImageData(tmp,0,0);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    const x = w/2 + Math.sin(t*1.3)*w*.2, y = h/2 + Math.cos(t*.9)*h*.2;
+    const g = ctx.createRadialGradient(x,y,0,x,y,20);
+    g.addColorStop(0, accent + 'a0');
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.fillRect(x-20,y-20,40,40);
+  },
+  kaleid(ctx, w, h, t, accent) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,w,h);
+    const cx=w/2, cy=h/2, segs=6;
+    ctx.save(); ctx.translate(cx,cy);
+    for (let s=0;s<segs;s++) {
+      ctx.save();
+      ctx.rotate(s*Math.PI*2/segs + t*.2);
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      for (let r=0;r<w*.45;r+=3) {
+        const a = Math.sin(r*.05+t)*20;
+        ctx.lineTo(r, a);
+      }
+      ctx.strokeStyle = accent + '40';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  },
+  edge(ctx, w, h, t, accent) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,w,h);
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 12; i++) {
+      const x1 = Math.sin(t*.8+i*.5)*w*.3+w/2;
+      const y1 = Math.cos(t*.6+i*.7)*h*.3+h/2;
+      const x2 = Math.sin(t*.5+i*.9)*w*.35+w/2;
+      const y2 = Math.cos(t*.7+i*.3)*h*.35+h/2;
+      const hue = (i*30+t*20)%360;
+      ctx.strokeStyle = `hsla(${hue},100%,60%,.6)`;
+      ctx.shadowColor = `hsla(${hue},100%,60%,.4)`;
+      ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  }
+};
+
+// Render effect cards
+(function renderEffects() {
+  const grid = document.getElementById('effectGrid');
+  EFFECTS.forEach((fx, i) => {
+    const card = document.createElement('div');
+    card.className = 'effect-card reveal' + (i < 4 ? ' reveal-d' + i : '');
+    card.innerHTML = `<canvas class="effect-preview" data-fx="${fx.id}" width="320" height="200"></canvas>
+      <div class="effect-body"><div class="effect-num">${String(i+1).padStart(2,'0')} · ${fx.id.toUpperCase()}</div>
+      <div class="effect-name" style="color:${fx.color}">${fx.name}</div>
+      <div class="effect-desc" data-i18n="fx.${fx.id}">${currentLang==='fr'?fx.desc_fr:fx.desc_en}</div>
+      <span class="effect-key">${fx.key}</span></div>`;
+    grid.appendChild(card);
+    revealObs.observe(card);
+  });
+})();
+
+// Animate effect previews (throttled, only when visible)
+const fxCanvases = new Map();
+const fxVisObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => fxCanvases.get(e.target).visible = e.isIntersecting);
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.effect-preview').forEach(c => {
+  const ctx = c.getContext('2d');
+  const state = { ctx, visible: false, hovered: false };
+  fxCanvases.set(c, state);
+  fxVisObs.observe(c);
+  c.closest('.effect-card').addEventListener('mouseenter', () => state.hovered = true);
+  c.closest('.effect-card').addEventListener('mouseleave', () => state.hovered = false);
+});
+
+let fxFrame = 0;
+function animateEffects() {
+  fxFrame++;
+  const t = fxFrame * .03;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00FFB0';
+  document.querySelectorAll('.effect-preview').forEach(c => {
+    const st = fxCanvases.get(c);
+    if (!st.visible && !st.hovered) return;
+    const fn = effectRenderers[c.dataset.fx];
+    if (fn) fn(st.ctx, c.width, c.height, t, accent);
+  });
+  requestAnimationFrame(animateEffects);
+}
+requestAnimationFrame(animateEffects);
+
+// ═══════════════════════════════════════════
+// TIER EXPLORER
+// ═══════════════════════════════════════════
+(function initTierExplorer() {
+  const display = document.getElementById('tierDisplay');
+  // Build mockup HTML
+  display.innerHTML = `<div class="tier-mockup" id="tierMock">
+    <div class="tier-screen">
+      <div class="tier-canvas-bg"></div>
+      <div class="tier-hud tier-hud-tl" id="tmHudTL">NH — v4<br>FLUID</div>
+      <div class="tier-hud tier-hud-tr" id="tmHudTR">60 FPS<br>1920×1080</div>
+      <div class="tier-hud tier-hud-bl" id="tmHudBL">GEN · MIC OFF</div>
+      <div class="tier-hud tier-hud-br" id="tmHudBR">BPM 120 ○</div>
+      <div class="tier-hint-text" id="tmHint">touch anywhere · swipe to explore</div>
+      <div class="tier-pill" id="tmPill">FLUID</div>
+      <div class="tier-drawer" id="tmDrawer">
+        <div class="tier-drawer-handle"></div>
+        <div class="tier-drawer-modes">
+          <span class="tier-drawer-mode on">Fluid</span><span class="tier-drawer-mode">R-Diff</span><span class="tier-drawer-mode">Fractal</span><span class="tier-drawer-mode">Displace</span>
+        </div>
+        <div class="tier-drawer-slider"></div>
+        <div class="tier-drawer-slider"></div>
+        <div class="tier-drawer-slider"></div>
+        <div class="tier-utils" id="tmUtils">
+          <span>⛶</span><span>◎</span><span>♪</span><span>↺</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  function setMockTier(n) {
+    const huds = display.querySelectorAll('.tier-hud');
+    const hint = document.getElementById('tmHint');
+    const pill = document.getElementById('tmPill');
+    const drawer = document.getElementById('tmDrawer');
+    const utils = document.getElementById('tmUtils');
+    huds.forEach(h => h.classList.toggle('show', n >= 1));
+    hint.classList.toggle('show', n === 0);
+    pill.classList.toggle('show', n === 1);
+    drawer.classList.toggle('show', n >= 2);
+    utils.classList.toggle('show', n >= 3);
+  }
+
+  document.querySelectorAll('.tier-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tier-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      setMockTier(parseInt(tab.dataset.tier));
+    });
+  });
+  setMockTier(0);
+})();
+
+// ═══════════════════════════════════════════
+// SOURCE CARDS
+// ═══════════════════════════════════════════
+const SOURCES = [
+  { icon:'◈', name:'GEN', en:'Procedural sinusoidal flow field with HSV palette. Active by default. Generates organic patterns reactive to audio.', fr:'Flow field sinusoïdal procédural avec palette HSV. Actif par défaut. Génère des motifs organiques réactifs à l\'audio.' },
+  { icon:'◉', name:'CAM', en:'Real-time video feed. Mobile → rear camera. Desktop → webcam. Auto-detected. Feeds the fluid as dye source.', fr:'Flux vidéo temps réel. Mobile → caméra arrière. Desktop → webcam. Auto-détecté. Alimente le fluide comme source de dye.' },
+  { icon:'◊', name:'MIC', en:'Web Audio FFT 2048, 5 spectral bands (SUB/LOW/MID/HI/PRESENCE). Adaptive beat detection. Bass injects splats, mids modulate params.', fr:'Web Audio FFT 2048, 5 bandes spectrales (SUB/LOW/MID/HI/PRE). Beat detection adaptatif. Les basses injectent des splats, les mids modulent les params.' },
+  { icon:'♪', name:'MIDI', en:'Web MIDI API, auto-detect USB. CC1-5 → sliders. Notes 36-43 → modes. Customizable MIDI Learn.', fr:'Web MIDI API, auto-detect USB. CC1-5 → sliders. Notes 36-43 → modes. MIDI Learn personnalisable.' },
+  { icon:'◎', name:'GYRO', en:'DeviceOrientation + DeviceMotion. Tablet tilt injects directional forces into the fluid simulation.', fr:'DeviceOrientation + DeviceMotion. L\'inclinaison de la tablette injecte des forces directionnelles dans le fluide.' },
+  { icon:'✋', name:'TOUCH', en:'Multipoint touch (10 pts max). Each point injects force + dye in Fluid, seeds chemical B in R-Diff, moves kaleidoscope center.', fr:'Touch multipoint (10 pts max). Chaque point injecte force + dye en Fluid, seed chimique B en R-Diff, déplace le centre du kaléidoscope.' }
+];
+
+(function renderSources() {
+  const grid = document.getElementById('sourceGrid');
+  SOURCES.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'card reveal' + (i < 4 ? ' reveal-d' + (i % 4) : '');
+    card.innerHTML = `<div class="card-num">${s.icon} SOURCE ${String(i+1).padStart(2,'0')}</div>
+      <div class="card-title">${s.name}</div>
+      <div class="card-desc" data-i18n="src.${s.name.toLowerCase()}">${currentLang==='fr'?s.fr:s.en}</div>`;
+    grid.appendChild(card);
+    revealObs.observe(card);
+  });
+})();
+
+// ═══════════════════════════════════════════
+// SLIDER PLAYGROUND
+// ═══════════════════════════════════════════
+const PG_PARAMS = [
+  { key:'force', label:'Force', val:.5, color:'--accent' },
+  { key:'flow', label:'Flow', val:.5, color:'--accent' },
+  { key:'trail', label:'Trail', val:.7, color:'--accent' },
+  { key:'color', label:'Color', val:0, color:'--gold' },
+  { key:'audio', label:'Audio', val:.8, color:'--red' }
+];
+const pgState = {};
+PG_PARAMS.forEach(p => pgState[p.key] = p.val);
+
+(function renderPlayground() {
+  const box = document.getElementById('pgControls');
+  PG_PARAMS.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'pg-slider';
+    row.innerHTML = `<span class="pg-label" style="color:var(${p.color})">${p.label}</span>
+      <div class="pg-track" data-key="${p.key}"><div class="pg-bg"><div class="pg-fill" style="width:${p.val*100}%;background:var(${p.color})"></div></div></div>
+      <span class="pg-val">${Math.round(p.val*100)}</span>`;
+    box.appendChild(row);
+  });
+
+  // Slider interaction
+  document.querySelectorAll('.pg-track').forEach(track => {
+    let dragging = false;
+    const fill = track.querySelector('.pg-fill');
+    const val = track.nextElementSibling;
+    const upd = (cx) => {
+      const r = track.getBoundingClientRect();
+      const v = Math.max(0, Math.min(1, (cx - r.left) / r.width));
+      pgState[track.dataset.key] = v;
+      fill.style.width = (v * 100) + '%';
+      val.textContent = Math.round(v * 100);
+    };
+    track.addEventListener('mousedown', e => { dragging = true; upd(e.clientX); });
+    track.addEventListener('touchstart', e => { dragging = true; upd(e.touches[0].clientX); }, { passive: true });
+    document.addEventListener('mousemove', e => { if (dragging) upd(e.clientX); });
+    document.addEventListener('touchmove', e => { if (dragging) upd(e.touches[0].clientX); }, { passive: true });
+    document.addEventListener('mouseup', () => dragging = false);
+    document.addEventListener('touchend', () => dragging = false);
+  });
+
+  // Playground canvas
+  const c = document.getElementById('pgCanvas');
+  const ctx = c.getContext('2d');
+  function resizePg() {
+    const r = c.parentElement.getBoundingClientRect();
+    c.width = r.width; c.height = r.height;
+  }
+  resizePg();
+  window.addEventListener('resize', resizePg);
+
+  const pgParts = [];
+  for (let i = 0; i < 60; i++) pgParts.push({
+    x: Math.random() * 800, y: Math.random() * 600,
+    vx: 0, vy: 0, life: Math.random()
+  });
+
+  function drawPg(t) {
+    const w = c.width, h = c.height;
+    const trail = pgState.trail;
+    ctx.fillStyle = `rgba(0,0,0,${.02 + (1 - trail) * .15})`;
+    ctx.fillRect(0, 0, w, h);
+
+    const force = pgState.force;
+    const flow = pgState.flow;
+    const hueShift = pgState.color * 360;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00FFB0';
+    const hex = accent.replace('#','');
+    const ar=parseInt(hex.substring(0,2),16),ag=parseInt(hex.substring(2,4),16),ab=parseInt(hex.substring(4,6),16);
+
+    for (const p of pgParts) {
+      const angle = Math.sin(p.x * .008 + t * flow * .02) * Math.PI + Math.cos(p.y * .006 + t * flow * .015) * Math.PI;
+      p.vx += Math.cos(angle) * force * .8;
+      p.vy += Math.sin(angle) * force * .8;
+      p.vx *= .92; p.vy *= .92;
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+
+      const hue = (Math.atan2(p.vy, p.vx) * 57.3 + hueShift + 360) % 360;
+      const speed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+      const alpha = Math.min(1, speed * .3 + .1) * pgState.audio;
+      ctx.fillStyle = `hsla(${hue},80%,60%,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.5 + speed * .5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  let pgT = 0;
+  function pgLoop() { pgT++; drawPg(pgT); requestAnimationFrame(pgLoop); }
+  requestAnimationFrame(pgLoop);
+})();
+
+// ═══════════════════════════════════════════
+// CONTROLS TABLES
+// ═══════════════════════════════════════════
+const KBD_DATA = [
+  ['1-8','Switch 8 modes (with crossfade)','Switch 8 modes (avec crossfade)'],
+  ['H','Toggle HUD visibility','Toggle visibilité HUD'],
+  ['C','Toggle camera (GEN ↔ CAM)','Toggle caméra (GEN ↔ CAM)'],
+  ['M','Toggle microphone','Toggle microphone'],
+  ['R','Reset (clear buffers + default params)','Reset (clear buffers + params défaut)'],
+  ['F','Fullscreen + wake lock','Plein écran + wake lock'],
+  ['G','Toggle gyroscope','Toggle gyroscope'],
+  ['P','Toggle palette selector','Toggle palette selector'],
+  ['L','MIDI Learn mode','Mode MIDI Learn'],
+  ['Space','Tap tempo BPM','Tap tempo BPM'],
+  ['Tab','Cycle through UI tiers','Cycler les tiers UI']
+];
+const TOUCH_DATA = [
+  ['Tap','First touch → reveal UI (tier 1)','Premier touch → révèle l\'UI (tier 1)'],
+  ['Drag','Inject force + dye into fluid','Injecte force + dye dans le fluide'],
+  ['Double-tap','Toggle bottom drawer','Toggle le drawer'],
+  ['Swipe H','Change effect mode (with crossfade)','Changer le mode d\'effet (avec crossfade)'],
+  ['3 fingers','Tap tempo BPM','Tap tempo BPM'],
+  ['Long-press','MIDI Learn target (on slider)','Cible MIDI Learn (sur slider)'],
+  ['Swipe ↑ handle','Expand to tier 3','Expand vers tier 3'],
+  ['Swipe ↓ handle','Collapse drawer','Fermer le drawer']
+];
+const MIDI_DATA = [
+  ['CC 1','Intensity (Force)','Slider 0→1'],
+  ['CC 2','Speed (Flow)','Slider 0→1'],
+  ['CC 3','Decay (Trail)','Slider 0→1'],
+  ['CC 4','Hue (Color)','Slider 0→1'],
+  ['CC 5','Audio Mix','Slider 0→1'],
+  ['Note 36-43','—','Switch modes 1-8']
+];
+
+(function renderControls() {
+  const kbdT = document.getElementById('kbdRows');
+  KBD_DATA.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r[0]}</td><td data-i18n="kbd.${r[0].replace(/[ -]/g,'')}">${currentLang==='fr'?r[2]:r[1]}</td>`;
+    kbdT.appendChild(tr);
+  });
+  const touchT = document.getElementById('touchRows');
+  TOUCH_DATA.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r[0]}</td><td>${currentLang==='fr'?r[2]:r[1]}</td>`;
+    touchT.appendChild(tr);
+  });
+  const midiT = document.getElementById('midiRows');
+  MIDI_DATA.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>`;
+    midiT.appendChild(tr);
+  });
+
+  // Tab switching
+  document.querySelectorAll('.ctrl-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ctrl-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.ctrl-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    });
+  });
+})();
+
+// ═══════════════════════════════════════════
+// PALETTE SYSTEM (RE-THEMES ENTIRE GUIDE)
+// ═══════════════════════════════════════════
+const PALETTES = [
+  { name:'NH', primary:'#00FFB0', secondary:'#D2B14C', tertiary:'#ff3366', hex:['#00FFB0','#D2B14C','#ff3366'] },
+  { name:'Infrared', primary:'#FF2040', secondary:'#FF6020', tertiary:'#FFD000', hex:['#FF2040','#FF6020','#FFD000'] },
+  { name:'Void', primary:'#6633CC', secondary:'#00CCFF', tertiary:'#FF00FF', hex:['#6633CC','#00CCFF','#FF00FF'] },
+  { name:'Neon', primary:'#00FF00', secondary:'#FF00FF', tertiary:'#FFFF00', hex:['#00FF00','#FF00FF','#FFFF00'] },
+  { name:'Ocean', primary:'#00B4D8', secondary:'#0077B6', tertiary:'#90E0EF', hex:['#00B4D8','#0077B6','#90E0EF'] },
+  { name:'Ember', primary:'#FF6D00', secondary:'#FF9E00', tertiary:'#FFEA00', hex:['#FF6D00','#FF9E00','#FFEA00'] }
+];
+
+function applyPalette(idx) {
+  const pal = PALETTES[idx];
+  const root = document.documentElement.style;
+  root.setProperty('--accent', pal.primary);
+  root.setProperty('--accent-dim', pal.primary + '22');
+  root.setProperty('--accent-glow', pal.primary + '66');
+  root.setProperty('--border-accent', pal.primary + '20');
+  root.setProperty('--gold', pal.secondary);
+  root.setProperty('--red', pal.tertiary);
+  // Update palette dots
+  document.querySelectorAll('.pal-card').forEach((c, i) => c.classList.toggle('active', i === idx));
+  // Update slider colors
+  document.querySelectorAll('.pg-fill').forEach(f => {
+    const key = f.closest('.pg-track')?.dataset.key;
+    if (key === 'color') f.style.background = pal.secondary;
+    else if (key === 'audio') f.style.background = pal.tertiary;
+    else f.style.background = pal.primary;
+  });
+  // Update effect card name colors
+  EFFECTS.forEach((fx, i) => {
+    const nameEl = document.querySelectorAll('.effect-name')[i];
+    if (nameEl) {
+      if (fx.id === 'fluid') nameEl.style.color = pal.primary;
+      else if (fx.id === 'fractal') nameEl.style.color = pal.secondary;
+      else if (fx.id === 'chromatic') nameEl.style.color = pal.tertiary;
+    }
+  });
+}
+
+(function renderPalettes() {
+  const grid = document.getElementById('palGrid');
+  PALETTES.forEach((pal, i) => {
+    const card = document.createElement('div');
+    card.className = 'pal-card' + (i === 0 ? ' active' : '');
+    card.innerHTML = `<div class="pal-swatch" style="background:linear-gradient(135deg,${pal.hex[0]},${pal.hex[1]},${pal.hex[2]});border-radius:10px"></div>
+      <div class="pal-name">${pal.name}</div>
+      <div class="pal-hex">${pal.hex.join(' · ')}</div>`;
+    card.addEventListener('click', () => applyPalette(i));
+    grid.appendChild(card);
+  });
+})();
+
+// ═══════════════════════════════════════════
+// POST-PROCESSING FLOW
+// ═══════════════════════════════════════════
+(function renderFlow() {
+  const chain = document.getElementById('flowChain');
+  const nodes = ['Effect','Bloom Extract','Blur ×2','Composite','Vignette','Scanlines','Gamma','Screen'];
+  nodes.forEach((n, i) => {
+    if (i > 0) { const arr = document.createElement('span'); arr.className = 'flow-arrow'; arr.textContent = '→'; chain.appendChild(arr); }
+    const node = document.createElement('span');
+    node.className = 'flow-node' + (i === 0 || i === nodes.length-1 ? ' active' : '');
+    node.textContent = n;
+    chain.appendChild(node);
+  });
+})();
+
+// ═══════════════════════════════════════════
+// ARCHITECTURE SPECS
+// ═══════════════════════════════════════════
+(function renderSpecs() {
+  const grid = document.getElementById('specGrid');
+  const specs = [
+    ['Renderer','WebGL2 (GLSL 300 es)'],['Textures','Half-float (RGBA16F / RG16F)'],
+    ['Sim resolution','256×256'],['Dye resolution','min(W,1024) × min(H,1024)'],
+    ['Audio FFT','2048 bins, 5 bands'],['Shaders','10 (8 effects + DyeInject + Xfade)'],
+    ['Total size','~72KB (single HTML)'],['Target FPS','60 (tablet) / 120+ (desktop)'],
+    ['PWA','manifest.json + Service Worker'],['Crossfade','0.5s ease-in-out snapshots'],
+    ['UI System','Progressive Disclosure (4 tiers)'],['Beat detection','Adaptive threshold + tap tempo']
+  ];
+  specs.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'spec-item';
+    item.innerHTML = `<span class="spec-label">${s[0]}</span><span class="spec-val">${s[1]}</span>`;
+    grid.appendChild(item);
+  });
+})();
+
+// ═══════════════════════════════════════════
+// SMOOTH SCROLL FOR ANCHOR LINKS
+// ═══════════════════════════════════════════
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// ═══════════════════════════════════════════
+// EXTEND I18N FOR DYNAMICALLY RENDERED CONTENT
+// ═══════════════════════════════════════════
+// Source descriptions
+SOURCES.forEach(s => {
+  T.en['src.' + s.name.toLowerCase()] = s.en;
+  T.fr['src.' + s.name.toLowerCase()] = s.fr;
+});
+// Effect descriptions
+EFFECTS.forEach(fx => {
+  T.en['fx.' + fx.id] = fx.desc_en;
+  T.fr['fx.' + fx.id] = fx.desc_fr;
+});
+// Keyboard rows
+KBD_DATA.forEach(r => {
+  const k = 'kbd.' + r[0].replace(/[ -]/g,'');
+  T.en[k] = r[1]; T.fr[k] = r[2];
+});
+
+</script>
+</body>
+</html>
