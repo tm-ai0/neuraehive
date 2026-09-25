@@ -220,6 +220,11 @@ const DICT: Record<string, [string, string]> = {
     "les deux couleurs qui peignent le corps",
     "the two colors that paint the body",
   ],
+  "ctl.eclatsHue": ["teinte éclats", "shard tint"],
+  "hint.eclatsHue": [
+    "éclats : 0 = teinte fixe de la scène, 100 = couleur tirée du sens du déplacement",
+    "shards: 0 = the scene's fixed tint, 100 = a color drawn from the direction of the shove",
+  ],
   "ctl.push": ["poussée", "push"],
   "hint.push": [
     "mon bras repousse les grains devant lui, ils roulent en sillage derrière",
@@ -534,6 +539,7 @@ const DICT: Record<string, [string, string]> = {
   "mat.lignes": ["lignes", "lines"],
   "mat.moire": ["moiré", "moiré"],
   "mat.contours": ["contours", "outlines"],
+  "mat.eclats": ["éclats", "shards"],
   // ---- select options ------------------------------------------------------
   "opt.driverAge": ["l'âge du grain", "the grain's age"],
   "opt.driverSpeed": ["la vitesse", "speed"],
@@ -764,6 +770,7 @@ const DICT: Record<string, [string, string]> = {
   "scene.encre": ["Encre", "Ink"],
   "scene.pulsar": ["Pulsar", "Pulsar"],
   "scene.canopee": ["Canopée", "Canopy"],
+  "scene.eclats": ["Éclats", "Shards"],
   // ---- statuses ------------------------------------------------------------
   "st.camOff": ["sans caméra", "no camera"],
   "st.micOff": ["sans micro", "no microphone"],

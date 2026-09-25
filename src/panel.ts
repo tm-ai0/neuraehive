@@ -141,6 +141,7 @@ const MATERIAL_KEYS = [
   "lignes",
   "moire",
   "contours",
+  "eclats",
 ] as const;
 
 // Sub-tabs of the grouped sections: short pages inside a folded section.
@@ -329,12 +330,26 @@ export function createPanel(
     def("presenceShare", "corps", 0.1, 1, 0.01,
       () => state.tuning.presenceShare, (v) => (state.tuning.presenceShare = v),
       { format: percent, chaos: [0.35, 1], group: "forme" }),
-    def("bodyMat", "corps", 0, 7, 1,
+    def("bodyMat", "corps", 0, 8, 1,
       () => state.tuning.bodyMat, (v) => {
         state.tuning.bodyMat = v;
         state.tuning.matBlend = 0; // the hand takes over from the crossfade
       },
-      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "forme" }),
+      { discrete: true, options: matOptions, chaos: [0, 8], chaosSnap: true, group: "forme" }),
+    // éclats: the tint of a shoved grain — 0 = the scene's fixed light tint
+    // (brightness alone follows the shove), 1 = a hue drawn from the
+    // direction of its own flight.
+    def("eclatsHue", "corps", 0, 1, 0.01,
+      () => state.tuning.eclatsHue, (v) => (state.tuning.eclatsHue = v),
+      {
+        format: percent, chaos: [0.4, 1], group: "forme",
+        // Only shown while a layer (or a crossfade end) is made of éclats.
+        visible: () => {
+          const tn = state.tuning;
+          return [tn.bodyMat, tn.fondMat, tn.bodyMatA, tn.bodyMatB, tn.fondMatA, tn.fondMatB]
+            .some((m) => m > 7.5);
+        },
+      }),
     def("presenceSize", "corps", 0.6, 3, 0.05,
       () => state.tuning.presenceSize, (v) => (state.tuning.presenceSize = v),
       { format: (v) => `×${plain(v)}`, chaos: [0.8, 2.4], group: "forme" }),
@@ -510,12 +525,12 @@ export function createPanel(
           { value: 4, label: t("opt.blendPaper") },
         ],
       }),
-    def("fondMat", "reglages", 0, 7, 1,
+    def("fondMat", "reglages", 0, 8, 1,
       () => state.tuning.fondMat, (v) => {
         state.tuning.fondMat = v;
         state.tuning.matBlend = 0;
       },
-      { discrete: true, options: matOptions, chaos: [0, 7], chaosSnap: true, group: "fond" }),
+      { discrete: true, options: matOptions, chaos: [0, 8], chaosSnap: true, group: "fond" }),
     def("fondVisible", "reglages", 0, 1, 0.01,
       () => state.tuning.fondVisible, (v) => (state.tuning.fondVisible = v),
       { format: percent, chaos: [0.15, 0.8], group: "fond" }),
@@ -631,16 +646,16 @@ export function createPanel(
       () => hooks.getXfade(), (v) => hooks.onCrossfade(v),
       { format: percent, reveals: true, transient: true }),
     // ---- crossfade material pair: registry plumbing, never shown ---------
-    def("bodyMatA", "scenes", 0, 7, 0.01,
+    def("bodyMatA", "scenes", 0, 8, 0.01,
       () => state.tuning.bodyMatA, (v) => (state.tuning.bodyMatA = v),
       { transient: true, hidden: true }),
-    def("bodyMatB", "scenes", 0, 7, 0.01,
+    def("bodyMatB", "scenes", 0, 8, 0.01,
       () => state.tuning.bodyMatB, (v) => (state.tuning.bodyMatB = v),
       { transient: true, hidden: true }),
-    def("fondMatA", "scenes", 0, 7, 0.01,
+    def("fondMatA", "scenes", 0, 8, 0.01,
       () => state.tuning.fondMatA, (v) => (state.tuning.fondMatA = v),
       { transient: true, hidden: true }),
-    def("fondMatB", "scenes", 0, 7, 0.01,
+    def("fondMatB", "scenes", 0, 8, 0.01,
       () => state.tuning.fondMatB, (v) => (state.tuning.fondMatB = v),
       { transient: true, hidden: true }),
     def("matBlend", "scenes", 0, 1, 0.001,
@@ -2171,7 +2186,7 @@ export function createPanel(
     const tn = state.tuning;
     switch (id) {
       case "corps":
-        return `${percent(tn.presenceShare)} · ${t(`mat.${MATERIAL_KEYS[Math.round(Math.min(7, Math.max(0, tn.bodyMat)))]}`)}`;
+        return `${percent(tn.presenceShare)} · ${t(`mat.${MATERIAL_KEYS[Math.round(Math.min(8, Math.max(0, tn.bodyMat)))]}`)}`;
       case "empreinte": {
         const im = state.imprint;
         const what = im.family === "fond"

@@ -90,8 +90,9 @@ export interface Tuning {
   memorySeconds: number; // memory duration
   ghost: number; // camera-luminance veil (Pro)
   // ---- présence / deux couches (inert while dynamics.presence stays 0) ----
-  bodyMat: number; // corps material 0..7 (fumée, liquide, encre, points, dither, lignes, moiré, contours) — fractional blends
+  bodyMat: number; // corps material 0..8 (fumée, liquide, encre, points, dither, lignes, moiré, contours, éclats) — fractional blends
   fondMat: number; // fond material, same scale
+  eclatsHue: number; // éclats: 0 = fixed scene tint, 1 = hue from the grain's own flight direction
   // Crossfade material pair: while matBlend > 0 the shaders blend these two
   // materials directly (stochastic per grain) instead of sweeping the
   // scalar through the whole ladder. Written by the A/B crossfade only.
@@ -202,6 +203,7 @@ export const DEFAULT_TUNING: Tuning = {
   ghost: 0,
   bodyMat: 0,
   fondMat: 0,
+  eclatsHue: 1,
   bodyMatA: 0,
   bodyMatB: 0,
   fondMatA: 0,
@@ -422,6 +424,7 @@ export async function createRenderer(
       // only stochastic materials survive there — screens fall back to ink.
       const guardMat = (m: number) => {
         if (!isLightBg(look)) return m;
+        if (m > 7.5) return m; // éclats: stochastic, no ordered screen
         if (m > 6.5) return 7;
         if (m > 2.001) return 2;
         return m;
@@ -742,7 +745,10 @@ export async function createRenderer(
           presenceSize: tuning.presenceSize,
           bodyMat,
           bodyMatB,
+          fondMat,
+          fondMatB,
           matBlend,
+          eclatsHue: tuning.eclatsHue,
           corpsComp,
           fondVisible: tuning.fondVisible,
           corpsLight: [...look.corpsLight, 1],

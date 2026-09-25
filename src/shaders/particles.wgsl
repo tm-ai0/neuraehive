@@ -39,7 +39,10 @@ struct RenderParams {
   presenceSize: f32, // point-size multiplier of corps grains
   bodyMat: f32,      // corps material (fractional, same hash as simulate)
   bodyMatB: f32,     // crossfade partner material of the corps
+  fondMat: f32,      // fond material (fractional, same hash as simulate)
+  fondMatB: f32,     // crossfade partner material of the fond
   matBlend: f32,     // 0 = A only .. 1 = B only, stochastic per grain
+  eclatsHue: f32,    // éclats: 0 = fixed scene tint, 1 = hue from the flight direction
   corpsComp: f32,    // emission compensation for the slow presence trail
   fondVisible: f32,  // fond brightness while someone is there (0.35 default)
   corpsLight: vec4f, // body tint pair: what the camera light paints (rgb)
@@ -117,6 +120,29 @@ fn palette(t: f32) -> vec3f {
   return mix(stops[i].rgb, stops[i + 1u].rgb, f);
 }
 
+// Éclats: the color of a shard is its own flight. Direction -> hue on a
+// cosine wheel (a 0.65, b 0.35, channels 120° apart: every channel in
+// 0.30..1.0, R+G+B constant, so no direction goes dim or muddy on
+// near-black and none is a raw primary; opposite directions are exact
+// complements — amber vs azure, green vs magenta). Magnitude -> saturation
+// (w), which the caller also turns into brightness and stretch. At rest the
+// grain keeps its base tint exactly (w = 0). hueMix = 0 falls back to one
+// fixed tint (the scene's corps light). Swept over 3600 directions in the
+// authoring panel; the +30° offset (right = amber) is a tunable.
+fn eclatsColor(vel: vec2f, base: vec3f, fixed: vec3f, hueMix: f32) -> vec4f {
+  let speed = length(vel);
+  // Neutral under the rest jitter (~0.03 UV/s), full from 0.35 UV/s on.
+  let sat = smoothstep(0.04, 0.25, speed);
+  // atan2(0, 0) guard: under 0.001 UV/s sat is 0, the direction is moot.
+  let dir = select(vel, vec2f(1.0, 0.0), speed < 0.001);
+  // UV y grows downward: negate it so an upward push is +90°.
+  let offset = 0.5236;
+  let ang = atan2(-dir.y, dir.x) + offset;
+  let hue = vec3f(0.65) + vec3f(0.35) * cos(vec3f(ang) - vec3f(0.0, 2.0944, 4.1888));
+  let tint = mix(fixed, hue, hueMix);
+  return vec4f(mix(base, tint, sat), sat);
+}
+
 // One color-driver value. Pure blend inputs so a fractional driver can mix
 // two of them and the crossfade never jumps.
 fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
@@ -166,6 +192,15 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   let matFrac = matV - floor(matV);
   let corpsMat = floor(matV)
     + select(0.0, 1.0, hash01(instanceIndex * 53u + 17u) < matFrac);
+  let fondV = select(
+    params.fondMat,
+    params.fondMatB,
+    hash01(instanceIndex * 97u + 3u) < params.matBlend,
+  );
+  let fondM = floor(fondV)
+    + select(0.0, 1.0, hash01(instanceIndex * 53u + 17u) < fondV - floor(fondV));
+  // Éclats (8), as corps or as fond: colored by their own flight (below).
+  let isEclat = select(!isImp && fondM > 7.5, corpsMat > 7.5, isCorps);
 
   // Parallax layer of this grain: 0 far, 1 mid, 2 near (same as simulate).
   // Two tempos, two depths: while someone is there the fond recedes to the
@@ -270,6 +305,20 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   let handHere = params.hand * smoothstep(0.25, 0.65, fHere.a);
   tint = mix(tint, vec3f(1.0, 0.86, 0.62), handHere * 0.65);
   brightness *= 1.0 + handHere * 0.9;
+  // Éclats: the shard's color is its displacement — direction gives the
+  // hue, magnitude the saturation and the light; a resting shard keeps the
+  // portrait's bichromie so the person still reads whole.
+  // As fond the whole field drifts above the rest threshold all the time,
+  // so only the COLOR follows the flight there; the extra light, size and
+  // stretch of a shove are the corps' (measured: the full gain on 700 k
+  // fond grains burns the frame white, the dosed gain still veils it).
+  var eclatSat = 0.0;
+  if (isEclat) {
+    let ec = eclatsColor(p.zw, tint, params.corpsLight.rgb, params.eclatsHue);
+    tint = ec.rgb;
+    eclatSat = ec.w * select(0.0, 1.0, isCorps);
+    brightness *= 1.0 + eclatSat * 2.5;
+  }
   // Treble sparkle: a small share of the grains flash briefly, re-rolled at
   // ~22 Hz — hi-hats and cymbals shimmer across the whole field. v0.7.1e —
   // the struck grains also swell: the treble makes the sparks bigger, not
@@ -299,6 +348,7 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
     * (1.0 + params.bassPulse * 0.11)
     * (1.0 + sparkleHit * min(params.sparkle, 1.2) * 0.9)
     * (1.0 + impEngage * 0.3)
+    * (1.0 + eclatSat * 0.8)
     * mix(1.0, params.presenceSize, presMix);
   var offsetPx = corner * px;
   out.streak = 0.0;
@@ -310,6 +360,13 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
     let stretch = 1.0 + comet * 11.0 * speed / (speed + 0.35);
     offsetPx = (dir * corner.x * stretch + vec2f(-dir.y, dir.x) * corner.y) * px;
     out.streak = min(comet * 2.0, 1.0);
+    brightness *= inverseSqrt(stretch);
+  } else if (eclatSat > 0.01 && speed > 1e-4) {
+    // A shard in flight stretches along it: the displacement is drawn, not
+    // only colored. Symmetric profile, light spread over the length.
+    let dir = p.zw / speed;
+    let stretch = 1.0 + eclatSat * 6.0;
+    offsetPx = (dir * corner.x * stretch + vec2f(-dir.y, dir.x) * corner.y) * px;
     brightness *= inverseSqrt(stretch);
   }
   out.brightness = brightness;

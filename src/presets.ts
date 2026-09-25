@@ -233,6 +233,14 @@ export function createPresets(
       },
       { family: "ondes", variant: "sinus", text: "lumière", random: false }
     ),
+    // Éclats — the shove made visible: a body of colored shards that fly in
+    // the direction of every gesture; the field keeps its default smoke.
+    builtIn("eclats", "cendre", {
+      bodyMat: 8,
+      fondMat: 0,
+      push: 1.4,
+      trails: 0.9,
+    }),
   ];
 
   function applyCrossfade(t: number) {

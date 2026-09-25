@@ -303,7 +303,9 @@ async function boot() {
     vitrineStep();
   };
   const vitrineStep = () => {
-    const scenes = presets?.builtIns ?? [];
+    // Éclats dresses the BODY: with nobody in the frame the scene is Veillée
+    // twice over, so the showcase skips it (challenger, v0.7.2b).
+    const scenes = (presets?.builtIns ?? []).filter((p) => p.name !== "eclats");
     if (scenes.length) {
       const scene = scenes[vitrineIdx % scenes.length]!;
       vitrineIdx++;

@@ -328,9 +328,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       let d2 = pa.y * 0.9553 - pa.x * 0.2955;
       on = abs(fract(d1 * 30.0) - 0.5) * 2.0 < lp * 0.62
         || abs(fract(d2 * 30.0) - 0.5) * 2.0 < lp * 0.62;
-    } else {
+    } else if (corpsMat < 7.5) {
       // contours: the luminance gradient alone draws the outlines
       on = hash01(i * 31u + 5u) < clamp(edge * 1.4 + lp * 0.08, 0.0, 1.0);
+    } else {
+      // éclats: a dense gathering on the light, the edge slightly favored —
+      // the portrait must read whole, since each shard is then a colored
+      // witness of the shove that moved it.
+      on = hash01(i * 13u + 7u) < clamp(lp * 0.95 + edge * 0.4, 0.0, 1.0);
     }
     if (on) {
       presW = params.presence;
@@ -340,6 +345,11 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
   let isFond = presW < 0.001 && !isImp;
   let fondM = matOf(params.fondMat, params.fondMatB, i);
+  // Éclats (8), corps or fond: the shove is a real momentum the grain
+  // keeps — lighter drag, a looser spring while it flies — so the matter is
+  // seen DISPLACED along the gesture, not merely repelled then frozen.
+  let isEclat = (presW > 0.001 && corpsMat > 7.5) || (isFond && fondM > 7.5);
+  let eclatW = select(0.0, 1.0, isEclat);
   // Two tempos: while someone is there the fond breathes at 0.6x — the
   // world steps back — while the corps answers instantly.
   let tempo = select(1.0, mix(1.0, 0.6, params.presence), isFond);
@@ -432,7 +442,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   // noise (iron filings on a wandering magnet) and slide gently along it.
   // The contours fond material rides the same field even while the room
   // plays, so its free dust always keeps that streaked, combed look.
-  let fondContours = select(0.0, 0.65, isFond && fondM > 6.5);
+  let fondContours = select(0.0, 0.65, isFond && fondM > 6.5 && fondM < 7.5);
   let rest = (params.filament * restness + fondContours * calm * (1.0 - c2))
     * (1.0 - flight) * (1.0 - presW) * (1.0 + params.mid * 0.8);
   if (rest > 0.003) {
@@ -506,7 +516,11 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   if (params.push > 0.001 && params.presence > 0.003 && flight < 0.5) {
     let hit = smoothstep(0.02, 0.22, f.a);
     if (hit > 0.001) {
-      let pw = select(0.35, 1.0, isFond);
+      // Éclats corps grains take a bigger share of the kick than the other
+      // materials (0.5 against 0.35), never the fond's whole: measured, the
+      // full kick on a merely swaying body flings the shards for good and the
+      // silhouette never forms (v0.7.2b). Their speed is capped below too.
+      let pw = select(select(0.35, 0.5, isEclat), 1.0, isFond);
       acc += f.rg * (hit * params.push * pw * params.presence * 26.0);
     }
   }
@@ -609,7 +623,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
       stiff = 0.75; // liquide
     } else if (corpsMat < 2.5) {
       stiff = mix(0.3, 1.5, smoothstep(0.1, 0.6, presEdge)); // encre
+    } else if (corpsMat > 7.5) {
+      stiff = 0.5; // éclats: sprung like the smoke, the shove is the excursion
     }
+    // Éclats: the spring is never relaxed. Measured (v0.7.2b): a spring let
+    // go while the shard is fast makes a limit cycle — the grain arrives at
+    // terminal speed, overshoots, is let go again — and the body never forms
+    // (colored smoke over the whole frame, no silhouette). The momentum a
+    // shard keeps is a lighter damping while it flies away, below.
     let pull = presW * ph * stiff * (1.0 - give) * (1.0 - flight);
     acc += (homeOf(i) - pos) * pull * (10.0 + 30.0 * ph);
     presDrag = pull * (4.0 + 22.0 * ph);
@@ -619,14 +640,20 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     }
   }
 
+  // Lighter damping for a shard while it flies AWAY from its cell (corps),
+  // or always (fond); the return keeps the full damping so it settles.
+  let eclatFly = eclatW * select(1.0, step(0.0, -dot(vel, homeOf(i) - pos)), presW > 0.001);
   vel += acc * dt;
   // Viscosity damps motion; ash, a forming crystal, a held tone or the word
   // damp it much harder. Comets fly nearly free.
   let drag = params.viscosity * (1.0 - flight * 0.85) * (1.0 - restness * 0.45)
+    * (1.0 - eclatFly * 0.2)
     + ash * 4.0 + min(cym, 1.0) * 4.0 + cHold * 22.0
-    + t2 * 26.0 * hold * (1.0 - touchYield * 0.8) + presDrag;
+    + t2 * 26.0 * hold * (1.0 - touchYield * 0.8) + presDrag * (1.0 - eclatFly * 0.25);
   vel *= exp(-dt * drag);
-  let maxSpeed = 0.9 + flight * 0.9;
+  // A corps shard never crosses the frame: its excursion is bounded so the
+  // spring always brings it back to the body (v0.7.2b, measured).
+  let maxSpeed = (0.9 + flight * 0.9) * (1.0 - eclatW * presW * 0.5);
   let speed = length(vel);
   if (speed > maxSpeed) {
     vel *= maxSpeed / speed;
