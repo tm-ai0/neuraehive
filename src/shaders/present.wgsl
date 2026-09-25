@@ -39,6 +39,12 @@ struct PresentParams {
   compHue: f32,     // hue rotation, 0..1 = full turn
   contrast: f32,    // S-curve strength on the graded image
   flash: f32,       // whole-frame lightning on each strong accent
+  // v0.7.4 — the live body: the corps grains of this frame (trail alpha)
+  // composited above the graded image with a contrast floor, so the person
+  // reads whatever the matter, the light and the memory.
+  corpsLight: vec3f, // the body's light tint (unit luminance in the shader)
+  liveFloor: f32,    // 0 = historical render .. 1 = the body reads at full light
+  liveGain: f32,     // alpha density -> coverage, normalized to the grain count
 };
 
 @group(0) @binding(0) var<uniform> params: PresentParams;
@@ -168,11 +174,15 @@ fn toneOf(mode: i32, xe: vec3f) -> vec3f {
   // color now (ember orange lives in its rgb), so shift channels, not luma.
   let wr = 1.0 + (0.5 - params.fringeTint) * 1.1;
   let wb = 1.0 + (params.fringeTint - 0.5) * 1.1;
-  var base = textureSampleLevel(trail, samp, suvA, 0.0).rgb;
+  let baseA = textureSampleLevel(trail, samp, suvA, 0.0);
+  var base = baseA.rgb;
+  var liveA = baseA.a;
   var rShift = textureSampleLevel(trail, samp, suvA + dir, 0.0).r;
   var bShift = textureSampleLevel(trail, samp, suvA - dir, 0.0).b;
   if (fMix > 0.001) {
-    base = mix(base, textureSampleLevel(trail, samp, suvB, 0.0).rgb, fMix);
+    let baseB = textureSampleLevel(trail, samp, suvB, 0.0);
+    base = mix(base, baseB.rgb, fMix);
+    liveA = mix(liveA, baseB.a, fMix);
     rShift = mix(rShift, textureSampleLevel(trail, samp, suvB + dir, 0.0).r, fMix);
     bShift = mix(bShift, textureSampleLevel(trail, samp, suvB - dir, 0.0).b, fMix);
   }
@@ -244,6 +254,51 @@ fn toneOf(mode: i32, xe: vec3f) -> vec3f {
   color *= params.compBright;
   if (abs(params.compHue) > 0.0015) {
     color = hueRotate(color, params.compHue * 6.2831853);
+  }
+  // v0.7.4 — the live body above everything the grade did. The trail alpha
+  // holds the corps grains of the last 80 ms (the fade pass keeps that
+  // little). Two masks are read from it: the body (a tight blur, dense
+  // inside the silhouette, falling at its edge) and its surroundings (a
+  // wider dilation). Where the surroundings are covered but the body is
+  // not, i.e. in a band just outside the contour, the field and the wake
+  // step back into a shadow margin (the world steps aside around the
+  // person, as the fond already does for its grains); inside the body the
+  // margin is nil, so the ink wash and the shards' colors stay what they
+  // are. Then the grains are lifted: each pixel's luminance is brought up
+  // to the body's own light, in the body's tint, keeping whatever color
+  // and light it already had. The floor says how far: 0 = the historical
+  // render, byte for byte. In the paper world the body is ink and the
+  // margin lightens toward the sheet.
+  if (params.liveFloor > 0.001) {
+    let live = 1.0 - exp(-max(liveA, 0.0) * params.liveGain);
+    let near = params.texel * 2.0;
+    let far = params.texel * 6.0;
+    let inner = textureSampleLevel(trail, samp, suvA + near, 0.0).a
+      + textureSampleLevel(trail, samp, suvA - near, 0.0).a
+      + textureSampleLevel(trail, samp, suvA + vec2f(near.x, -near.y), 0.0).a
+      + textureSampleLevel(trail, samp, suvA - vec2f(near.x, -near.y), 0.0).a;
+    let outer = textureSampleLevel(trail, samp, suvA + vec2f(far.x, 0.0), 0.0).a
+      + textureSampleLevel(trail, samp, suvA - vec2f(far.x, 0.0), 0.0).a
+      + textureSampleLevel(trail, samp, suvA + vec2f(0.0, far.y), 0.0).a
+      + textureSampleLevel(trail, samp, suvA - vec2f(0.0, far.y), 0.0).a
+      + textureSampleLevel(trail, samp, suvA + far * 0.7, 0.0).a
+      + textureSampleLevel(trail, samp, suvA - far * 0.7, 0.0).a
+      + textureSampleLevel(trail, samp, suvA + vec2f(far.x, -far.y) * 0.7, 0.0).a
+      + textureSampleLevel(trail, samp, suvA - vec2f(far.x, -far.y) * 0.7, 0.0).a;
+    let body = 1.0 - exp(-max(liveA + inner, 0.0) * 0.4 * params.liveGain);
+    let around = 1.0 - exp(-max(inner + outer, 0.0) * 0.25 * params.liveGain);
+    let rim = 1.0 - body;
+    let shade = params.liveFloor * min(1.0, around * rim * rim * 1.6);
+    let bodyLum = min(1.0, 0.55 + 0.45 * params.compBright);
+    let bodyTone = params.corpsLight
+      / max(dot(params.corpsLight, vec3f(0.299, 0.587, 0.114)), 0.05);
+    let bed = color * (1.0 - shade);
+    let aim = min(1.0, params.liveFloor * 1.6) * live * bodyLum;
+    let under = dot(bed, vec3f(0.299, 0.587, 0.114));
+    let lit = bed + bodyTone * max(aim - under, 0.0);
+    let sheet = mix(color, params.bg, shade * 0.6);
+    let inked = mix(sheet, params.ink, min(1.0, params.liveFloor * 1.6) * live);
+    color = mix(lit, inked, paperW);
   }
   // The lightning: each strong accent blows a flash through the whole
   // frame — multiplicative so the image itself flares, plus a veil so even

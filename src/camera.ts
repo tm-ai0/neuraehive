@@ -5,6 +5,8 @@ export interface CameraSource {
   readonly video: HTMLVideoElement;
   readonly width: number;
   readonly height: number;
+  /** v0.7.4 — the device really opened (empty when the browser hides it). */
+  readonly deviceId: string;
   /** True when a new decoded frame is waiting to be uploaded. */
   consumeDirty(): boolean;
   dispose(): void;
@@ -15,20 +17,50 @@ export interface CameraSource {
  * back to whatever camera it has. */
 export type CameraFacing = "user" | "environment";
 
+/** v0.7.4 — a source the machine offers (camera or microphone). Labels are
+ * empty until the browser has granted the matching permission once. */
+export interface MediaDevice {
+  id: string;
+  label: string;
+}
+
+/** The devices of one kind, local enumeration only, nothing leaves. */
+export async function listDevices(
+  kind: "videoinput" | "audioinput"
+): Promise<MediaDevice[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    return all
+      .filter((d) => d.kind === kind && d.deviceId)
+      .map((d) => ({ id: d.deviceId, label: d.label }));
+  } catch {
+    return [];
+  }
+}
+
+/** v0.7.4 — a chosen device is asked exactly; without one (or when it is
+ * gone) the facing side is asked as ideal, so a tablet without that side
+ * still falls back to whatever camera it has. */
 export async function requestCamera(
-  facing: CameraFacing = "user"
+  facing: CameraFacing = "user",
+  deviceId = ""
 ): Promise<CameraSource> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("getUserMedia indisponible dans ce navigateur.");
   }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      facingMode: { ideal: facing },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-    },
-  });
+  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  const open = (video: MediaTrackConstraints) =>
+    navigator.mediaDevices.getUserMedia({ audio: false, video });
+  let stream: MediaStream;
+  try {
+    stream = await open(
+      deviceId ? { deviceId: { exact: deviceId }, ...size } : { facingMode: { ideal: facing }, ...size }
+    );
+  } catch (error) {
+    if (!deviceId) throw error;
+    stream = await open({ facingMode: { ideal: facing }, ...size });
+  }
 
   const video = document.createElement("video");
   video.muted = true;
@@ -69,6 +101,7 @@ export async function requestCamera(
     video,
     width: video.videoWidth || 1280,
     height: video.videoHeight || 720,
+    deviceId: stream.getVideoTracks()[0]?.getSettings().deviceId ?? "",
     consumeDirty() {
       // Without requestVideoFrameCallback, upload every render frame.
       if (!host.requestVideoFrameCallback) return video.readyState >= 2;

@@ -5,12 +5,16 @@
 // mémoire) and the bottom row CHAOS · ↶ · GARDER, nothing else; PRO keeps
 // the same four sliders on top, then today's sections folded, each with
 // its state summarized on its line (corps, empreinte, son, scènes,
-// modulation, midi, caméra, réglages). AIDE is five short pages. Every
+// modulation, midi, caméra, réglages). v0.7.3 — DÉMO plays matière alone,
+// Pro folds the sections into regarder / composer / brancher. v0.7.4 — Pro
+// stacks nothing on top: each journey heads the page where it acts; one
+// underlined row per meta, chips below; sources by device name. AIDE is
+// five short pages. Every
 // visible word goes through the FR/EN dictionary. The def registry is the
 // single gate: presets, crossfade, Chaos (per-def flag + range), matrix and
 // MIDI reach every setting through it. Z and ↶ step one gesture back.
 import { IMPRINT_VARIANTS, type ImprintFamily, type ImprintSettings } from "./imprints";
-import type { CameraFacing } from "./camera";
+import type { CameraFacing, MediaDevice } from "./camera";
 import { cloneLookColors, PALETTES, type LookColors, type Rgb } from "./look";
 import { getLang, setLang, t } from "./i18n";
 import type { Midi } from "./midi";
@@ -45,16 +49,26 @@ export interface PanelState {
     silenceDelay: number;
     /** v0.7.2 — front or rear camera (the tablet demo films with the rear). */
     cameraFacing: CameraFacing;
+    /** v0.7.4 — a chosen camera / microphone by device id ("" = automatic),
+     * kept in localStorage; the facing chips stay the fallback when the
+     * machine gives no device names. */
+    cameraId: string;
+    micId: string;
     /** v0.7.2 — the showcase after 20 s without a touch. */
     vitrine: boolean;
   };
   imprint: ImprintSettings;
   colors: LookColors;
+  /** v0.7.4 — the sources the machine offers, refreshed by the host. */
+  devices: { cameras: MediaDevice[]; mics: MediaDevice[] };
 }
 
 export interface PanelHooks {
   onSensor(kind: "camera" | "mic", enabled: boolean): void;
   onCameraFacing(facing: CameraFacing): void;
+  /** v0.7.4 — a device picked from the list ("" = automatic). */
+  onCameraDevice(id: string): void;
+  onMicDevice(id: string): void;
   onChaos(): void;
   onReset(): void;
   onInteraction(): void;
@@ -334,14 +348,63 @@ export function createPanel(
   const controls: ControlDef[] = [
     // ---- the journeys first: on a preset or crossfade write, their cascade
     // lands before the component defs' own values overwrite it ------------
+    // v0.7.4 — Pro no longer stacks them on top: each journey heads the page
+    // where it acts (matière in corps > forme, lumière in réglages >
+    // lumière, mémoire in réglages > temps, miroir in réglages > espace).
+    // Démo still plays matière alone on top.
     macroDef("matiere", "corps", [0.05, 0.95], {
       ends: ["end.poussiere", "end.fumee", "end.encre", "end.cristal"],
+      group: "forme",
     }),
     // v0.7.1g — Chaos draws lumière inside the measured readable range.
-    macroDef("eclipse", "reglages", [0.15, 0.85], { ends: ["end.nuit", "end.jour"] }),
-    macroDef("memoire", "reglages", [0, 0.8], { ends: ["end.instantane", "end.sediment"] }),
+    macroDef("eclipse", "reglages", [0.15, 0.85], { ends: ["end.nuit", "end.jour"], group: "lumiere" }),
+    macroDef("memoire", "reglages", [0, 0.8], { ends: ["end.instantane", "end.sediment"], group: "temps" }),
     macroDef("maree", "corps", [0.1, 0.95], { group: "geste" }),
     macroDef("prisme", "reglages", [0, 0.9], { group: "teinte" }),
+    // v0.7.1g — miroir: the one fold slider, its value the number of axes.
+    // 0 none, 1 one axis, 2 quadrants, 3..8 the radial mandala. Continuous
+    // in between (the shaders blend fractional folds, so the crossfade and
+    // the LFOs never jump); the hidden symMode/symN below stay the engine
+    // components and, written after this def, always win when a scene
+    // carries them. v0.7.2 — capped at 8 axes, the demo's reach. v0.7.4 —
+    // declared here so it heads réglages > espace.
+    def("miroir", "reglages", 0, 8, 1,
+      () => {
+        const m = state.tuning.symMode;
+        if (m >= 4) return Math.max(3, state.tuning.symN);
+        if (m > 3) return 2 + (m - 3);
+        if (m > 1) return 1 + (m - 1) / 2;
+        return m;
+      },
+      (v) => {
+        if (v <= 1) {
+          state.tuning.symMode = v;
+        } else if (v <= 2) {
+          state.tuning.symMode = 1 + (v - 1) * 2;
+        } else if (v <= 3) {
+          state.tuning.symMode = 3 + (v - 2);
+          state.tuning.symN = 3;
+        } else {
+          state.tuning.symMode = 4;
+          state.tuning.symN = Math.min(12, v);
+        }
+      },
+      {
+        chaos: [0, 8],
+        chaosSnap: true,
+        group: "espace",
+        ends: ["end.aucun", "end.axes8"],
+        format: (v) =>
+          v < 0.5
+            ? t("val.mirNone")
+            : `${Math.round(v)} ${Math.round(v) > 1 ? t("val.axes") : t("val.axe")}`,
+      }),
+    def("symMode", "reglages", 0, 4, 0.01,
+      () => state.tuning.symMode, (v) => (state.tuning.symMode = v),
+      { hidden: true }),
+    def("symN", "reglages", 3, 12, 0.01,
+      () => state.tuning.symN, (v) => (state.tuning.symN = v),
+      { hidden: true }),
     // ---- corps -----------------------------------------------------------
     def("presenceShare", "corps", 0.1, 1, 0.01,
       () => state.tuning.presenceShare, (v) => (state.tuning.presenceShare = v),
@@ -352,6 +415,12 @@ export function createPanel(
         state.tuning.matBlend = 0; // the hand takes over from the crossfade
       },
       { discrete: true, options: matOptions, chaos: [0, 8], chaosSnap: true, group: "forme" }),
+    // v0.7.4 — corps net: the live body (this frame's grains) lifted above
+    // the field and the wake by a contrast floor. Chaos never draws it low
+    // enough to lose the person.
+    def("corpsNet", "corps", 0, 1, 0.01,
+      () => state.tuning.corpsNet, (v) => (state.tuning.corpsNet = v),
+      { format: percent, chaos: [0.25, 0.7], group: "forme" }),
     // éclats: the tint of a shoved grain — 0 = the scene's fixed light tint
     // (brightness alone follows the shove), 1 = a hue drawn from the
     // direction of its own flight.
@@ -614,49 +683,6 @@ export function createPanel(
         chaos: [-0.8, 0.8],
         group: "espace",
       }),
-    // v0.7.1g — miroir: the one fold slider, its value the number of axes.
-    // 0 none, 1 one axis, 2 quadrants, 3..8 the radial mandala. Continuous
-    // in between (the shaders blend fractional folds, so the crossfade and
-    // the LFOs never jump); the hidden symMode/symN below stay the engine
-    // components and, written after this def, always win when a scene
-    // carries them. v0.7.2 — capped at 8 axes, the demo's reach.
-    def("miroir", "reglages", 0, 8, 1,
-      () => {
-        const m = state.tuning.symMode;
-        if (m >= 4) return Math.max(3, state.tuning.symN);
-        if (m > 3) return 2 + (m - 3);
-        if (m > 1) return 1 + (m - 1) / 2;
-        return m;
-      },
-      (v) => {
-        if (v <= 1) {
-          state.tuning.symMode = v;
-        } else if (v <= 2) {
-          state.tuning.symMode = 1 + (v - 1) * 2;
-        } else if (v <= 3) {
-          state.tuning.symMode = 3 + (v - 2);
-          state.tuning.symN = 3;
-        } else {
-          state.tuning.symMode = 4;
-          state.tuning.symN = Math.min(12, v);
-        }
-      },
-      {
-        chaos: [0, 8],
-        chaosSnap: true,
-        group: "espace",
-        ends: ["end.aucun", "end.axes8"],
-        format: (v) =>
-          v < 0.5
-            ? t("val.mirNone")
-            : `${Math.round(v)} ${Math.round(v) > 1 ? t("val.axes") : t("val.axe")}`,
-      }),
-    def("symMode", "reglages", 0, 4, 0.01,
-      () => state.tuning.symMode, (v) => (state.tuning.symMode = v),
-      { hidden: true }),
-    def("symN", "reglages", 3, 12, 0.01,
-      () => state.tuning.symN, (v) => (state.tuning.symN = v),
-      { hidden: true }),
     // ---- crossfade (rendered by the scenes section, target like any) -----
     def("xfade", "scenes", 0, 1, 0.005,
       () => hooks.getXfade(), (v) => hooks.onCrossfade(v),
@@ -1015,6 +1041,18 @@ export function createPanel(
     authored?: () => number | undefined;
   }[] = [];
 
+  // v0.7.4 — the selects too: a journey (matière) or a glide writes their
+  // def; the rendered select follows, since it now sits on the same page.
+  let selectRefs: { def: ControlDef; select: HTMLSelectElement }[] = [];
+  const syncSelects = (keys?: ReadonlySet<string> | string[]) => {
+    for (const ref of selectRefs) {
+      if (keys && !(Array.isArray(keys) ? keys.includes(ref.def.key) : keys.has(ref.def.key))) continue;
+      if (!ref.select.isConnected) continue;
+      const v = String(Math.round(ref.def.get()));
+      if (ref.select.value !== v) ref.select.value = v;
+    }
+  };
+
   // v0.7.1f — the double marker: the full bar shows the value really
   // played, the thin tick shows the authored one. When nothing modulates
   // the key the two coincide and the tick hides.
@@ -1048,6 +1086,7 @@ export function createPanel(
       ref.readout.textContent = (ref.def.format ?? plain)(ref.def.get());
       updateTick(ref);
     }
+    syncSelects(keys);
     syncSummaries();
   };
 
@@ -1167,7 +1206,7 @@ export function createPanel(
   const renderDefRow = (def: ControlDef, parent: HTMLElement, withEnds = false) => {
     const mod = hooks.getMod();
     if (def.options) {
-      const { row, name } = makeSelect(parent, def.label, def.options(), def.get, (v) => {
+      const { row, name, select } = makeSelect(parent, def.label, def.options(), def.get, (v) => {
         pushGesture();
         def.set(v);
         mod?.onAuthored(def.key, v);
@@ -1176,6 +1215,7 @@ export function createPanel(
       });
       row.title = t(`hint.${def.key}`);
       decorateRow(row, name, def);
+      selectRefs.push({ def, select });
       return row;
     }
     const { row, input, readout, name, tick } = makeFader(
@@ -1257,12 +1297,17 @@ export function createPanel(
     }
   };
 
-  const renderSectionDefs = (id: SectionId, body: HTMLElement, group?: string) => {
+  const renderSectionDefs = (
+    id: SectionId,
+    body: HTMLElement,
+    group?: string,
+    skip: string[] = []
+  ) => {
     for (const def of controls) {
       if (def.section !== id || def.hidden) continue;
       if (group !== undefined && def.group !== group) continue;
       if (def.visible && !def.visible()) continue;
-      if (BIG_KEYS.includes(def.key)) continue; // the four live on top
+      if (skip.includes(def.key)) continue; // rendered by hand elsewhere
       renderDefRow(def, body, Boolean(def.ends));
     }
   };
@@ -1345,7 +1390,9 @@ export function createPanel(
     return p;
   };
 
-  // ----- sub-tabs of a grouped section --------------------------------------
+  // ----- pages of a grouped section ------------------------------------------
+  // v0.7.4 — one underlined row per meta (its sections); every deeper level
+  // is a row of chips, so two underlined rows never stack.
   const renderGroupTabs = (
     id: SectionId,
     groups: { key: string; label: string }[],
@@ -1356,22 +1403,51 @@ export function createPanel(
     groupOpen[id] = active;
     if (groups.length > 1) {
       const bar = document.createElement("div");
-      bar.className = "cinerae-subtabs";
+      bar.className = "cinerae-chips cinerae-pages";
       for (const g of groups) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.textContent = g.label;
-        b.setAttribute("aria-pressed", String(g.key === active));
-        b.addEventListener("click", () => {
+        makeChip(bar, g.label, g.key === active, () => {
           groupOpen[id] = g.key;
-          hooks.onInteraction();
           renderMode();
         });
-        bar.appendChild(b);
       }
       body.appendChild(bar);
     }
     return active;
+  };
+
+  // v0.7.4 — a source list (cameras or microphones): the devices the machine
+  // names, "automatique" first. Rendered only when at least one name is
+  // known (the browser gives them once the permission was granted); the
+  // caller keeps its fallback otherwise. Nothing leaves the machine.
+  const renderDeviceRow = (
+    body: HTMLElement,
+    labelKey: string,
+    hintKey: string,
+    devices: MediaDevice[],
+    currentId: string,
+    onPick: (id: string) => void
+  ): boolean => {
+    if (!devices.some((d) => d.label)) return false;
+    const options = [
+      { value: 0, label: t("ui.deviceAuto") },
+      ...devices.map((d, i) => ({
+        value: i + 1,
+        label: d.label || `${t(labelKey)} ${i + 1}`,
+      })),
+    ];
+    const { row } = makeSelect(
+      body,
+      t(labelKey),
+      options,
+      () => Math.max(0, devices.findIndex((d) => d.id === currentId) + 1),
+      (v) => {
+        // Not a registry def: no journal entry, so the undo never lands here.
+        onPick(v > 0 ? devices[v - 1]!.id : "");
+        renderMode();
+      }
+    );
+    row.title = t(hintKey);
+    return true;
   };
 
   const defGroups = (id: SectionId, withExtras: string[] = []): { key: string; label: string }[] =>
@@ -1382,7 +1458,6 @@ export function createPanel(
           d.section === id &&
           d.group === g &&
           !d.hidden &&
-          !BIG_KEYS.includes(d.key) &&
           (!d.visible || d.visible())
       )
     ).map((g) => ({ key: g, label: t(`grp.${g}`) }));
@@ -1709,6 +1784,18 @@ export function createPanel(
 
   function renderSon(body: HTMLElement) {
     makeSwitch("sw.mic", () => sensors.mic, (next) => hooks.onSensor("mic", next), body, "hint.swMic");
+    // v0.7.4 — the machine's microphones by name, once the browser names them.
+    renderDeviceRow(
+      body,
+      "ui.micDevice",
+      "hint.micDevice",
+      state.devices.mics,
+      state.behavior.micId,
+      (id) => {
+        state.behavior.micId = id;
+        hooks.onMicDevice(id);
+      }
+    );
     // v0.7.1e — the five-band gauge: what the microphone really hears.
     const bands = document.createElement("div");
     bands.className = "cinerae-bands";
@@ -1771,17 +1858,32 @@ export function createPanel(
       body,
       "hint.swCamera"
     );
-    const chips = document.createElement("div");
-    chips.className = "cinerae-chips";
-    chips.title = t("hint.facing");
-    body.appendChild(chips);
-    for (const f of ["user", "environment"] as const) {
-      makeChip(chips, t(`cam.${f}`), state.behavior.cameraFacing === f, () => {
-        if (state.behavior.cameraFacing === f) return;
-        state.behavior.cameraFacing = f;
-        hooks.onCameraFacing(f);
-        renderMode();
-      });
+    // v0.7.4 — the machine's cameras by name; the front / rear chips stay
+    // for the tablet when no name is available.
+    const listed = renderDeviceRow(
+      body,
+      "ui.camDevice",
+      "hint.camDevice",
+      state.devices.cameras,
+      state.behavior.cameraId,
+      (id) => {
+        state.behavior.cameraId = id;
+        hooks.onCameraDevice(id);
+      }
+    );
+    if (!listed) {
+      const chips = document.createElement("div");
+      chips.className = "cinerae-chips";
+      chips.title = t("hint.facing");
+      body.appendChild(chips);
+      for (const f of ["user", "environment"] as const) {
+        makeChip(chips, t(`cam.${f}`), state.behavior.cameraFacing === f, () => {
+          if (state.behavior.cameraFacing === f) return;
+          state.behavior.cameraFacing = f;
+          hooks.onCameraFacing(f);
+          renderMode();
+        });
+      }
     }
     makeSwitch(
       "sw.mirror",
@@ -2091,21 +2193,16 @@ export function createPanel(
   function renderImprints(body: HTMLElement) {
     renderDefRow(D("balance"), body, true);
     const sel = state.imprint;
+    // v0.7.4 — the families are chips (the meta's section row is the only
+    // underlined one); the shapes of the family follow as a second row.
     const fams = document.createElement("div");
-    fams.className = "cinerae-subtabs";
+    fams.className = "cinerae-chips cinerae-pages";
     body.appendChild(fams);
-    const famTab = (label: string, active: boolean, onPick: () => void) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      b.setAttribute("aria-pressed", String(active));
-      b.addEventListener("click", () => {
-        hooks.onInteraction();
+    const famTab = (label: string, active: boolean, onPick: () => void) =>
+      makeChip(fams, label, active, () => {
         pushGesture();
         onPick();
       });
-      fams.appendChild(b);
-    };
     for (const family of FAMILY_ORDER) {
       famTab(t(`fam.${family}`), sel.family === family, () =>
         hooks.onImprintSelect(family, IMPRINT_VARIANTS[family]?.[0] ?? "")
@@ -2129,7 +2226,8 @@ export function createPanel(
       textInput.value = sel.text;
       body.appendChild(textInput);
     }
-    renderSectionDefs("empreinte", body);
+    // partage is rendered once, on top (v0.7.4: it showed twice).
+    renderSectionDefs("empreinte", body, undefined, ["balance"]);
   }
 
   // ----- aide: five short pages ---------------------------------------------
@@ -2228,13 +2326,14 @@ export function createPanel(
     }
   }
 
-  // ----- the four demo sliders ----------------------------------------------
-  const BIG_KEYS = ["matiere", "eclipse", "miroir", "memoire"];
-  // v0.7.3 — DÉMO plays matière alone; Pro keeps the four on top.
+  // ----- the demo slider ------------------------------------------------------
+  // v0.7.3 — DÉMO plays matière alone. v0.7.4 — Pro stacks nothing on top:
+  // lumière, miroir and mémoire live in their sections, once each.
   const DEMO_KEYS = ["matiere"];
   function renderBig() {
     bigBox.replaceChildren();
-    for (const key of mode === "demo" ? DEMO_KEYS : BIG_KEYS) {
+    if (mode !== "demo") return;
+    for (const key of DEMO_KEYS) {
       const row = renderDefRow(D(key), bigBox, true);
       row.classList.add("cinerae-big");
     }
@@ -2275,8 +2374,11 @@ export function createPanel(
         const n = controls.filter((d) => midi?.bindingFor(d.key)).length;
         return n ? `${n} ${t("ui.bindings")}` : t("ui.midiNone");
       }
-      case "camera":
-        return `${sensors.camera ? t(`cam.${state.behavior.cameraFacing}`) : t("st.camOff")} · ${t("sw.rawCam")} ${tn.rawCam > 0.5 ? t("ui.yes") : t("ui.no")}`;
+      case "camera": {
+        const dev = state.devices.cameras.find((d) => d.id === state.behavior.cameraId);
+        const which = dev?.label ? dev.label : t(`cam.${state.behavior.cameraFacing}`);
+        return `${sensors.camera ? which : t("st.camOff")} · ${t("sw.rawCam")} ${tn.rawCam > 0.5 ? t("ui.yes") : t("ui.no")}`;
+      }
       case "reglages":
         return `${Math.round(tn.count / 1000)} k · ${fpsShown} fps · ${getLang().toUpperCase()}`;
     }
@@ -2420,6 +2522,7 @@ export function createPanel(
         const text = (ref.def.format ?? plain)(ref.def.get());
         if (ref.readout.textContent !== text) ref.readout.textContent = text;
       }
+      syncSelects();
       if (!done) requestAnimationFrame(frame);
       else syncSummaries();
     };
@@ -2455,7 +2558,8 @@ export function createPanel(
     body.dataset.mode = aideOpen ? "aide" : mode;
 
     rowRefs = [];
-    bigBox.style.display = aideOpen ? "none" : "";
+    selectRefs = [];
+    bigBox.style.display = aideOpen || mode !== "demo" ? "none" : "";
     proBox.style.display = aideOpen || mode !== "pro" ? "none" : "";
     aideBox.style.display = aideOpen ? "" : "none";
     if (!aideOpen) renderBig();
@@ -2606,6 +2710,7 @@ export function createPanel(
         const text = (ref.def.format ?? plain)(ref.def.get());
         if (ref.readout.textContent !== text) ref.readout.textContent = text;
       }
+      syncSelects(keys);
     },
     refresh() {
       renderMode();

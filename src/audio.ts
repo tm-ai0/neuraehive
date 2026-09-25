@@ -89,20 +89,30 @@ export function detectPitch(
 export interface MicSource {
   update(dt: number): AudioFrame;
   dispose(): void;
+  /** v0.7.4 — the device really opened (empty when the browser hides it). */
+  readonly deviceId: string;
 }
 
-export async function requestMicrophone(): Promise<MicSource> {
+/** v0.7.4 — a chosen microphone is asked exactly; when it is gone the
+ * default input opens instead, so a stored choice never mutes the piece. */
+export async function requestMicrophone(deviceId = ""): Promise<MicSource> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("getUserMedia indisponible dans ce navigateur.");
   }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: false,
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
-  });
+  const raw = {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  };
+  const open = (audio: MediaTrackConstraints) =>
+    navigator.mediaDevices.getUserMedia({ video: false, audio });
+  let stream: MediaStream;
+  try {
+    stream = await open(deviceId ? { deviceId: { exact: deviceId }, ...raw } : raw);
+  } catch (error) {
+    if (!deviceId) throw error;
+    stream = await open(raw);
+  }
 
   const ctx = new AudioContext();
   await ctx.resume();
@@ -148,6 +158,7 @@ export async function requestMicrophone(): Promise<MicSource> {
     Math.max(0, (v - f) / Math.max(0.2, 1 - f));
 
   return {
+    deviceId: stream.getAudioTracks()[0]?.getSettings().deviceId ?? "",
     update(dt: number): AudioFrame {
       analyser.getByteFrequencyData(freq);
       analyser.getFloatTimeDomainData(wave);

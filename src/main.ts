@@ -6,7 +6,13 @@
 // after 20 s without a touch the showcase cycles the scenes under the
 // wordmark. Sensors start only from an explicit user gesture.
 import { requestMicrophone, type MicSource } from "./audio";
-import { requestCamera, type CameraFacing, type CameraSource } from "./camera";
+import {
+  listDevices,
+  requestCamera,
+  type CameraFacing,
+  type CameraSource,
+  type MediaDevice,
+} from "./camera";
 import {
   DEFAULT_IMPRINT_SETTINGS,
   IMPRINT_VARIANTS,
@@ -64,6 +70,22 @@ const VITRINE_IDLE_MS = 20_000;
 const VITRINE_PERIOD_MS = 20_000;
 const KEEP_URL = "https://linktr.ee/thomasmaury";
 const CAM_STORE = "cinerae-camera";
+// v0.7.4 — the chosen camera / microphone by device id, local only.
+const CAM_ID_STORE = "cinerae-camera-id";
+const MIC_ID_STORE = "cinerae-mic-id";
+const readStore = (key: string) => {
+  try {
+    return localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+};
+const writeStore = (key: string, value: string) => {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {}
+};
 
 const AUDIO_DEFAULTS = {
   silenceThreshold: 0.02,
@@ -140,8 +162,14 @@ async function boot() {
         return "user";
       }
     })(),
+    // v0.7.4 — a device picked by name ("" = automatic), remembered locally.
+    cameraId: readStore(CAM_ID_STORE),
+    micId: readStore(MIC_ID_STORE),
     vitrine: true,
   };
+  // v0.7.4 — the sources the machine offers; names arrive once a permission
+  // was granted, and the list follows every plug / unplug.
+  const devices: { cameras: MediaDevice[]; mics: MediaDevice[] } = { cameras: [], mics: [] };
   const presenceThreshold = () =>
     0.0015 * Math.pow(4, 0.5 - behavior.presenceSense);
   const presenceDelay = () =>
@@ -352,6 +380,7 @@ async function boot() {
       behavior,
       imprint: imprintSettings,
       colors: renderer.look,
+      devices,
     },
     {
       onSensor(kind, enabled) {
@@ -364,6 +393,16 @@ async function boot() {
         } catch {}
         if (cameraSource) {
           void stopCamera().then(() => startCamera());
+        }
+      },
+      onCameraDevice(id) {
+        writeStore(CAM_ID_STORE, id);
+        if (cameraSource) void stopCamera().then(() => startCamera());
+      },
+      onMicDevice(id) {
+        writeStore(MIC_ID_STORE, id);
+        if (mic) {
+          void stopMic().then(() => startMic());
         }
       },
       onKeep() {
@@ -642,13 +681,43 @@ async function boot() {
   };
   applyLanguage();
 
+  // ----- sources (v0.7.4): the machine's cameras and microphones by name --
+  // Local enumeration only. Re-read after each sensor start (that is when the
+  // browser hands out the names) and on every plug / unplug.
+  let devicesSeq = 0;
+  async function refreshDevices() {
+    // Only the newest enumeration counts: a slow one launched earlier (the
+    // boot's, before any permission) must never overwrite a fresher list.
+    const seq = ++devicesSeq;
+    const [cameras, mics] = await Promise.all([
+      listDevices("videoinput"),
+      listDevices("audioinput"),
+    ]);
+    if (seq !== devicesSeq) return;
+    const key = (l: MediaDevice[]) => l.map((d) => `${d.id}|${d.label}`).join(";");
+    const changed =
+      key(cameras) !== key(devices.cameras) || key(mics) !== key(devices.mics);
+    devices.cameras = cameras;
+    devices.mics = mics;
+    if (changed && panel.mode === "pro") panel.refresh();
+  }
+  void refreshDevices();
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => void refreshDevices());
+
   // ----- sensors (each start is triggered by an explicit click) ------------
   async function startCamera() {
     if (cameraSource) return;
     try {
-      cameraSource = await requestCamera(behavior.cameraFacing);
+      cameraSource = await requestCamera(behavior.cameraFacing, behavior.cameraId);
       renderer.attachCamera(cameraSource);
       welcomeArmed = true;
+      // A chosen camera that is gone falls back to the facing side: forget
+      // the stale choice so the list shows what really opened.
+      if (behavior.cameraId && cameraSource.deviceId && cameraSource.deviceId !== behavior.cameraId) {
+        behavior.cameraId = "";
+        writeStore(CAM_ID_STORE, "");
+      }
+      void refreshDevices();
     } catch (error) {
       console.warn("[cinerae] caméra refusée ou indisponible:", error);
       panel.setStatus(t("st.camRefused"));
@@ -668,7 +737,12 @@ async function boot() {
   async function startMic() {
     if (mic) return;
     try {
-      mic = await requestMicrophone();
+      mic = await requestMicrophone(behavior.micId);
+      if (behavior.micId && mic.deviceId && mic.deviceId !== behavior.micId) {
+        behavior.micId = "";
+        writeStore(MIC_ID_STORE, "");
+      }
+      void refreshDevices();
     } catch (error) {
       console.warn("[cinerae] micro refusé ou indisponible:", error);
       panel.setStatus(t("st.micRefused"));
@@ -1530,6 +1604,123 @@ async function boot() {
       },
       kickResults() {
         return [...kickState.results];
+      },
+      /** v0.7.4 — body readability, measured. The live body's own contour
+       * (this frame's corps grains, from the trail alpha, box averaged over
+       * 8x8 px, coverage above `cut`) is walked cell by cell; for each
+       * contour cell the sharpest luminance step along the normal (3x3 box
+       * means, 2 px apart, within +-8 px of 480x270) is the contour's local
+       * contrast; pct = share of contour cells whose step reaches `floor`
+       * (0..1 luminance). meanIn / meanOut are the box means at +-d px. The
+       * alpha is written whatever the corps net value, so the same contour
+       * serves the before and the after. */
+      async body(floor = 0.08, d = 3, cut = 0.3) {
+        const img = await grabReal();
+        const { grid, gw, gh, gain } = await renderer.readLive();
+        // Luminance as a 3x3 box mean (8x8 screen px): the dust is grainy,
+        // a single pixel would measure the grain, not the body; a wider box
+        // would blur away the edge itself.
+        const lum = (x: number, y: number) => {
+          let sum = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const xi = Math.min(W - 1, Math.max(0, Math.round(x) + dx));
+              const yi = Math.min(H - 1, Math.max(0, Math.round(y) + dy));
+              const j = (yi * W + xi) * 4;
+              sum += 0.299 * img.data[j]! + 0.587 * img.data[j + 1]! + 0.114 * img.data[j + 2]!;
+            }
+          }
+          return sum / (9 * 255);
+        };
+        // Coverage as the present pass sees it, then a 3x3 mean so a lone
+        // grain never draws a contour of its own.
+        const live = new Float32Array(gw * gh);
+        for (let g = 0; g < live.length; g++) live[g] = 1 - Math.exp(-Math.max(0, grid[g]!) * gain);
+        const at = (x: number, y: number) => {
+          let sum = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              sum += live[Math.min(gh - 1, Math.max(0, y + dy)) * gw + Math.min(gw - 1, Math.max(0, x + dx))]!;
+            }
+          }
+          return sum / 9;
+        };
+        const sx = W / gw;
+        const sy = H / gh;
+        let contour = 0;
+        let readable = 0;
+        let sumIn = 0;
+        let sumOut = 0;
+        let sumStep = 0;
+        let area = 0;
+        // Interior character: luminance mean and spread of the dense body
+        // (a flat cutout would read as a low spread, dust as a high one).
+        let inN = 0;
+        let inSum = 0;
+        let inSq = 0;
+        for (let y = 1; y < gh - 1; y++) {
+          for (let x = 1; x < gw - 1; x++) {
+            const c = at(x, y);
+            if (c <= cut) continue;
+            area++;
+            if (c > 0.6) {
+              const v = lum((x + 0.5) * sx, (y + 0.5) * sy);
+              inN++;
+              inSum += v;
+              inSq += v * v;
+            }
+            if (at(x - 1, y) > cut && at(x + 1, y) > cut && at(x, y - 1) > cut && at(x, y + 1) > cut) continue;
+            const gx = at(x + 1, y) - at(x - 1, y);
+            const gy = at(x, y + 1) - at(x, y - 1);
+            const gl = Math.hypot(gx, gy);
+            if (gl < 1e-4) continue;
+            const nx = gx / gl;
+            const ny = gy / gl;
+            const cx = (x + 0.5) * sx;
+            const cy = (y + 0.5) * sy;
+            const li = lum(cx + nx * d, cy + ny * d);
+            const lo = lum(cx - nx * d, cy - ny * d);
+            // The edge step: the sharpest luminance change over 2 px (5
+            // screen px) met along the normal within +-10 px, what the eye
+            // reads as the contour whatever its exact position.
+            const prof: number[] = [];
+            for (let tt = -10; tt <= 10; tt++) prof.push(lum(cx + nx * tt, cy + ny * tt));
+            let step = 0;
+            for (let k = 2; k < prof.length; k++) step = Math.max(step, Math.abs(prof[k]! - prof[k - 2]!));
+            contour++;
+            sumIn += li;
+            sumOut += lo;
+            sumStep += step;
+            if (step >= floor) readable++;
+          }
+        }
+        return {
+          contour,
+          area,
+          pct: contour ? Math.round((readable / contour) * 1000) / 10 : 0,
+          step: contour ? Math.round((sumStep / contour) * 1000) / 1000 : 0,
+          meanIn: contour ? Math.round((sumIn / contour) * 1000) / 1000 : 0,
+          meanOut: contour ? Math.round((sumOut / contour) * 1000) / 1000 : 0,
+          interior: inN,
+          inMean: inN ? Math.round((inSum / inN) * 1000) / 1000 : 0,
+          inStd: inN ? Math.round(Math.sqrt(Math.max(0, inSq / inN - (inSum / inN) ** 2)) * 1000) / 1000 : 0,
+        };
+      },
+      /** v0.7.4 — the source lists as the panel sees them. */
+      devices() {
+        return { cameras: [...devices.cameras], mics: [...devices.mics] };
+      },
+      /** v0.7.4 — live-body coverage statistics (density gain calibration). */
+      async live() {
+        const { grid, gain } = await renderer.readLive();
+        const vals = Array.from(grid, (a) => 1 - Math.exp(-Math.max(0, a) * gain)).filter((v) => v > 0.02).sort((a, b) => a - b);
+        const n = vals.length;
+        return {
+          cover: Math.round((n / grid.length) * 1000) / 1000,
+          p50: n ? Math.round(vals[n >> 1]! * 100) / 100 : 0,
+          p90: n ? Math.round(vals[Math.floor(n * 0.9)]! * 100) / 100 : 0,
+          gain: Math.round(gain * 10) / 10,
+        };
       },
       downloads() {
         return [...downloads];

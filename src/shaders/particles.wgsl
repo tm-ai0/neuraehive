@@ -62,6 +62,7 @@ struct VertexOut {
   @location(1) brightness: f32,
   @location(2) tint: vec3f,
   @location(3) streak: f32, // 0 = round grain, 1 = full comet filament
+  @location(4) live: f32,   // v0.7.4 — live-body weight, written to the trail alpha
 };
 
 @group(0) @binding(0) var<uniform> params: RenderParams;
@@ -163,6 +164,7 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
     out.brightness = 0.0;
     out.tint = vec3f(0.0);
     out.streak = 0.0;
+    out.live = 0.0;
     return out;
   }
 
@@ -246,6 +248,11 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
     corpsB = (0.35 + presLum * 0.55) * mix(0.4, 1.7, edgeW);
   }
   brightness = mix(brightness, corpsB, presMix);
+  // v0.7.4 — the live body: the corps grain's own light, before the trail
+  // compensation below dims it for the slow wake. It lands in the trail's
+  // alpha (an 80 ms memory, see fade) and the present pass lifts the person
+  // above the field and the wake by a contrast floor. Zero extra draw.
+  out.live = presMix * corpsB;
   // The slow presence trail accumulates: inside the body's light, every
   // grain's emission is compensated by the decay ratio (same weight as the
   // fade pass) so the standing portrait reads at dust brightness — only
@@ -387,5 +394,5 @@ fn pickDriver(d: i32, tAge: f32, tSpd: f32, tDen: f32, tLay: f32) -> f32 {
   falloff *= mix(1.0, 0.35 + 0.65 * (in.pointCoord.x * 0.5 + 0.5), in.streak);
   // Intensity with the life-cycle tint; the present pass owns the grade.
   let a = params.baseAlpha * falloff * in.brightness;
-  return vec4f(in.tint * a, a);
+  return vec4f(in.tint * a, params.baseAlpha * falloff * in.live);
 }

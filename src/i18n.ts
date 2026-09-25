@@ -90,6 +90,18 @@ const DICT: Record<string, [string, string]> = {
   "ui.langue": ["langue", "language"],
   "cam.user": ["avant", "front"],
   "cam.environment": ["arrière", "rear"],
+  // v0.7.4, sources by device name, local enumeration only.
+  "ui.camDevice": ["quelle caméra", "which camera"],
+  "ui.micDevice": ["quel micro", "which microphone"],
+  "ui.deviceAuto": ["automatique", "automatic"],
+  "hint.camDevice": [
+    "les caméras de cette machine ; le choix reste en local",
+    "the cameras of this machine; the choice stays local",
+  ],
+  "hint.micDevice": [
+    "les micros de cette machine ; le choix reste en local",
+    "the microphones of this machine; the choice stays local",
+  ],
   "hint.facing": [
     "quelle caméra : avant pour se voir, arrière pour filmer la salle",
     "which camera: front to see yourself, rear to film the room",
@@ -153,8 +165,8 @@ const DICT: Record<string, [string, string]> = {
     "Both files land in the device's downloads. Nothing is sent.",
   ],
   "aide.pro.intro": [
-    "Pro montre quatre curseurs en tête et trois tiroirs : regarder, composer, brancher.",
-    "Pro shows four sliders on top and three drawers: look, compose, connect.",
+    "Pro range chaque curseur dans sa section : regarder, composer, brancher.",
+    "Pro files each slider in its section: look, compose, connect.",
   ],
   "aide.pro.regarder": ["corps, empreinte, son : ce qui se voit", "body, imprint, sound: what shows"],
   "aide.pro.composer": ["scènes et modulation : ce qui se prépare", "scenes and modulation: what is prepared"],
@@ -198,6 +210,11 @@ const DICT: Record<string, [string, string]> = {
     "how many grains leave the field to form the person",
   ],
   "ctl.bodyMat": ["matière", "matter"],
+  "ctl.corpsNet": ["corps net", "crisp body"],
+  "hint.corpsNet": [
+    "le corps de l'instant reste lisible au-dessus du fond et du sillage",
+    "the body of the moment stays readable above the field and the wake",
+  ],
   "hint.bodyMat": [
     "ce dont le corps est fait : fumée, encre, points…",
     "what the body is made of: smoke, ink, dots…",

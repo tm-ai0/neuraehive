@@ -110,6 +110,9 @@ export interface Tuning {
   presenceTrail: number; // seconds of wake left by the corps layer
   voiceEase: number; // how much the voice relaxes the serrage
   fondReact: number; // how much the fond feels the gesture wind
+  // v0.7.4 — the live body: this frame's corps grains lifted above the
+  // field and the wake by a contrast floor (0 = historical render).
+  corpsNet: number;
 }
 
 export interface Dynamics {
@@ -218,7 +221,17 @@ export const DEFAULT_TUNING: Tuning = {
   presenceTrail: 2.5,
   voiceEase: 0.6,
   fondReact: 1,
+  corpsNet: 0.4,
 };
+
+// v0.7.4 — live-body coverage: the trail alpha sums the corps grain light of
+// the last LIVE_TAU seconds of REAL time (an 80 ms memory: a dense body, the
+// pose of the instant, the same at any time scale), a density proportional
+// to the grain count per screen pixel and to the frames accumulated. The
+// gain normalizes both, so the person reads the same at 400 k and at 1 M,
+// at 60 fps and at 30.
+const LIVE_TAU = 0.08;
+const LIVE_K = 32;
 
 interface CameraInput {
   video: HTMLVideoElement;
@@ -373,6 +386,10 @@ export async function createRenderer(
   });
 
   let fps = 0;
+  // v0.7.4 — live-body clock and gain of the last simulated frame (the
+  // frozen path and the ?debug readback reuse them).
+  let liveKeep = Math.exp(-1 / 60 / LIVE_TAU);
+  let liveGain = 0;
   let disposed = false;
   let renderError: unknown;
 
@@ -501,6 +518,9 @@ export async function createRenderer(
               Math.min(1, dynamics.mid) * 0.05 * tuning.soundFx,
             contrast: tuning.contrast,
             flash: dynamics.flash,
+            corpsLight: look.corpsLight,
+            liveFloor: tuning.corpsNet,
+            liveGain,
           },
           trail: trailTex,
           field: fieldTex,
@@ -692,6 +712,13 @@ export async function createRenderer(
       // are dimmed by the ratio of the two decay rates: the standing body
       // stays readable, only the wake of a movement lingers.
       const keepGlobal = Math.pow(tuning.trailDecay, adt * 60);
+      // v0.7.4 — the live body forgets on the real clock (slowed time must
+      // not pile it up), paced by the SMOOTHED frame time so a single short
+      // or long frame never makes the coverage gain, hence the body, flicker.
+      const frameDt = fps > 5 ? 1 / fps : Math.max(dt, 1e-4);
+      liveKeep = Math.exp(-frameDt / LIVE_TAU);
+      liveGain =
+        (LIVE_K * (1 - liveKeep) * trailNext.size[0] * trailNext.size[1]) / count;
       const keepBody = Math.max(
         keepGlobal,
         Math.exp(-adt / Math.max(0.3, tuning.presenceTrail))
@@ -705,6 +732,7 @@ export async function createRenderer(
           decay: keepGlobal,
           bodyKeep: keepBody,
           presence,
+          liveKeep,
         },
         trail: trailPrev,
         field: fieldPrev,
@@ -849,6 +877,33 @@ export async function createRenderer(
       const data = new Float32Array(FLOW_W * FLOW_H);
       for (let i = 0; i < data.length; i++) data[i] = decodeF16(half[i * 4 + 2]!);
       return { data, width: FLOW_W, height: FLOW_H };
+    },
+    /** v0.7.4, ?debug only — the live-body alpha of the last trail, box
+     * averaged over 8x8 px cells, with the coverage gain the present pass
+     * applies: the measurement harness draws the live body's contour from
+     * it. Never used by the render. */
+    async readLive(): Promise<{ grid: Float32Array; gw: number; gh: number; gain: number }> {
+      const source = trailTargets[1 - trailIndex]!;
+      const [w, h] = source.size;
+      const bytes = await source.read();
+      const half = new Uint16Array(
+        bytes.buffer,
+        bytes.byteOffset,
+        Math.floor(bytes.byteLength / 2)
+      );
+      const gw = Math.ceil(w / 8);
+      const gh = Math.ceil(h / 8);
+      const grid = new Float32Array(gw * gh);
+      const n = new Float32Array(gw * gh);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const g = (y >> 3) * gw + (x >> 3);
+          grid[g] += decodeF16(half[(y * w + x) * 4 + 3]!);
+          n[g]++;
+        }
+      }
+      for (let g = 0; g < grid.length; g++) grid[g] /= Math.max(1, n[g]!);
+      return { grid, gw, gh, gain: liveGain };
     },
     /** Motion statistics from the flow field's energy channel. `avg` is the
      * frame-wide mean (~0 when still); `area` is the fraction of samples
