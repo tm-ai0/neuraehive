@@ -161,6 +161,25 @@
       .cinerae-panel.open {
         translate: 0 0;
       }
+      /* v0.7.3 — personality: a faint grain over the panel, same family as the
+         Papier noise of the render, so the drawer reads as matter, not a flat. */
+      .cinerae-panel {
+        isolation: isolate;
+      }
+      .cinerae-panel::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        mix-blend-mode: overlay;
+        opacity: 1;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.85 0 0 0 0 0.78 0 0 0 0.35 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+      .cinerae-panel > * {
+        position: relative;
+        z-index: 1;
+      }
       .cinerae-panel button {
         font: inherit;
         color: inherit;
@@ -221,12 +240,62 @@
       }
 
       .cinerae-head {
+        position: relative;
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 1.6rem;
+        gap: 1.2rem;
         padding: 2rem 3.2rem 1.6rem 4rem;
         border-bottom: 0.5px solid var(--p-line);
         flex: none;
+      }
+      /* v0.7.3 — the intro's lettering, faded, as the panel's monogram (the
+         font comes from the single local FontFace of the wordmark). */
+      .cinerae-mono {
+        position: absolute;
+        right: 3.2rem;
+        top: 0.2rem;
+        font-family: "Ephesis", var(--p-font);
+        font-size: 3rem;
+        line-height: 1;
+        color: var(--p-text-2);
+        opacity: 0.4;
+        pointer-events: none;
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+      }
+      .cinerae-midi-chip {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        height: 5.6rem;
+        min-height: 44px;
+        padding: 0 1.4rem;
+        border: 0.5px solid var(--p-border);
+        border-radius: var(--p-r);
+        background: transparent;
+        font-size: 1.4rem;
+        letter-spacing: 0.06em;
+        color: var(--p-text-2);
+        white-space: nowrap;
+        transition-property: color, border-color;
+        transition-duration: 120ms;
+      }
+      .cinerae-midi-dot {
+        width: 0.8rem;
+        height: 0.8rem;
+        border-radius: 50%;
+        background: var(--p-border);
+        flex: none;
+      }
+      .cinerae-midi-chip[data-linked="true"] {
+        color: var(--p-text);
+        border-color: var(--p-text-2);
+      }
+      .cinerae-midi-chip[data-linked="true"] .cinerae-midi-dot {
+        background: var(--p-text);
+      }
+      .cinerae-midi-chip:active {
+        scale: 0.96;
       }
       .cinerae-seg {
         display: flex;
@@ -237,15 +306,15 @@
       }
       .cinerae-seg button {
         flex: 1;
-        min-width: 0;
+        min-width: 6.4rem;
         height: 5.6rem;
         min-height: 44px;
-        padding: 0 1.6rem;
+        padding: 0 0.8rem;
         border: 0;
         background: transparent;
-        font-size: 1.7rem;
+        font-size: 1.5rem;
         font-weight: 600;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.22em;
         text-transform: uppercase;
         color: var(--p-text-2);
         transition-property: background-color, color;
@@ -261,13 +330,14 @@
       .cinerae-help {
         height: 5.6rem;
         min-height: 44px;
-        padding: 0 2.4rem;
+        padding: 0 1.8rem;
+        margin-inline-start: auto;
         border: 0.5px solid var(--p-border);
         background: transparent;
         border-radius: var(--p-r);
         font-size: 1.7rem;
         font-weight: 600;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.22em;
         text-transform: uppercase;
         transition-property: background-color, color;
         transition-duration: 120ms;
@@ -436,7 +506,7 @@
         border-radius: var(--p-r);
         font-size: 1.8rem;
         font-weight: 600;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.22em;
         text-transform: uppercase;
         transition-property: background-color, color;
         transition-duration: 120ms;
@@ -483,6 +553,35 @@
         text-transform: lowercase;
         color: var(--p-text-2);
         flex: none;
+      }
+      /* v0.7.3 — the three meta-sections: a bigger title with the soft shadow
+         of the intro text, its open section's state on the line. */
+      .cinerae-meta > summary {
+        min-height: 6.4rem;
+      }
+      .cinerae-meta-name {
+        font-size: 2rem;
+        letter-spacing: 0.06em;
+        text-transform: lowercase;
+        color: var(--p-text-2);
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+        flex: none;
+      }
+      .cinerae-pro details[open] .cinerae-meta-name {
+        color: var(--p-text);
+      }
+      .cinerae-meta-body {
+        padding: 0 0.4rem 1.2rem;
+        display: grid;
+        gap: 1.2rem;
+      }
+      .cinerae-meta-tabs {
+        gap: 0.4rem 1.6rem;
+      }
+      .cinerae-meta-tabs button {
+        font-size: 1.6rem;
+        letter-spacing: 0.08em;
+        padding: 0.6rem 0.4rem;
       }
       .cinerae-pro details[open] .cinerae-sec-name {
         color: var(--p-text);
@@ -1023,7 +1122,7 @@
         font: inherit;
         font-size: 1.6rem;
         font-weight: 600;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.22em;
         text-transform: uppercase;
         cursor: pointer;
       }

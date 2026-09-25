@@ -44,6 +44,15 @@ const DICT: Record<string, [string, string]> = {
   "keep.savedPng": ["Image enregistrée, boucle impossible ici", "Picture saved, no loop on this browser"],
   "keep.failed": ["Enregistrement impossible", "Saving failed"],
   // ---- sections ------------------------------------------------------------
+  "meta.regarder": ["regarder", "look"],
+  "meta.composer": ["composer", "compose"],
+  "meta.brancher": ["brancher", "connect"],
+  "ui.midiChipOff": ["midi non relié", "midi unbound"],
+  "ui.midiChipOn": ["midi relié", "midi linked"],
+  "hint.midiChip": [
+    "l'état midi, relié ou non ; toucher ouvre brancher > midi",
+    "the midi state, linked or not; tap to open connect > midi",
+  ],
   "sec.corps": ["corps", "body"],
   "sec.empreinte": ["empreinte", "imprint"],
   "sec.son": ["son", "sound"],
@@ -99,8 +108,8 @@ const DICT: Record<string, [string, string]> = {
   "aide.tab.pro": ["pro", "pro"],
   "aide.tab.liens": ["liens", "links"],
   "aide.demo.intro": [
-    "Quatre curseurs, chacun fait une seule chose à l'image. Le trait clair est la valeur jouée.",
-    "Four sliders, each does one thing to the image. The bright line is the value played.",
+    "Un seul curseur : la matière du corps. Le reste se joue sur l'image, au doigt. Le trait clair est la valeur jouée.",
+    "One slider: what the body is made of. The rest is played on the image, by touch. The bright line is the value played.",
   ],
   "aide.demo.matiere": [
     "de la poussière libre à la fumée, à l'encre, au cristal",
@@ -144,9 +153,12 @@ const DICT: Record<string, [string, string]> = {
     "Both files land in the device's downloads. Nothing is sent.",
   ],
   "aide.pro.intro": [
-    "Pro garde les quatre curseurs et déplie tout le reste, section par section.",
-    "Pro keeps the four sliders and unfolds everything else, section by section.",
+    "Pro montre quatre curseurs en tête et trois tiroirs : regarder, composer, brancher.",
+    "Pro shows four sliders on top and three drawers: look, compose, connect.",
   ],
+  "aide.pro.regarder": ["corps, empreinte, son : ce qui se voit", "body, imprint, sound: what shows"],
+  "aide.pro.composer": ["scènes et modulation : ce qui se prépare", "scenes and modulation: what is prepared"],
+  "aide.pro.brancher": ["midi, caméra, réglages : ce qui se branche", "midi, camera, settings: what plugs in"],
   "aide.perf": [
     "sur PC, mettre Chrome en haute performance dans les réglages graphiques Windows, sinon la caméra est lente",
     "on PC, set Chrome to high performance in the Windows graphics settings, otherwise the camera is slow",

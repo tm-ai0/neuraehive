@@ -161,6 +161,17 @@ const SECTION_ORDER: SectionId[] = [
   "reglages",
 ];
 
+// v0.7.3 — Pro folds the eight sections into three meta-sections, each a
+// details with its sections as sub-tabs: regarder (corps, empreinte, son),
+// composer (scènes, modulation), brancher (midi, caméra, réglages).
+type MetaId = "regarder" | "composer" | "brancher";
+const META_ORDER: MetaId[] = ["regarder", "composer", "brancher"];
+const META_SECTIONS: Record<MetaId, SectionId[]> = {
+  regarder: ["corps", "empreinte", "son"],
+  composer: ["scenes", "modulation"],
+  brancher: ["midi", "camera", "reglages"],
+};
+
 const AIDE_PAGES = ["demo", "gestes", "garder", "pro", "liens"] as const;
 type AidePage = (typeof AIDE_PAGES)[number];
 
@@ -198,6 +209,11 @@ export function createPanel(
   let midiLearn = false;
   let lastScene = "";
   let fpsShown = 0;
+  // v0.7.3 — which meta-sections are unfolded and which sub-tab each shows;
+  // openSections mirrors the sections currently visible (a tab of an open
+  // meta), for the live syncs that only run while a section is on screen.
+  const openMetas = new Set<MetaId>(["regarder"]);
+  const metaTab: Record<MetaId, SectionId> = { regarder: "corps", composer: "scenes", brancher: "midi" };
   const openSections = new Set<SectionId>();
   const groupOpen: Partial<Record<SectionId, string>> = {};
 
@@ -812,6 +828,22 @@ export function createPanel(
     seg.appendChild(b);
     return b;
   });
+  // v0.7.3 — the MIDI state lives in the head, linked or not: a tap opens
+  // brancher > midi. The monogram is the intro's own lettering, faded.
+  const midiChip = document.createElement("button");
+  midiChip.type = "button";
+  midiChip.className = "cinerae-midi-chip";
+  midiChip.innerHTML = `<span class="cinerae-midi-dot" aria-hidden="true"></span><span class="cinerae-midi-label"></span>`;
+  const midiLabel = midiChip.querySelector(".cinerae-midi-label") as HTMLElement;
+  midiChip.addEventListener("click", () => {
+    mode = "pro";
+    aideOpen = false;
+    openMetas.add("brancher");
+    metaTab.brancher = "midi";
+    hooks.onInteraction();
+    renderMode();
+  });
+  head.appendChild(midiChip);
   const helpButton = document.createElement("button");
   helpButton.type = "button";
   helpButton.className = "cinerae-help";
@@ -821,6 +853,29 @@ export function createPanel(
     renderMode();
   });
   head.appendChild(helpButton);
+  const mono = document.createElement("span");
+  mono.className = "cinerae-mono";
+  mono.setAttribute("aria-hidden", "true");
+  mono.textContent = "cineræ";
+  head.appendChild(mono);
+  const syncMidiChip = () => {
+    const midi = hooks.getMidi();
+    // Linked = a controller is plugged in (Web MIDI granted AND at least one
+    // input), re-synced on every statechange through panel.refresh().
+    const inputs = midi?.enabled ? midi.inputs : [];
+    const linked = inputs.length > 0;
+    midiChip.dataset.linked = String(linked);
+    // The chip stays short (the head is 34 vw wide): the dot says linked or
+    // not; the device names and the bindings count live in the accessible
+    // name and the title (the count is also on brancher's line).
+    midiLabel.textContent = "midi";
+    const n = midi ? controls.filter((d) => midi.bindingFor(d.key)).length : 0;
+    const state = linked
+      ? `${t("ui.midiChipOn")} · ${inputs.join(", ")}${n ? ` · ${n} ${t("ui.bindings")}` : ""}`
+      : t("ui.midiChipOff");
+    midiChip.title = `${state} · ${t("hint.midiChip")}`;
+    midiChip.setAttribute("aria-label", state);
+  };
 
   const body = document.createElement("div");
   body.className = "cinerae-body";
@@ -2115,9 +2170,6 @@ export function createPanel(
     if (aidePage === "demo") {
       para(t("aide.demo.intro"));
       item(t("ctl.matiere"), t("aide.demo.matiere"));
-      item(t("ctl.eclipse"), t("aide.demo.lumiere"));
-      item(t("ctl.miroir"), t("aide.demo.miroir"));
-      item(t("ctl.memoire"), t("aide.demo.memoire"));
       item(t("btn.chaos"), t("aide.demo.chaos"));
       item("↶", t("aide.demo.undo"));
       item(t("btn.garder"), t("aide.demo.garder"));
@@ -2136,6 +2188,12 @@ export function createPanel(
       para(t("aide.garder.local"));
     } else if (aidePage === "pro") {
       para(t("aide.pro.intro"));
+      item(t("ctl.eclipse"), t("aide.demo.lumiere"));
+      item(t("ctl.miroir"), t("aide.demo.miroir"));
+      item(t("ctl.memoire"), t("aide.demo.memoire"));
+      item(t("meta.regarder"), t("aide.pro.regarder"));
+      item(t("meta.composer"), t("aide.pro.composer"));
+      item(t("meta.brancher"), t("aide.pro.brancher"));
       const keys: [string, string][] = [
         ["F", "aide.key.f"],
         ["C", "aide.key.c"],
@@ -2172,9 +2230,11 @@ export function createPanel(
 
   // ----- the four demo sliders ----------------------------------------------
   const BIG_KEYS = ["matiere", "eclipse", "miroir", "memoire"];
+  // v0.7.3 — DÉMO plays matière alone; Pro keeps the four on top.
+  const DEMO_KEYS = ["matiere"];
   function renderBig() {
     bigBox.replaceChildren();
-    for (const key of BIG_KEYS) {
+    for (const key of mode === "demo" ? DEMO_KEYS : BIG_KEYS) {
       const row = renderDefRow(D(key), bigBox, true);
       row.classList.add("cinerae-big");
     }
@@ -2221,44 +2281,91 @@ export function createPanel(
         return `${Math.round(tn.count / 1000)} k · ${fpsShown} fps · ${getLang().toUpperCase()}`;
     }
   };
+  // The line of a meta: its open section's name and state, or the list of
+  // its sections while it is folded.
+  const metaLine = (meta: MetaId): string =>
+    openMetas.has(meta)
+      ? `${t(`sec.${metaTab[meta]}`)} · ${summaryOf(metaTab[meta])}`
+      : META_SECTIONS[meta].map((id) => t(`sec.${id}`)).join(" · ");
+  const metaEls = new Map<MetaId, { details: HTMLDetailsElement; state: HTMLElement; body: HTMLElement }>();
   const syncSummaries = () => {
-    for (const [id, el] of sectionEls) el.state.textContent = summaryOf(id);
+    for (const [meta, el] of metaEls) el.state.textContent = metaLine(meta);
+    syncMidiChip();
+  };
+  const syncOpenSections = () => {
+    openSections.clear();
+    for (const meta of openMetas) openSections.add(metaTab[meta]);
   };
 
   function renderPro() {
     proBox.replaceChildren();
     sectionEls.clear();
-    for (const id of SECTION_ORDER) {
+    metaEls.clear();
+    syncOpenSections();
+    for (const meta of META_ORDER) {
       const details = document.createElement("details");
-      details.open = openSections.has(id);
+      details.className = "cinerae-meta";
+      details.open = openMetas.has(meta);
       const summary = document.createElement("summary");
       const name = document.createElement("span");
-      name.className = "cinerae-sec-name";
-      name.textContent = t(`sec.${id}`);
+      name.className = "cinerae-meta-name";
+      name.textContent = t(`meta.${meta}`);
       const st = document.createElement("span");
       st.className = "cinerae-sec-state";
       summary.append(name, st);
       summary.insertAdjacentHTML("beforeend", CHEVRON);
-      const sbody = document.createElement("div");
-      sbody.className = "cinerae-sec-body";
-      details.append(summary, sbody);
+      const mbody = document.createElement("div");
+      mbody.className = "cinerae-meta-body";
+      details.append(summary, mbody);
       details.addEventListener("toggle", () => {
         // A programmatic open (re-render) fires toggle too: only the hand's
         // own change counts as an interaction.
-        if (details.open === openSections.has(id)) return;
+        if (details.open === openMetas.has(meta)) return;
         if (details.open) {
-          openSections.add(id);
-          if (!sbody.childElementCount) renderSection(id, sbody);
+          openMetas.add(meta);
+          if (!mbody.childElementCount) renderMeta(meta, mbody);
         } else {
-          openSections.delete(id);
+          openMetas.delete(meta);
         }
+        syncOpenSections();
         hooks.onInteraction();
+        syncSummaries();
       });
       proBox.appendChild(details);
-      sectionEls.set(id, { details, state: st, body: sbody });
-      if (details.open) renderSection(id, sbody);
+      metaEls.set(meta, { details, state: st, body: mbody });
+      if (details.open) renderMeta(meta, mbody);
     }
     syncSummaries();
+  }
+
+  // One meta unfolded: its sections as underlined tabs, the active one
+  // rendered underneath by the section renderer it always had.
+  function renderMeta(meta: MetaId, mbody: HTMLElement) {
+    mbody.replaceChildren();
+    const bar = document.createElement("div");
+    bar.className = "cinerae-subtabs cinerae-meta-tabs";
+    for (const id of META_SECTIONS[meta]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = t(`sec.${id}`);
+      b.setAttribute("aria-pressed", String(id === metaTab[meta]));
+      b.addEventListener("click", () => {
+        if (metaTab[meta] === id) return;
+        metaTab[meta] = id;
+        syncOpenSections();
+        hooks.onInteraction();
+        renderMode();
+      });
+      bar.appendChild(b);
+    }
+    mbody.appendChild(bar);
+    const sbody = document.createElement("div");
+    sbody.className = "cinerae-sec-body";
+    mbody.appendChild(sbody);
+    const id = metaTab[meta];
+    const el = metaEls.get(meta)!;
+    sectionEls.set(id, { details: el.details, state: el.state, body: sbody });
+    renderSection(id, sbody);
   }
 
   function renderSection(id: SectionId, sbody: HTMLElement) {
@@ -2344,6 +2451,7 @@ export function createPanel(
     undoButton.setAttribute("aria-label", t("btn.undo"));
     keepButton.textContent = t("btn.garder");
     keepButton.title = t("hint.garder");
+    syncMidiChip();
     body.dataset.mode = aideOpen ? "aide" : mode;
 
     rowRefs = [];
@@ -2355,6 +2463,7 @@ export function createPanel(
     else {
       proBox.replaceChildren();
       sectionEls.clear();
+      metaEls.clear();
     }
     aideBox.replaceChildren();
     if (aideOpen) renderAide(aideBox);
@@ -2456,8 +2565,9 @@ export function createPanel(
       const f = Math.round(fps);
       if (f !== fpsShown) {
         fpsShown = f;
-        const el = sectionEls.get("reglages");
-        if (el) el.state.textContent = summaryOf("reglages");
+        if (sectionEls.has("reglages") && metaEls.has("brancher")) {
+          metaEls.get("brancher")!.state.textContent = metaLine("brancher");
+        }
       }
     },
     /** v0.7.1f — the matter counter: [corps, empreinte, fond] as 0..1. */

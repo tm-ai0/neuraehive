@@ -62,6 +62,11 @@ export function createMidi(
     get enabled() {
       return status === "actif";
     },
+    /** v0.7.3 — the controllers actually plugged in, by name (the head chip
+     *  lights on a device, not on the browser's permission). */
+    get inputs(): string[] {
+      return access ? [...access.inputs.values()].map((i) => i.name || i.id) : [];
+    },
     get armedKey() {
       return armedKey;
     },
