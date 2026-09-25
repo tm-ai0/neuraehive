@@ -399,6 +399,9 @@ async function boot() {
         writeStore(CAM_ID_STORE, id);
         if (cameraSource) void stopCamera().then(() => startCamera());
       },
+      getCameraStream() {
+        return (cameraSource?.video.srcObject as MediaStream | null) ?? null;
+      },
       onMicDevice(id) {
         writeStore(MIC_ID_STORE, id);
         if (mic) {
@@ -894,7 +897,12 @@ async function boot() {
       case "f":
         void stage.toggleFullscreen();
         break;
+      // v0.7.5 — C is the raw camera (Pro only, ignored in Démo); Chaos
+      // moved to X.
       case "c":
+        panel.toggleRawCam();
+        break;
+      case "x":
         panel.chaos();
         break;
       case "z":

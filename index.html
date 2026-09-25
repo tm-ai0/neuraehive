@@ -180,6 +180,10 @@
         position: relative;
         z-index: 1;
       }
+      /* v0.7.5 — the head carries the floating camera menu: above the body. */
+      .cinerae-panel > .cinerae-head {
+        z-index: 2;
+      }
       .cinerae-panel button {
         font: inherit;
         color: inherit;
@@ -244,7 +248,7 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 1.2rem;
+        gap: 0.6rem;
         padding: 2rem 3.2rem 1.6rem 4rem;
         border-bottom: 0.5px solid var(--p-line);
         flex: none;
@@ -263,22 +267,68 @@
         pointer-events: none;
         text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
       }
-      .cinerae-midi-chip {
+      /* .cinerae-panel prefix: the generic « .cinerae-panel button { font:
+         inherit } » above outranks a lone class and was flattening these
+         buttons to 18 px regular (chips, AIDE, the bottom row). */
+      .cinerae-panel .cinerae-midi-chip {
         display: flex;
+        flex: none;
         align-items: center;
-        gap: 0.8rem;
+        gap: 0.6rem;
         height: 5.6rem;
         min-height: 44px;
-        padding: 0 1.4rem;
+        padding: 0 0.8rem;
         border: 0.5px solid var(--p-border);
         border-radius: var(--p-r);
         background: transparent;
-        font-size: 1.4rem;
+        font-size: max(1.2rem, 11px);
         letter-spacing: 0.06em;
         color: var(--p-text-2);
         white-space: nowrap;
         transition-property: color, border-color;
         transition-duration: 120ms;
+      }
+      /* v0.7.5 — the camera chip, Pro only: same motif as midi, the source's
+         short name; only that name may shrink (ellipsis), never the others. */
+      .cinerae-panel .cinerae-cam-chip {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 9.2rem;
+      }
+      .cinerae-cam-chip[hidden] {
+        display: none;
+      }
+      .cinerae-cam-chip .cinerae-midi-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .cinerae-cam-menu {
+        position: absolute;
+        left: 4rem;
+        right: 3.2rem;
+        top: calc(100% - 0.8rem);
+        z-index: 6;
+        padding: 1.2rem 1.6rem 1.6rem;
+        border: 0.5px solid var(--p-border);
+        border-radius: var(--p-r);
+        background: var(--p-bg);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+        font-size: 1.8rem;
+      }
+      .cinerae-cam-menu[hidden] {
+        display: none;
+      }
+      .cinerae-cam-vignette {
+        display: block;
+        width: 100%;
+        height: 11rem;
+        margin-bottom: 0.8rem;
+        border-radius: var(--p-r);
+        background: #000;
+        object-fit: cover;
+      }
+      .cinerae-cam-vignette.mirrored {
+        scale: -1 1;
       }
       .cinerae-midi-dot {
         width: 0.8rem;
@@ -299,20 +349,20 @@
       }
       .cinerae-seg {
         display: flex;
-        flex: 1;
+        flex: none;
         border: 0.5px solid var(--p-border);
         border-radius: var(--p-r);
         overflow: hidden;
       }
       .cinerae-seg button {
         flex: 1;
-        min-width: 6.4rem;
+        min-width: max(5.6rem, 44px);
         height: 5.6rem;
         min-height: 44px;
-        padding: 0 0.8rem;
+        padding: 0 0.4rem;
         border: 0;
         background: transparent;
-        font-size: 1.5rem;
+        font-size: 1.4rem;
         font-weight: 600;
         letter-spacing: 0.22em;
         text-transform: uppercase;
@@ -327,15 +377,16 @@
       .cinerae-seg button:active {
         scale: 0.96;
       }
-      .cinerae-help {
+      .cinerae-panel .cinerae-help {
+        flex: none;
         height: 5.6rem;
         min-height: 44px;
-        padding: 0 1.8rem;
+        padding: 0 0.8rem;
         margin-inline-start: auto;
         border: 0.5px solid var(--p-border);
         background: transparent;
         border-radius: var(--p-r);
-        font-size: 1.7rem;
+        font-size: 1.5rem;
         font-weight: 600;
         letter-spacing: 0.22em;
         text-transform: uppercase;
@@ -486,7 +537,7 @@
         font-size: 1.7rem;
       }
 
-      /* ---- foot: Chaos · undo · Garder ---- */
+      /* ---- foot: Chaos · undo · (Voir, Pro) · Garder ---- */
       .cinerae-foot {
         flex: none;
         padding: 1.6rem 3.2rem 2rem 4rem;
@@ -495,24 +546,35 @@
       .cinerae-actions {
         display: flex;
         align-items: center;
-        gap: 1.2rem;
+        gap: 0.8rem;
       }
-      .cinerae-btn-row {
-        flex: 1;
+      .cinerae-panel .cinerae-btn-row {
+        flex: 1 1 auto;
+        min-width: 44px;
         height: 5.6rem;
         min-height: 44px;
+        padding: 0 0.4rem;
         border: 0.5px solid #6a6157;
         background: transparent;
         border-radius: var(--p-r);
-        font-size: 1.8rem;
+        font-size: 1.6rem;
         font-weight: 600;
         letter-spacing: 0.22em;
         text-transform: uppercase;
+        white-space: nowrap;
         transition-property: background-color, color;
         transition-duration: 120ms;
       }
+      .cinerae-btn-row[hidden] {
+        display: none;
+      }
+      .cinerae-btn-row[aria-pressed="true"] {
+        background: var(--p-text);
+        color: var(--p-bg);
+      }
       .cinerae-btn-row.cinerae-undo {
-        flex: 0 0 7.2rem;
+        flex: 0 0 max(5.6rem, 44px);
+        padding: 0;
         letter-spacing: 0;
         font-size: 2.4rem;
         font-weight: 400;
@@ -525,6 +587,13 @@
       .cinerae-btn-row:disabled {
         opacity: 0.3;
         cursor: default;
+      }
+      /* Narrow screens (tablet portrait, 1 rem = 7 px): the four buttons keep
+         one line by losing a little size, never their letter-spacing. */
+      @media (max-width: 1023px) {
+        .cinerae-panel .cinerae-btn-row {
+          font-size: 1.4rem;
+        }
       }
 
       /* ---- Pro sections: folded, the state on the line ---- */

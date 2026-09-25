@@ -33,6 +33,11 @@ const DICT: Record<string, [string, string]> = {
   "mode.pro": ["Pro", "Pro"],
   "btn.aide": ["Aide", "Help"],
   "btn.garder": ["Garder", "Keep"],
+  "btn.voir": ["Voir", "View"],
+  "hint.voir": [
+    "montrer l'image caméra brute pour calibrer, Pro seulement, touche C",
+    "show the raw camera image to calibrate, Pro only, key C",
+  ],
   "hint.garder": [
     "figer l'image, enregistrer une image et une boucle de 4 s avec le QR",
     "freeze the image, save a picture and a 4 s loop with the QR",
@@ -52,6 +57,17 @@ const DICT: Record<string, [string, string]> = {
   "hint.midiChip": [
     "l'état midi, relié ou non ; toucher ouvre brancher > midi",
     "the midi state, linked or not; tap to open connect > midi",
+  ],
+  "ui.camChipOn": ["caméra allumée", "camera on"],
+  "ui.camChipOff": ["caméra éteinte", "camera off"],
+  "hint.camChip": [
+    "l'état de la caméra ; toucher ouvre ses réglages et une vignette en direct",
+    "the camera state; tap to open its settings and a live thumbnail",
+  ],
+  "ui.camMenu": ["réglages caméra", "camera settings"],
+  "ui.camVignette": [
+    "vignette en direct de la caméra, locale, jamais enregistrée",
+    "live camera thumbnail, local, never recorded",
   ],
   "sec.corps": ["corps", "body"],
   "sec.empreinte": ["empreinte", "imprint"],
@@ -171,6 +187,8 @@ const DICT: Record<string, [string, string]> = {
   "aide.pro.regarder": ["corps, empreinte, son : ce qui se voit", "body, imprint, sound: what shows"],
   "aide.pro.composer": ["scènes et modulation : ce qui se prépare", "scenes and modulation: what is prepared"],
   "aide.pro.brancher": ["midi, caméra, réglages : ce qui se branche", "midi, camera, settings: what plugs in"],
+  "aide.pro.voir": ["montre ce que voit la caméra, jamais en Démo", "shows what the camera sees, never in Demo"],
+  "aide.pro.camChip": ["l'état de la caméra ; un tap ouvre ses réglages et une vignette", "the camera state; a tap opens its settings and a thumbnail"],
   "aide.perf": [
     "sur PC, mettre Chrome en haute performance dans les réglages graphiques Windows, sinon la caméra est lente",
     "on PC, set Chrome to high performance in the Windows graphics settings, otherwise the camera is slow",
@@ -838,7 +856,8 @@ const DICT: Record<string, [string, string]> = {
   ],
   // ---- aide ----------------------------------------------------------------
   "aide.key.f": ["plein écran", "fullscreen"],
-  "aide.key.c": ["chaos", "chaos"],
+  "aide.key.c": ["caméra brute, en Pro", "raw camera, in Pro"],
+  "aide.key.x": ["chaos", "chaos"],
   "aide.key.z": ["annule le dernier geste", "undoes the last gesture"],
   "aide.key.r": ["reset", "reset"],
   "aide.key.p": ["image PNG", "PNG image"],

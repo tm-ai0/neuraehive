@@ -24,11 +24,14 @@ Point d'entrée de toute conversation. Le haut du fichier appartient à Claude.a
 
 ## Chantiers suivants, dans l'ordre
 
-1. PROMPT LISIBLE (Claude Code, Fable 5.1) : corps vivant / sillage, Pro allégé, puces au second niveau, sources, doublon partage. Lancé le 25/09.
-2. PROMPT CAMÉRA : puce caméra en en-tête avec menu flottant.
-3. PROMPT OBJETS : empreintes physiques poussées par le corps, plusieurs à la fois.
-4. PROMPT MAINS : attraper / tenir / tourner un objet avec la main (suivi des mains).
-5. Icônes pour les formes d'empreinte et les matières : changement de layout, mockup d'abord.
+Ordre retenu : CAMÉRA → FOND → OBJETS → MAINS → icônes.
+
+1. PROMPT LISIBLE (Claude Code, Fable 5.1) : corps vivant / sillage, Pro allégé, puces au second niveau, sources, doublon partage. Lancé le 25/09, livré (8d8c598).
+2. PROMPT CAMÉRA : puce caméra en en-tête avec menu flottant, bouton VOIR, touche C. Livré le 25/09 (v0.7.5, voir la section Claude Code plus bas).
+3. PROMPT FOND : fond appris (la salle vide mémorisée), masque du corps tiré de la différence au fond, corps net dessus, bouton « reprendre le fond » pour ré-apprendre la salle.
+4. PROMPT OBJETS : empreintes physiques poussées par le corps, plusieurs à la fois.
+5. PROMPT MAINS : attraper / tenir / tourner un objet avec la main (suivi des mains).
+6. Icônes pour les formes d'empreinte et les matières : changement de layout, mockup d'abord.
 
 ## À faire par Thomas (test, 1 minute)
 
@@ -42,3 +45,14 @@ Pro > brancher > caméra > "caméra brute" : la silhouette se détache-t-elle à
 - Prochain pas : le test d'une minute de Thomas devant la vraie webcam (encre / lumière 29 / mémoire 80, corps net 40 puis 0 puis 70), puis le Redmi pour les puces et les sources. Ensuite PROMPT OBJETS.
 - Fichiers touchés : src/shaders/fade.wgsl, particles.wgsl, present.wgsl, src/renderer.ts, src/panel.ts, src/main.ts, src/camera.ts, src/audio.ts, src/i18n.ts ; BACKLOG.md, HANDOFF.md. Harnais (non suivi, .debug) : lisible_lib.py, lisible-protocol.py, lisible-panel.py, check-lisible.mjs, synth.js (paramètre scale), captures lisible-*.jpg, lisible-pw.json, lisible-panel*.json.
 - Attention : pendant la session, deux « taskkill chrome.exe » ont été lancés pour arrêter des Chrome Playwright orphelins ; si un Chrome personnel était ouvert sur ce PC, il a été fermé aussi.
+
+## Claude Code, v0.7.5 CAMÉRA (25/09/2026)
+
+- État : les cinq points du PROMPT CAMÉRA sont livrés et mesurés (voir BACKLOG v0.7.5 et les captures .debug/camera-pw-*.jpg) : VOIR dans la rangée du bas en Pro, puce caméra dans l'en-tête avec menu flottant et vignette, touche C, docs (CLAUDE.md, HANDOFF.md, BACKLOG.md). Commit local, jamais poussé.
+- Décisions prises : la touche C était déjà prise par Chaos ; le prompt demandant C pour la caméra brute, Chaos passe sur X (aide mise à jour). C en Démo ne fait rien (la caméra brute reste Pro). Le nom court de la puce vient du label de la piste vidéo ouverte (premier mot, 8 caractères au plus), pas de la liste ; sans nom, avant / arrière. La vignette est le MediaStream du moteur attaché à un second <video>, jamais une seconde capture, détachée à la fermeture. Le menu vit dans l'en-tête (z-index 2 au-dessus du corps, fond opaque). Un bug CSS préexistant a dû être corrigé pour tenir sur une ligne : le générique « .cinerae-panel button { font: inherit } » écrasait les tailles et la graisse de la puce midi, d'AIDE et de la rangée du bas (rendus à 18 px regular depuis v0.7.3) ; AIDE / CHAOS / GARDER apparaissent donc maintenant en 600 comme le mockup l'écrivait, à valider à l'œil.
+- Relecture challenger avant commit : GO ; il a re-mesuré l'en-tête à 1024×768 (une ligne, noms « Logitech » / « Microsof » / « arrière » sans coupure, AIDE ne peut pas passer à la ligne puisque seule la puce caméra rétrécit), la rangée à rem 8 et 10 (marge 13-17 %), le menu (388 px de haut, dans le panneau) et l'absence de toute trace de C = chaos. Un cas résiduel corrigé : AIDE ouvert au clavier laissait le menu ouvert par-dessus l'aide ; le menu se ferme maintenant dès que l'aide s'ouvre (mesuré : ouvert → Entrée sur AIDE → fermé, 0 vidéo). Non vérifié par lui : polices non Windows (Roboto sur le Redmi), vrai label getUserMedia, miroir de la vignette en vraie lumière.
+- Vérification : Playwright headed Chrome, caméra synthétique (stub cloné par appel, piste nommée « Webcam intégrée »), 1280×800 et 800×1280 ; le vérificateur unlazy (gate-check.mjs) refuse tout fichier sur cette machine (lstat rend dev 0 sous Windows) : les gates de .debug/GATES-camera.md sont prouvées par .debug/check-camera.mjs, jamais par le checker.
+- Prochain pas : test de Thomas devant la vraie webcam (nom court de la puce, vignette, VOIR / C, graisse des boutons), Redmi en paysage (en-tête à cinq contrôles, rangée à quatre). Ensuite PROMPT FOND (fond appris, masque du corps, corps net dessus, « reprendre le fond »), puis OBJETS, MAINS, icônes.
+- Fichiers touchés : src/panel.ts, src/main.ts, src/i18n.ts, index.html ; CLAUDE.md, BACKLOG.md, HANDOFF.md. Harnais (non suivi, .debug) : camera-protocol.py, check-camera.mjs, cam-measure-head.py, cam-measure-fit.py, GATES-camera.md, camera-pw.json, camera-portrait.json, captures camera-pw-*.jpg et camera-portrait-*.jpg.
+- Aucun navigateur fermé de force pendant la session : seuls les Chrome lancés par Playwright ont été fermés (browser.close()).
+

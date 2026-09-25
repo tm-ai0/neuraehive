@@ -69,6 +69,9 @@ export interface PanelHooks {
   /** v0.7.4 — a device picked from the list ("" = automatic). */
   onCameraDevice(id: string): void;
   onMicDevice(id: string): void;
+  /** v0.7.5 — the engine's own camera stream, for the head menu's thumbnail
+   * (same capture, no second getUserMedia); null when the camera is off. */
+  getCameraStream(): MediaStream | null;
   onChaos(): void;
   onReset(): void;
   onInteraction(): void;
@@ -870,6 +873,20 @@ export function createPanel(
     renderMode();
   });
   head.appendChild(midiChip);
+  // v0.7.5 — the camera state lives in the head too, Pro only: a dot (on or
+  // off) and the source's short name; a tap opens a floating menu with the
+  // same defs as brancher > caméra plus a live thumbnail.
+  const camChip = document.createElement("button");
+  camChip.type = "button";
+  camChip.className = "cinerae-midi-chip cinerae-cam-chip";
+  camChip.innerHTML = `<span class="cinerae-midi-dot" aria-hidden="true"></span><span class="cinerae-midi-label"></span>`;
+  const camLabel = camChip.querySelector(".cinerae-midi-label") as HTMLElement;
+  camChip.setAttribute("aria-haspopup", "dialog");
+  camChip.addEventListener("click", () => {
+    hooks.onInteraction();
+    setCamMenu(!camMenuOpen);
+  });
+  head.appendChild(camChip);
   const helpButton = document.createElement("button");
   helpButton.type = "button";
   helpButton.className = "cinerae-help";
@@ -884,6 +901,12 @@ export function createPanel(
   mono.setAttribute("aria-hidden", "true");
   mono.textContent = "cineræ";
   head.appendChild(mono);
+  const camMenu = document.createElement("div");
+  camMenu.className = "cinerae-cam-menu";
+  camMenu.setAttribute("role", "dialog");
+  camMenu.hidden = true;
+  head.appendChild(camMenu);
+  let camMenuOpen = false;
   const syncMidiChip = () => {
     const midi = hooks.getMidi();
     // Linked = a controller is plugged in (Web MIDI granted AND at least one
@@ -1027,8 +1050,20 @@ export function createPanel(
     hooks.onInteraction();
     hooks.onKeep();
   });
-  actions.append(chaosButton, undoButton, keepButton);
+  // v0.7.5 — VOIR: the raw camera at the same rank as Chaos and Garder, Pro
+  // only (the camera never reaches the public). Same def as brancher > caméra.
+  const voirButton = rowButton("", () => {
+    hooks.onInteraction();
+    toggleRawCam();
+  }, "cinerae-voir");
+  actions.append(chaosButton, undoButton, voirButton, keepButton);
   syncUndo();
+  const toggleRawCam = () => {
+    if (mode !== "pro") return false;
+    writeDef("rawCam", state.tuning.rawCam > 0.5 ? 0 : 1);
+    syncCamera();
+    return true;
+  };
 
   // ----- shared row builders ------------------------------------------------
   let rowRefs: {
@@ -1851,13 +1886,21 @@ export function createPanel(
 
   // ----- caméra -------------------------------------------------------------
   function renderCamera(body: HTMLElement) {
-    makeSwitch(
+    renderCameraControls(body);
+    line(body, t("aide.perf"));
+  }
+
+  // v0.7.5 — the camera's controls, rendered once per host (brancher > caméra
+  // and the head menu): every command writes the same def, no second state.
+  let camSyncs: { row: HTMLElement; sync: () => void }[] = [];
+  function renderCameraControls(body: HTMLElement) {
+    camSyncs.push(makeSwitch(
       "sw.camera",
       () => sensors.camera,
       (next) => hooks.onSensor("camera", next),
       body,
       "hint.swCamera"
-    );
+    ));
     // v0.7.4 — the machine's cameras by name; the front / rear chips stay
     // for the tablet when no name is available.
     const listed = renderDeviceRow(
@@ -1885,24 +1928,104 @@ export function createPanel(
         });
       }
     }
-    makeSwitch(
+    camSyncs.push(makeSwitch(
       "sw.mirror",
       () => state.tuning.mirror > 0.5,
-      (next) => writeDef("mirror", next ? 1 : 0),
+      (next) => {
+        writeDef("mirror", next ? 1 : 0);
+        syncCamera();
+      },
       body,
       "hint.mirror"
-    );
+    ));
     // v0.7.1c — the raw camera: a transient Pro calibration switch.
-    makeSwitch(
+    camSyncs.push(makeSwitch(
       "sw.rawCam",
       () => state.tuning.rawCam > 0.5,
-      (next) => writeDef("rawCam", next ? 1 : 0),
+      (next) => {
+        writeDef("rawCam", next ? 1 : 0);
+        syncCamera();
+      },
       body,
       "hint.rawCam"
-    );
+    ));
     renderSectionDefs("camera", body);
-    line(body, t("aide.perf"));
   }
+
+  // The chip: dot on or off, the opened source's first word (the head is
+  // 34 vw wide); the full state lives in the accessible name and the title.
+  const syncCamChip = () => {
+    const on = sensors.camera;
+    camChip.dataset.linked = String(on);
+    camChip.hidden = mode !== "pro";
+    const track = on ? hooks.getCameraStream()?.getVideoTracks()[0] : undefined;
+    const full =
+      track?.label ||
+      state.devices.cameras.find((d) => d.id === state.behavior.cameraId)?.label ||
+      "";
+    // Short name: the first word when it fits eight characters, else the
+    // longest word that does, else the first word cut.
+    const words = full.replace(/\(.*$/, "").trim().split(/\s+/).filter(Boolean);
+    const fits = words.filter((w) => w.length <= 8);
+    const word =
+      words[0] && words[0].length <= 8
+        ? words[0]
+        : fits.sort((a, b) => b.length - a.length)[0] ?? (words[0] ?? "").slice(0, 8);
+    const facing = t(`cam.${state.behavior.cameraFacing}`);
+    camLabel.textContent = on ? word || facing : t("sw.camera");
+    const tn = state.tuning;
+    const stateText = on
+      ? `${t("ui.camChipOn")} · ${full || facing} · ${t("sw.rawCam")} ${tn.rawCam > 0.5 ? t("ui.yes") : t("ui.no")} · ${t("ctl.ghost")} ${percent(tn.ghost / 0.35)}`
+      : t("ui.camChipOff");
+    camChip.title = `${stateText} · ${t("hint.camChip")}`;
+    camChip.setAttribute("aria-label", stateText);
+    camChip.setAttribute("aria-expanded", String(camMenuOpen));
+  };
+  // The floating menu: the thumbnail (the engine's stream, mirrored like the
+  // raw view, alive only while open) then the same controls as the section.
+  const renderCamMenu = () => {
+    for (const v of camMenu.querySelectorAll("video")) {
+      v.pause();
+      v.srcObject = null;
+    }
+    camMenu.replaceChildren();
+    camMenu.setAttribute("aria-label", t("ui.camMenu"));
+    if (!camMenuOpen) return;
+    const stream = sensors.camera ? hooks.getCameraStream() : null;
+    if (stream) {
+      const v = document.createElement("video");
+      v.className = "cinerae-cam-vignette";
+      v.muted = true;
+      v.playsInline = true;
+      v.autoplay = true;
+      v.setAttribute("aria-label", t("ui.camVignette"));
+      v.title = t("ui.camVignette");
+      v.classList.toggle("mirrored", state.tuning.mirror > 0.5);
+      v.srcObject = stream;
+      camMenu.appendChild(v);
+      void v.play().catch(() => undefined);
+    } else {
+      line(camMenu, t("st.camOff"));
+    }
+    renderCameraControls(camMenu);
+  };
+  const setCamMenu = (next: boolean) => {
+    if (camMenuOpen === next) return;
+    camMenuOpen = next;
+    camMenu.hidden = !next;
+    renderCamMenu();
+    syncCamChip();
+  };
+  // Every host of the camera defs follows one write: switches (section and
+  // menu), VOIR, the chip, the thumbnail's mirror, the meta lines.
+  const syncCamera = () => {
+    camSyncs = camSyncs.filter((s) => s.row.isConnected);
+    for (const s of camSyncs) s.sync();
+    voirButton.setAttribute("aria-pressed", String(state.tuning.rawCam > 0.5));
+    camMenu.querySelector("video")?.classList.toggle("mirrored", state.tuning.mirror > 0.5);
+    syncCamChip();
+    syncSummaries();
+  };
 
   // ----- modulation ---------------------------------------------------------
   const RATE_MIN = 0.02;
@@ -2292,9 +2415,12 @@ export function createPanel(
       item(t("meta.regarder"), t("aide.pro.regarder"));
       item(t("meta.composer"), t("aide.pro.composer"));
       item(t("meta.brancher"), t("aide.pro.brancher"));
+      item(t("btn.voir"), t("aide.pro.voir"));
+      item(t("sw.camera"), t("aide.pro.camChip"));
       const keys: [string, string][] = [
         ["F", "aide.key.f"],
         ["C", "aide.key.c"],
+        ["X", "aide.key.x"],
         ["Z", "aide.key.z"],
         ["R", "aide.key.r"],
         ["P", "aide.key.p"],
@@ -2554,6 +2680,10 @@ export function createPanel(
     undoButton.setAttribute("aria-label", t("btn.undo"));
     keepButton.textContent = t("btn.garder");
     keepButton.title = t("hint.garder");
+    voirButton.hidden = mode !== "pro";
+    voirButton.textContent = t("btn.voir");
+    voirButton.title = t("hint.voir");
+    if (mode !== "pro" || aideOpen) setCamMenu(false);
     syncMidiChip();
     body.dataset.mode = aideOpen ? "aide" : mode;
 
@@ -2571,6 +2701,8 @@ export function createPanel(
     }
     aideBox.replaceChildren();
     if (aideOpen) renderAide(aideBox);
+    if (camMenuOpen) renderCamMenu();
+    syncCamera();
   }
 
   // ----- open / close: swipe, tap outside, edge tab, grip -------------------
@@ -2583,7 +2715,16 @@ export function createPanel(
     open = next;
     hooks.onInteraction();
     applyOpen();
+    if (!open) setCamMenu(false);
   };
+  // v0.7.5 — the camera menu closes on a tap outside it or on Escape (the
+  // panel's own Escape, in main.ts, never sees that key).
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !camMenuOpen) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setCamMenu(false);
+  }, { capture: true });
   edgeTab.addEventListener("click", () => setOpen(true));
   grip.addEventListener("click", () => setOpen(false));
 
@@ -2595,6 +2736,7 @@ export function createPanel(
   let closeStart: { id: number; x: number; y: number } | undefined;
   window.addEventListener("pointerdown", (e) => {
     const target = e.target as Element | null;
+    if (camMenuOpen && !target?.closest(".cinerae-cam-menu, .cinerae-cam-chip")) setCamMenu(false);
     const inside = target?.closest(".cinerae-panel") !== null && target?.closest(".cinerae-panel") !== undefined;
     if (!inside) {
       if (open && !target?.closest(".cinerae-edge")) setOpen(false);
@@ -2654,6 +2796,8 @@ export function createPanel(
     chaos,
     undoChaos,
     reset,
+    /** v0.7.5 — key C, VOIR: the raw camera, Pro only (false when ignored). */
+    toggleRawCam,
     pushGesture: () => pushGesture(),
     toggleCollapsed() {
       setOpen(!open);
@@ -2689,6 +2833,7 @@ export function createPanel(
       const changed = camera !== sensors.camera || mic !== sensors.mic;
       sensors = { camera, mic };
       if (changed && mode === "pro" && !aideOpen) renderMode();
+      else if (changed) syncCamera();
     },
     /** v0.7.1e — feed the five-band gauge (values 0..1, ~30 Hz). */
     setBands(values: readonly number[]) {
@@ -2711,6 +2856,7 @@ export function createPanel(
         if (ref.readout.textContent !== text) ref.readout.textContent = text;
       }
       syncSelects(keys);
+      if (keys.has("rawCam") || keys.has("mirror")) syncCamera();
     },
     refresh() {
       renderMode();
