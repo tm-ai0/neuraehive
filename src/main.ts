@@ -226,6 +226,7 @@ async function boot() {
   let shockStrength = 0;
   let motionAvg = 0;
   let motionArea = 0;
+  let bodyArea = 0; // v0.7.6 — share of the frame the learned background sees as body
   let windAuto = 1;
   let presenceEnv = 0;
   let presenceSeen = -Infinity;
@@ -325,6 +326,8 @@ async function boot() {
   let vitrineImprint: { family: ImprintFamily; variant: string } | undefined;
   const enterVitrine = () => {
     vitrineOn = true;
+    // v0.7.6 — the room is empty: the moment to relearn the background.
+    renderer.resetBackground();
     vitrineImprint = { family: imprintSettings.family, variant: imprintSettings.variant };
     keepBox.classList.add("vitrine", "on");
     panel.collapse();
@@ -399,6 +402,9 @@ async function boot() {
         writeStore(CAM_ID_STORE, id);
         if (cameraSource) void stopCamera().then(() => startCamera());
       },
+      onBgReset() {
+        renderer.resetBackground();
+      },
       getCameraStream() {
         return (cameraSource?.video.srcObject as MediaStream | null) ?? null;
       },
@@ -428,6 +434,8 @@ async function boot() {
         crystal = 0;
         renderer.tuning.mirror = DEFAULT_TUNING.mirror;
         renderer.tuning.rawCam = 0;
+        renderer.tuning.bgLearn = 1;
+        renderer.resetBackground();
         behavior.presenceSense = 0.5;
         behavior.tempoAuto = false;
         behavior.silenceDelay = 24;
@@ -733,6 +741,7 @@ async function boot() {
     cameraSource = undefined;
     motionAvg = 0;
     motionArea = 0;
+    bodyArea = 0;
     windAuto = 1;
     welcomeArmed = false;
     updateStatus();
@@ -946,12 +955,18 @@ async function boot() {
     probing = true;
     renderer
       .readMotion()
-      .then(({ avg, area }) => {
+      .then(({ avg, area, body }) => {
         motionAvg = avg;
         motionArea = area;
+        bodyArea = body;
         // Presence watches its own, lower threshold: a standing person's
         // breath and sway keep the portrait alive without counting as play.
-        if (area > presenceThreshold()) presenceSeen = performance.now();
+        // v0.7.6 — and the learned background's mask when it is there: a
+        // visitor who stands perfectly still is a body all the same.
+        if (area > presenceThreshold() || body > 0.005) presenceSeen = performance.now();
+        // The ghost clock of the learned background runs only while nothing
+        // moves anywhere in the frame.
+        renderer.dynamics.still = area > presenceThreshold() ? 0 : 1;
         // Hands: fast movement over a small area. A whole body sweeps wide
         // and slow, a standing sway is smaller still — a hand is in between
         // and quick, with high energy per moving texel.
@@ -976,6 +991,7 @@ async function boot() {
             `g=${windAuto.toFixed(2)} c=${crystal.toFixed(2)} ` +
             `s=${((performance.now() - lastActivity) / 1000).toFixed(1)} ` +
             `p=${presenceEnv.toFixed(2)} ` +
+            `b=${bodyArea.toFixed(3)} ` +
             `h=${renderer.dynamics.hand.toFixed(2)} ` +
             `v=${renderer.dynamics.voice.toFixed(2)} ` +
             `d=${danceAngle.toFixed(2)}`;
@@ -1712,6 +1728,30 @@ async function boot() {
           interior: inN,
           inMean: inN ? Math.round((inSum / inN) * 1000) / 1000 : 0,
           inStd: inN ? Math.round(Math.sqrt(Math.max(0, inSq / inN - (inSum / inN) ** 2)) * 1000) / 1000 : 0,
+        };
+      },
+      /** v0.7.6 — the learned background's mask of the last frame (flow
+       * resolution): the harness measures what falls inside and outside the
+       * synthetic body. Never used by the render. */
+      async mask() {
+        const m = await renderer.readMask();
+        let confSum = 0;
+        let area = 0;
+        let ghostMax = 0;
+        for (let i = 0; i < m.mask.length; i++) {
+          confSum += m.conf[i]!;
+          if (m.mask[i]! > 0.5) area++;
+          ghostMax = Math.max(ghostMax, m.ghost[i]!);
+        }
+        return {
+          on: m.on,
+          width: m.width,
+          height: m.height,
+          mask: Array.from(m.mask, (v) => Math.round(v * 1000) / 1000),
+          conf: Math.round((confSum / m.mask.length) * 1000) / 1000,
+          area: Math.round((area / m.mask.length) * 10000) / 10000,
+          ghostMax: Math.round(ghostMax * 10) / 10,
+          body: bodyArea,
         };
       },
       /** v0.7.4 — the source lists as the panel sees them. */

@@ -440,6 +440,7 @@ const DICT: Record<string, [string, string]> = {
     "the gesture's wind also sweeps the field, or not",
   ],
   "ctl.ghost": ["fantôme", "ghost"],
+  "ctl.bgLearn": ["fond appris", "learned background"],
   "hint.ghost": [
     "un voile à peine visible de l'image caméra, coupé par défaut",
     "a barely-there veil of the camera image, off by default",
@@ -636,6 +637,16 @@ const DICT: Record<string, [string, string]> = {
     "the rate becomes a tempo division, from a quarter beat to 4 bars",
   ],
   "sw.midiLearn": ["apprentissage", "learn"],
+  "sw.bgLearn": ["fond appris", "learned background"],
+  "hint.bgLearn": [
+    "la pièce apprend la salle vide et ne garde comme corps que ce qui en diffère",
+    "the piece learns the empty room and keeps as body only what differs from it",
+  ],
+  "btn.bgReset": ["reprendre le fond", "relearn background"],
+  "hint.bgReset": [
+    "réapprendre la salle depuis l'image du moment, à faire quand elle est vide",
+    "relearn the room from the current image, best done when it is empty",
+  ],
   "sw.rawCam": ["caméra brute", "raw camera"],
   "hint.rawCam": [
     "l'image caméra sans effets, pour calibrer, Pro seulement, jamais en public",

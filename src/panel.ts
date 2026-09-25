@@ -72,6 +72,8 @@ export interface PanelHooks {
   /** v0.7.5 — the engine's own camera stream, for the head menu's thumbnail
    * (same capture, no second getUserMedia); null when the camera is off. */
   getCameraStream(): MediaStream | null;
+  /** v0.7.6 — relearn the room from the next camera frame. */
+  onBgReset(): void;
   onChaos(): void;
   onReset(): void;
   onInteraction(): void;
@@ -630,6 +632,11 @@ export function createPanel(
       { format: (v) => percent(v / 0.35) }),
     def("rawCam", "camera", 0, 1, 1,
       () => state.tuning.rawCam, (v) => (state.tuning.rawCam = v),
+      { transient: true, hidden: true }),
+    // v0.7.6 — the learned background: a room setting, never a scene's,
+    // never drawn by Chaos (transient, no chaos range); shown as a switch.
+    def("bgLearn", "camera", 0, 1, 1,
+      () => state.tuning.bgLearn, (v) => (state.tuning.bgLearn = v),
       { transient: true, hidden: true }),
     def("halo", "reglages", 0, 1, 0.01,
       () => state.tuning.halo, (v) => (state.tuning.halo = v),
@@ -1949,6 +1956,26 @@ export function createPanel(
       body,
       "hint.rawCam"
     ));
+    // v0.7.6 — the learned background: the switch, then one tap to relearn
+    // the room (both hosts, the same def, no second state).
+    camSyncs.push(makeSwitch(
+      "sw.bgLearn",
+      () => state.tuning.bgLearn > 0.5,
+      (next) => {
+        writeDef("bgLearn", next ? 1 : 0);
+        syncCamera();
+      },
+      body,
+      "hint.bgLearn"
+    ));
+    const bgRow = document.createElement("div");
+    bgRow.className = "cinerae-actions";
+    bgRow.appendChild(rowButton(t("btn.bgReset"), () => {
+      hooks.onInteraction();
+      hooks.onBgReset();
+    }, "cinerae-bg-reset"));
+    bgRow.firstElementChild!.setAttribute("title", t("hint.bgReset"));
+    body.appendChild(bgRow);
     renderSectionDefs("camera", body);
   }
 

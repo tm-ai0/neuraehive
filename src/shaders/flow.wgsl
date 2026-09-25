@@ -7,6 +7,12 @@
 // and swirling after the hand is gone.
 // Output per texel: rg = wind velocity, b = smoothed luminance
 // (crystallization imprint), a = motion energy.
+// v0.7.6 — where the learned background is confident (bgmask.wgsl, b =
+// confidence), the b channel carries the BODY MASK instead of the raw
+// luminance: the silhouette is what differs from the room, not what is
+// bright. The blend is per pixel and continuous, so the switch from the
+// luminance fallback to the mask never jumps; with the switch off the
+// expression collapses to the historical luminance exactly.
 import { fbmSimplex2d } from "@vgpu/wgsl-std/noise/simplex";
 
 struct FlowParams {
@@ -14,6 +20,7 @@ struct FlowParams {
   hasCamera: f32, // 0 -> procedural imprint, no flow
   dt: f32,
   gain: f32, // adaptive gesture gain: a distant body counts like a close hand
+  bgOn: f32, // v0.7.6 — 1 = the learned background feeds the silhouette
 };
 
 @group(0) @binding(0) var<uniform> params: FlowParams;
@@ -21,9 +28,10 @@ struct FlowParams {
 @group(0) @binding(2) var lumaPrev: texture_2d<f32>;
 @group(0) @binding(3) var fieldPrev: texture_2d<f32>;
 @group(0) @binding(4) var samp: sampler;
+@group(0) @binding(5) var mask: texture_2d<f32>;
 
 fn lumaAt(tex: texture_2d<f32>, uv: vec2f) -> f32 {
-  return textureSampleLevel(tex, samp, uv, 0.0).r;
+  return textureSampleLevel(tex, samp, uv, 0.0).a;
 }
 
 fn windAt(uv: vec2f) -> vec2f {
@@ -103,7 +111,11 @@ fn curlAt(uv: vec2f) -> f32 {
     wind *= 2.5 / wm;
   }
 
-  let luma = mix(prev.b, c, 0.12);
+  // v0.7.6 — body mask where the background is learned, luminance elsewhere.
+  let m = textureSampleLevel(mask, samp, uv, 0.0);
+  let blend = params.bgOn * clamp(m.b, 0.0, 1.0);
+  let sil = select(c, mix(c, clamp(m.r, 0.0, 1.0), blend), blend > 0.0);
+  let luma = mix(prev.b, sil, 0.12);
   let energy = mix(prev.a, min(abs(dtL) * 6.0, 1.0), 0.25);
   return vec4f(wind, luma, energy);
 }

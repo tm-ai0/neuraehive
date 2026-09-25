@@ -19,6 +19,9 @@ import {
   type Texture,
 } from "vgpu";
 
+import bggainWgsl from "./shaders/bggain.wgsl";
+import bglearnWgsl from "./shaders/bglearn.wgsl";
+import bgmaskWgsl from "./shaders/bgmask.wgsl";
 import fadeWgsl from "./shaders/fade.wgsl";
 import flowWgsl from "./shaders/flow.wgsl";
 import lumaWgsl from "./shaders/luma.wgsl";
@@ -113,6 +116,9 @@ export interface Tuning {
   // v0.7.4 — the live body: this frame's corps grains lifted above the
   // field and the wake by a contrast floor (0 = historical render).
   corpsNet: number;
+  // v0.7.6 — the learned background: 1 = the silhouette is what differs
+  // from the room (GPU mask), 0 = the historical luminance reading.
+  bgLearn: number;
 }
 
 export interface Dynamics {
@@ -153,6 +159,10 @@ export interface Dynamics {
   danceDriftX: number;
   danceDriftY: number;
   symSpin: number; // rotation of the radial symmetry fold
+  // v0.7.6 — learned background: 1 = relearn the room this frame (consumed);
+  // still = 1 while nothing moves anywhere (the ghost clock runs on it).
+  bgReset: number;
+  still: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -222,6 +232,7 @@ export const DEFAULT_TUNING: Tuning = {
   voiceEase: 0.6,
   fondReact: 1,
   corpsNet: 0.4,
+  bgLearn: 1,
 };
 
 // v0.7.4 — live-body coverage: the trail alpha sums the corps grain light of
@@ -299,6 +310,24 @@ export async function createRenderer(
 
   const lumaEffect = effect(gpu, lumaWgsl, { label: "cinerae-luma" });
   const flowEffect = effect(gpu, flowWgsl, { label: "cinerae-flow" });
+  // v0.7.6 — the learned background: three tiny passes at the flow
+  // resolution (global gain 1x1, body mask, background update), all on the
+  // GPU, nothing ever read back for the render, nothing stored.
+  const bggainEffect = effect(gpu, bggainWgsl, { label: "cinerae-bggain" });
+  const bgmaskEffect = effect(gpu, bgmaskWgsl, { label: "cinerae-bgmask" });
+  const bglearnEffect = effect(gpu, bglearnWgsl, { label: "cinerae-bglearn" });
+  const bgTargets = [
+    target(gpu, { size: flowSize, format: FIELD_FORMAT, label: "cinerae-bg-a" }),
+    target(gpu, { size: flowSize, format: FIELD_FORMAT, label: "cinerae-bg-b" }),
+  ];
+  const maskTargets = [
+    target(gpu, { size: flowSize, format: FIELD_FORMAT, label: "cinerae-mask-a" }),
+    target(gpu, { size: flowSize, format: FIELD_FORMAT, label: "cinerae-mask-b" }),
+  ];
+  const gainTarget = target(gpu, { size: [1, 1], format: FIELD_FORMAT, label: "cinerae-bggain" });
+  let bgIndex = 0;
+  let bgWasOn = false;
+  let bgMirror = DEFAULT_TUNING.mirror;
   const fadeEffect = effect(gpu, fadeWgsl, { label: "cinerae-fade" });
   const presentEffect = effect(gpu, presentWgsl, { label: "cinerae-present" });
   const simulate = compute(gpu, simulateWgsl, { label: "cinerae-simulate" });
@@ -357,6 +386,8 @@ export async function createRenderer(
     danceDriftX: 0,
     danceDriftY: 0,
     symSpin: 0,
+    bgReset: 1,
+    still: 0,
   };
 
   let camera: CameraInput | undefined;
@@ -671,17 +702,69 @@ export async function createRenderer(
         );
         lumaFrames++;
       }
+      // 3a. v0.7.6 — the learned background. Skipped entirely while the
+      // switch is off (the flow then reads the historical luminance, bit
+      // for bit). A fresh camera, a resize, a mirror change or the switch
+      // coming back on all relearn the room from the current frame.
+      const bgOn = tuning.bgLearn > 0.5 && camera !== undefined && cameraSeen;
+      const maskNext = maskTargets[bgIndex]!;
+      const maskPrev = maskTargets[1 - bgIndex]!;
+      if (bgOn) {
+        const bgNext = bgTargets[bgIndex]!;
+        const bgPrev = bgTargets[1 - bgIndex]!;
+        const reset =
+          dynamics.bgReset > 0.5 ||
+          !bgWasOn ||
+          lumaFrames <= 1 ||
+          tuning.mirror !== bgMirror
+            ? 1
+            : 0;
+        bgMirror = tuning.mirror;
+        bggainEffect.set({
+          params: { reset },
+          cam: lumaCurr,
+          bg: bgPrev,
+          mask: maskPrev,
+        });
+        frame.pass({ target: gainTarget, clear: [1, 1, 1, 1] }, (pass) =>
+          pass.draw(bggainEffect)
+        );
+        bgmaskEffect.set({
+          params: { dt, reset, still: dynamics.still },
+          cam: lumaCurr,
+          bg: bgPrev,
+          maskPrev,
+          gainTex: gainTarget,
+        });
+        frame.pass({ target: maskNext, clear: [0, 0, 0, 0] }, (pass) =>
+          pass.draw(bgmaskEffect)
+        );
+        bglearnEffect.set({
+          params: { dt, reset },
+          cam: lumaCurr,
+          bgPrev,
+          mask: maskNext,
+          gainTex: gainTarget,
+        });
+        frame.pass({ target: bgNext, clear: [0, 0, 0, 0] }, (pass) =>
+          pass.draw(bglearnEffect)
+        );
+      }
+      dynamics.bgReset = 0;
+      bgWasOn = bgOn;
       flowEffect.set({
         params: {
           texel: [1 / FLOW_W, 1 / FLOW_H],
           hasCamera,
           dt,
           gain: dynamics.windGain,
+          bgOn: bgOn ? 1 : 0,
         },
         lumaCurr,
         lumaPrev,
         fieldPrev,
         samp: linear,
+        mask: maskNext,
       });
       frame.pass({ target: fieldNext, clear: [0, 0, 0, 0] }, (pass) =>
         pass.draw(flowEffect)
@@ -809,6 +892,7 @@ export async function createRenderer(
       );
 
       if (camera && cameraSeen) lumaIndex = 1 - lumaIndex;
+      if (bgOn) bgIndex = 1 - bgIndex;
       fieldIndex = 1 - fieldIndex;
       trailIndex = 1 - trailIndex;
       memoryIndex = 1 - memoryIndex;
@@ -848,6 +932,35 @@ export async function createRenderer(
       lumaFrames = 0;
       cameraTexture?.destroy();
       cameraTexture = undefined;
+    },
+    /** v0.7.6 — relearn the room from the next camera frame (the mask and
+     * the confidence start again from zero). */
+    resetBackground() {
+      dynamics.bgReset = 1;
+    },
+    /** v0.7.6, ?debug and the presence probe — the body mask of the last
+     * frame: r = mask, g = ghost seconds, b = confidence. Zeros while the
+     * learned background is off. */
+    async readMask(): Promise<{ mask: Float32Array; conf: Float32Array; ghost: Float32Array; width: number; height: number; on: boolean }> {
+      const on = bgWasOn;
+      const mask = new Float32Array(FLOW_W * FLOW_H);
+      const conf = new Float32Array(FLOW_W * FLOW_H);
+      const ghost = new Float32Array(FLOW_W * FLOW_H);
+      if (on) {
+        const source = maskTargets[1 - bgIndex]!;
+        const bytes = await source.read();
+        const half = new Uint16Array(
+          bytes.buffer,
+          bytes.byteOffset,
+          Math.floor(bytes.byteLength / 2)
+        );
+        for (let i = 0; i < mask.length; i++) {
+          mask[i] = decodeF16(half[i * 4]!);
+          ghost[i] = decodeF16(half[i * 4 + 1]!);
+          conf[i] = decodeF16(half[i * 4 + 2]!);
+        }
+      }
+      return { mask, conf, ghost, width: FLOW_W, height: FLOW_H, on };
     },
     resetMatter() {
       const seed = makeSeed(MAX_PARTICLES);
@@ -909,8 +1022,22 @@ export async function createRenderer(
      * frame-wide mean (~0 when still); `area` is the fraction of samples
      * that really move — a small figure far from the camera barely dents
      * the mean but still owns a clear moving area. */
-    async readMotion(): Promise<{ avg: number; area: number }> {
+    async readMotion(): Promise<{ avg: number; area: number; body: number }> {
       const source = fieldTargets[1 - fieldIndex]!;
+      // v0.7.6 — the body area from the learned background's mask (share of
+      // texels masked with a confident background), 0 while it is off.
+      let body = 0;
+      if (bgWasOn) {
+        const mb = await maskTargets[1 - bgIndex]!.read();
+        const mh = new Uint16Array(mb.buffer, mb.byteOffset, Math.floor(mb.byteLength / 2));
+        let hit = 0;
+        let n = 0;
+        for (let i = 0; i + 2 < mh.length; i += 4 * 7) {
+          if (decodeF16(mh[i]!) * decodeF16(mh[i + 2]!) > 0.5) hit++;
+          n++;
+        }
+        body = n ? hit / n : 0;
+      }
       const bytes = await source.read();
       const half = new Uint16Array(
         bytes.buffer,
@@ -927,7 +1054,7 @@ export async function createRenderer(
         if (e > 0.12) moving++;
         n++;
       }
-      return n ? { avg: sum / n, area: moving / n } : { avg: 0, area: 0 };
+      return n ? { avg: sum / n, area: moving / n, body } : { avg: 0, area: 0, body };
     },
     dispose() {
       disposed = true;

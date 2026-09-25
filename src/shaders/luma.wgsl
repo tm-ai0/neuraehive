@@ -17,5 +17,7 @@ struct LumaParams {
   let camUv = flipped * params.scale + params.offset;
   let rgb = textureSampleLevel(cam, samp, camUv, 0.0).rgb;
   let luma = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-  return vec4f(luma, 0.0, 0.0, 1.0);
+  // v0.7.6 — the color rides along for the learned background (rgb); the
+  // luminance keeps its own channel (a) so the flow reads the same value.
+  return vec4f(rgb, luma);
 }
